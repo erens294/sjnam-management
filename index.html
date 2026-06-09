@@ -2443,9 +2443,9 @@ try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'); settings={
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+// [REMOVED DUPLICATE] original function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } - diganti versi dengan triggerAutoSync di line 5089
 function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
-function saveStations(){ localStorage.setItem(STATIONS_KEY, JSON.stringify(stations)); }
+// [REMOVED DUPLICATE] original function saveStations(){ localStorage.setItem(STATIONS_KEY, JSON.stringify(stations)); } - diganti versi dengan triggerAutoSync di line 5089
 
 // function parseUTC removed to avoid duplicate declaration
 
@@ -3991,7 +3991,7 @@ const DFS_KEY = 'sjn_dfs_bank_v1';
 let dfsData = [];
 try { dfsData = JSON.parse(localStorage.getItem(DFS_KEY)||'[]'); } catch(e){ dfsData=[]; }
 
-function saveDfsData(){ localStorage.setItem(DFS_KEY, JSON.stringify(dfsData)); }
+// [REMOVED DUPLICATE] original function saveDfsData(){ localStorage.setItem(DFS_KEY, JSON.stringify(dfsData)); } - diganti versi dengan triggerAutoSync di line 5089
 
 
 function formatDfsDate(dateStr){
@@ -4492,8 +4492,8 @@ renderDfsTable();
 // =================================================================
 // ⚡ AUTH SYSTEM — Login / Logout / Role Management
 // =================================================================
-const AUTH_USERS_KEY = 'sjn_auth_users_v1';
-const AUTH_SESSION_KEY = 'sjn_auth_session_v1';
+const 'sjn_auth_users_v1' = 'sjn_auth_users_v1';
+const 'sjn_auth_session_v1' = 'sjn_auth_session_v1';
 
 // Default admin (akan disimpan ke localStorage jika belum ada)
 const DEFAULT_ADMIN = {
@@ -4505,146 +4505,175 @@ const DEFAULT_ADMIN = {
   pwHash: btoa('admin123')
 };
 
-let authUsers = [];
+
 let authCurrentUser = null;
-let _editingUserId = null;
 
-// Simpan hash password sederhana (base64 — cukup untuk offline app)
-function hashPw(pw){ return btoa(unescape(encodeURIComponent(pw))); }
-function checkPw(pw, hash){ return hashPw(pw) === hash; }
-
-function authLoadUsers(){
-  try { authUsers = JSON.parse(localStorage.getItem(AUTH_USERS_KEY)||'[]'); } catch(e){ authUsers=[]; }
-  // Pastikan selalu ada admin default
-  if(!authUsers.find(u=>u.id===DEFAULT_ADMIN.id)){
-    authUsers.push({...DEFAULT_ADMIN});
-    authSaveUsers();
-  }
-}
-
-function authSaveUsers(){
-  localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(authUsers));
-}
-
-function authLoadSession(){
-  try {
-    const s = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY)||'null');
-    if(s && authUsers.find(u=>u.id===s.id)){
-      authCurrentUser = s;
-      return true;
+// ===== SUPABASE AUTH SYSTEM =====
+async function initAuth(){
+  const sb = getSupabaseClient();
+  if(!sb){ authShowLogin(); return; }
+  
+  try{
+    const { data: { session }, error } = await sb.auth.getSession();
+    if(error) throw error;
+    
+    if(session?.user){
+      // ambil profile dari metadata
+      const meta = session.user.user_metadata || {};
+      authCurrentUser = {
+        id: session.user.id,
+        username: meta.username || session.user.email.split('@')[0],
+        fullname: meta.fullname || meta.username || 'User',
+        role: meta.role || 'user',
+        email: session.user.email
+      };
+      authApplyUI();
+      cloudLog('✅ Login Supabase: '+authCurrentUser.username, 'success');
+    } else {
+      authShowLogin();
     }
-  } catch(e){}
-  return false;
-}
-
-function authSaveSession(){
-  if(authCurrentUser) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({id:authCurrentUser.id, username:authCurrentUser.username, role:authCurrentUser.role, fullname:authCurrentUser.fullname}));
-}
-
-function authClearSession(){
-  localStorage.removeItem(AUTH_SESSION_KEY);
-  authCurrentUser = null;
-}
-
-// Role permissions
-const ROLE_PERMISSIONS = {
-  admin:    { tabs: ['home','input','data','dashboard','stations','dfs','request','settings','users'], edit: true, manageUsers: true, deleteUsers: true },
-  coadmin:  { tabs: ['home','input','data','dashboard','stations','dfs','request','settings','users'], edit: true, manageUsers: true, deleteUsers: false },
-  user:     { tabs: ['home','input','data','dashboard'], edit: true, manageUsers: false, deleteUsers: false }
-};
-
-function authCan(action){
-  if(!authCurrentUser) return false;
-  const perms = ROLE_PERMISSIONS[authCurrentUser.role] || ROLE_PERMISSIONS.user;
-  if(action==='edit') return perms.edit;
-  if(action==='manageUsers') return perms.manageUsers;
-  if(action==='deleteUsers') return perms.deleteUsers;
-  if(action==='settings') return authCurrentUser.role==='admin' || authCurrentUser.role==='coadmin';
-  return false;
-}
-
-function authCheckTab(name){
-  if(!authCurrentUser) return false;
-  const perms = ROLE_PERMISSIONS[authCurrentUser.role] || ROLE_PERMISSIONS.user;
-  if(!perms.tabs.includes(name)){
-    showToast('🔒 Akses ditolak — role Anda tidak memiliki izin ke tab ini','error');
-    return false;
+    
+    // listen auth changes
+    sb.auth.onAuthStateChange((event, session) => {
+      if(event === 'SIGNED_OUT'){
+        authCurrentUser = null;
+        authShowLogin();
+      }
+    });
+    
+  } catch(e){
+    console.error('Auth init error:', e);
+    authShowLogin();
   }
-  return true;
-}
-
-// ---- UI HELPERS ----
-function togglePwVis(inputId, btn){
-  const inp = document.getElementById(inputId);
-  if(inp.type==='password'){ inp.type='text'; btn.textContent='🙈'; }
-  else { inp.type='password'; btn.textContent='👁'; }
 }
 
 function authShowLogin(){
   $('#authOverlay').classList.remove('hidden');
-  document.getElementById('loginUsername').focus();
+  $('#loginUsername').focus();
 }
-
 function authHideLogin(){
   $('#authOverlay').classList.add('hidden');
 }
+function authSaveSession(){ /* Supabase handles session automatically */ }
 
-function authApplyUI(){
-  if(!authCurrentUser) { authShowLogin(); return; }
-  authHideLogin();
+async function doLogin(){
+  const username = $('#loginUsername').value.trim();
+  const password = $('#loginPassword').value;
+  const errEl = $('#authError');
+  errEl.style.display='none';
 
-  const perms = ROLE_PERMISSIONS[authCurrentUser.role] || ROLE_PERMISSIONS.user;
-
-  // Update header
-  const hui = $('#headerUserInfo');
-  if(hui){
-    hui.classList.remove('hidden');
-    $('#headerUsername').textContent = authCurrentUser.fullname || authCurrentUser.username;
-    const roleLabelMap = {admin:'👑 Admin', coadmin:'🛡 Co-Admin', user:'👤 User'};
-    $('#headerRoleBadge').textContent = roleLabelMap[authCurrentUser.role] || authCurrentUser.role;
+  if(!username||!password){ 
+    errEl.textContent='Username dan password wajib diisi'; 
+    errEl.style.display='block'; 
+    return; 
   }
 
-  // Tampilkan/sembunyikan tab berdasarkan role
-  $$('[data-tab]').forEach(btn => {
-    const tab = btn.dataset.tab;
-    if(tab==='users'){
-      btn.style.display = perms.manageUsers ? '' : 'none';
+  const sb = getSupabaseClient();
+  if(!sb){ 
+    errEl.textContent='Supabase belum dikonfigurasi'; 
+    errEl.style.display='block'; 
+    return; 
+  }
+
+  // konversi username ke email format supabase
+  const email = username.includes('@') ? username : `${username.toLowerCase()}@sjnam.local`;
+  
+  try{
+    $('#btnLogin').disabled = true;
+    $('#btnLogin').textContent = 'Memproses...';
+    
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    
+    if(error){
+      // jika user belum ada dan ini admin default, coba buat
+      if(error.message.includes('Invalid') && username.toLowerCase()==='admin'){
+        errEl.textContent='Admin belum terdaftar. Klik Reset untuk buat akun.';
+        errEl.style.display='block';
+      } else {
+        errEl.textContent='Username atau password salah';
+        errEl.style.display='block';
+      }
+      $('#loginPassword').value='';
+      return;
+    }
+    
+    const meta = data.user.user_metadata || {};
+    authCurrentUser = {
+      id: data.user.id,
+      username: meta.username || username,
+      fullname: meta.fullname || username,
+      role: meta.role || 'user',
+      email: data.user.email
+    };
+    
+    authApplyUI();
+    showToast('Selamat datang, '+(authCurrentUser.fullname)+'! 👋','success');
+    
+  } catch(e){
+    errEl.textContent='Error: '+e.message;
+    errEl.style.display='block';
+  } finally {
+    $('#btnLogin').disabled = false;
+    $('#btnLogin').textContent = 'Masuk';
+  }
+}
+
+async function resetAdminPassword(){
+  const sb = getSupabaseClient();
+  if(!sb){ 
+    showToast('Konfigurasi Supabase dulu di tab Cloud','error'); 
+    return; 
+  }
+  
+  try{
+    $('#btnResetAdmin').disabled = true;
+    $('#btnResetAdmin').textContent = 'Membuat...';
+    
+    const email = 'admin@sjnam.local';
+    const password = 'admin123';
+    
+    // coba sign up (jika sudah ada akan error, kita abaikan)
+    const { data: signUpData, error: signUpError } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { username: 'admin', fullname: 'Administrator', role: 'admin' }
+      }
+    });
+    
+    if(signUpError && !signUpError.message.includes('already')){
+      throw signUpError;
+    }
+    
+    // update password jika user sudah ada (via sign in lalu update)
+    // untuk demo, kita langsung login
+    const { error: signInError } = await sb.auth.signInWithPassword({ email, password });
+    
+    if(signInError && signUpError){
+      // user ada tapi password beda - kita perlu admin API (tidak bisa dari client)
+      showToast('Admin sudah ada. Gunakan password lama atau reset via Supabase Dashboard','info');
     } else {
-      btn.style.display = perms.tabs.includes(tab) ? '' : 'none';
+      showToast('✅ Admin siap: admin / admin123','success');
     }
-  });
-
-  // Sembunyikan tab-pane yang tidak boleh diakses
-  $$('.tab-pane').forEach(pane => {
-    const name = pane.id.replace('tab-','');
-    if(name==='users') pane.style.display=''; // kontrol via tab visibility
-    // else biarkan switchTab yang mengatur
-  });
-
-  // Kalau tab aktif saat ini tidak boleh diakses, pindah ke home
-  const activePaneEl = document.querySelector('.tab-pane.active');
-  if(activePaneEl){
-    const activeName = activePaneEl.id.replace('tab-','');
-    if(!perms.tabs.includes(activeName) && activeName!=='users'){
-      switchTab('home');
-    }
+    
+    $('#loginUsername').value = 'admin';
+    $('#loginPassword').value = 'admin123';
+    $('#authError').style.display='none';
+    
+  } catch(e){
+    showToast('Gagal: '+e.message,'error');
+  } finally {
+    $('#btnResetAdmin').disabled = false;
+    $('#btnResetAdmin').textContent = '🔄 Reset Password Admin';
   }
+}
 
-  // Settings tab: non-user saja
-  // Tombol cloud sync di header
-  const hcs = $('#btnHeaderCloudSync');
-  if(hcs) hcs.style.display = authCan('settings') ? '' : 'none';
-
-  // Tombol Simpan di form Input (semua role user bisa, tapi guard di listener)
-  // Edit/Delete tombol di Data tab dikontrol di renderTable
-
-  // Show/hide change-pw & user-mgmt button
-  const cmpBtn = $('#btnChangePw');
-  if(cmpBtn) cmpBtn.style.display = '';
-
-  // Tab Users hanya untuk admin/coadmin
-  const tabBtnUsers = $('#tabBtnUsers');
-  if(tabBtnUsers) tabBtnUsers.style.display = perms.manageUsers ? '' : 'none';
+async function doLogout(){
+  const sb = getSupabaseClient();
+  if(sb) await sb.auth.signOut();
+  authCurrentUser = null;
+  authShowLogin();
+  showToast('Logout berhasil','info');
 }
 
 // ---- LOGIN ----
@@ -4655,7 +4684,7 @@ $('#btnResetAdmin')?.addEventListener('click', resetAdminPassword);
 
 function resetAdminPassword(){
   try{
-    let users = JSON.parse(localStorage.getItem(AUTH_USERS_KEY)||'[]');
+    let users = JSON.parse(null||'[]');
     let admin = users.find(u=>u.username.toLowerCase()==='admin');
     if(!admin){
       users.push({...DEFAULT_ADMIN});
@@ -4663,8 +4692,8 @@ function resetAdminPassword(){
     }
     admin.pwHash = hashPw('admin123');
     admin.role = 'admin';
-    localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(users));
-    localStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.setItem('sjn_auth_users_v1', JSON.stringify(users));
+    localStorage.removeItem('sjn_auth_session_v1');
     showToast('✅ Password admin direset ke: admin123','success');
     $('#loginUsername').value = 'admin';
     $('#loginPassword').value = 'admin123';
