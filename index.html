@@ -72,13 +72,13 @@
 }
 
 /* Smooth accordion */
-#homeMenuContent, #adminMenuContent {
+#homeMenuContent, #adminMenuContent, #trainingMenuContent {
   overflow: hidden;
   transition: max-height 0.3s ease, opacity 0.25s ease;
   max-height: 600px;
   opacity: 1;
 }
-#homeMenuContent.collapsed, #adminMenuContent.collapsed {
+#homeMenuContent.collapsed, #adminMenuContent.collapsed, #trainingMenuContent.collapsed {
   max-height: 0;
   opacity: 0;
 }
@@ -737,28 +737,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
     </div>
   </div>
 
-  <!-- Top 3 Rank Delay -->
-  <div class="card p-5 mb-5">
-    <h3 class="font-semibold mb-4">🏆 Top 3 Rank Delay Tertinggi (per Flight)</h3>
-    <div class="overflow-x-auto">
-      <table class="min-w-full text-sm">
-        <thead class="bg-slate-50 dark:bg-slate-800">
-          <tr>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Rank</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">DATE</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Flight</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Route</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Delay</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Kategori</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Status</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Pax</th>
-            <th class="px-3 py-2 text-left font-semibold text-xs">Cost PM</th>
-          </tr>
-        </thead>
-        <tbody id="topDelayBody" class="divide-y divide-slate-200 dark:divide-slate-700"></tbody>
-      </table>
-    </div>
-  </div>
+  
 
   <!-- Route Delay Bar Chart -->
   <div class="card p-5 mb-5">
@@ -2475,11 +2454,9 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
         URL & Key tersimpan lokal di browser Anda. Data disinkronkan otomatis saat ada perubahan.
       </div>
     </div>
-
-  </div>
 </section>
 
-
+<div style="display:none"></div>
 <!-- ============= TAB MATERI TRAINING ============= -->
 <section id="tab-materi" class="tab-pane">
   <div class="card p-5 md:p-6">
@@ -3633,8 +3610,7 @@ function renderDashboard(){
     options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:tickColor,padding:12}}},cutout:'60%'}
   });
 
-  // Top 3 Rank Delay Tertinggi per Flight
-  const top10=filtered.slice().sort((a,b)=>b.delayMenit-a.delayMenit).slice(0,3);
+    const top10=filtered.slice().sort((a,b)=>b.delayMenit-a.delayMenit).slice(0,3);
   const rankEmoji=['🥇','🥈','🥉'];
   const katBadge={ATC:'bg-purple-100 text-purple-700',Teknik:'bg-amber-100 text-amber-700',Operasional:'bg-blue-100 text-blue-700',Cuaca:'bg-cyan-100 text-cyan-700',Lainnya:'bg-slate-100 text-slate-700'};
   $('#topDelayBody').innerHTML=top10.map((d,i)=>{
@@ -4960,7 +4936,7 @@ document.getElementById('loginForm')?.addEventListener('submit', function(e){
   const username = document.getElementById('loginUser').value.trim().toLowerCase();
   const password = document.getElementById('loginPass').value;
   
-  const users = initUsers();
+  const users = JSON.parse(localStorage.getItem("sjn_users_v1") || "[]");
   const user = users.find(u => u.username.toLowerCase() === username && u.password === password && u.active);
   
   if(!user){
@@ -5334,7 +5310,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
 // === TRAINING MODULE ===
 (function(){
   const TRAINING_KEY = 'sjn_training_v1';
-  let trainingData = JSON.parse(localStorage.getItem(TRAINING_KEY) || '{"materi":[{"id":"basic","title":"Basic Service Indoctrination","desc":"Pengenalan layanan dasar Sriwijaya Air & NAM Air"}],"soal":[]}');
+  let trainingData; try { trainingData = JSON.parse(localStorage.getItem(TRAINING_KEY) || ''); } catch(e){} if(!trainingData){ trainingData = {materi:[{id:'basic',title:'Basic Service Indoctrination',desc:'Pengenalan layanan dasar Sriwijaya Air & NAM Air'}],soal:[]}; }
 
   function saveTraining(){ localStorage.setItem(TRAINING_KEY, JSON.stringify(trainingData)); }
 
@@ -5401,7 +5377,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
   });
   document.getElementById('btnDownloadCert')?.addEventListener('click', async ()=>{
     const el = document.getElementById('certPreview');
-    const canvas = await html2canvas(el, {scale:2});
+    if(typeof html2canvas === 'undefined'){ alert('Fitur download belum siap'); return; } const canvas = await html2canvas(el, {scale:2});
     const link = document.createElement('a');
     link.download = 'sertifikat-'+(document.getElementById('certNo').value||'training')+'.png';
     link.href = canvas.toDataURL();
@@ -5415,7 +5391,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
 // === DELAY NOW LOCAL TIME FIX ===
 (function(){
   // Override any Delay Now calculation to use local station time
-  const origRenderData = window.renderDataTable;
+  const origRenderData = window.renderDataTable || function(){};
   if(typeof origRenderData === 'function'){
     window.renderDataTable = function(...args){
       // Before render, convert UTC to local based on station
@@ -5445,6 +5421,46 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
   },1000);
 })();
 
+
+// === FIX DELAY NOW LOCAL TIME ===
+(function(){
+  function getLocalDelay(stdUtc, route){
+    if(!stdUtc || !route) return '-';
+    const origin = route.substring(0,3);
+    const stations = JSON.parse(localStorage.getItem('sjn_stations_v1') || '[]');
+    const station = stations.find(s=>s.code===origin);
+    const offset = station ? (station.utcOffset || 7) : 7;
+    const now = new Date();
+    const nowUtc = new Date(now.getTime() + now.getTimezoneOffset()*60000);
+    const [h,m] = stdUtc.split(':').map(Number);
+    const stdDate = new Date(nowUtc);
+    stdDate.setUTCHours(h, m, 0, 0);
+    // Convert to local
+    const localStd = new Date(stdDate.getTime() + offset*3600000);
+    const diffMs = now.getTime() - localStd.getTime() + (now.getTimezoneOffset()*60000) + offset*3600000;
+    const diffMin = Math.floor(diffMs / 60000);
+    return diffMin > 0 ? diffMin + ' min' : 'On Time';
+  }
+  window.getLocalDelay = getLocalDelay;
+  
+  // Patch table rendering if exists
+  const checkInterval = setInterval(()=>{
+    const rows = document.querySelectorAll('#dataTableBody tr');
+    if(rows.length){
+      rows.forEach(row=>{
+        const cells = row.querySelectorAll('td');
+        // Assuming Delay Now is column 8 or 9 - find by data attribute
+        const flightCell = row.querySelector('[data-field="delayNow"]');
+        if(flightCell){
+          const stdUtc = row.dataset.stdUtc;
+          const route = row.dataset.route;
+          flightCell.textContent = getLocalDelay(stdUtc, route);
+        }
+      });
+    }
+  }, 2000);
+})();
+
 // === TRAINING MENU TOGGLE ===
 document.getElementById('toggleTrainingMenu')?.addEventListener('click', ()=>{
   const c = document.getElementById('trainingMenuContent');
@@ -5454,4 +5470,9 @@ document.getElementById('toggleTrainingMenu')?.addEventListener('click', ()=>{
   if(icon) icon.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
 });
 </script>
-</body></html>
+<script>
+window.addEventListener('error', function(e){
+  console.error('[SJNAM Error]', e.message, 'at', e.filename, e.lineno);
+  if(window.showToast) showToast('Error: '+e.message, 'error');
+});
+</script></body></html>
