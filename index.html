@@ -3628,7 +3628,7 @@ function renderDashboard(){
     </tr>`;
   }).join('')||`<tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">Belum ada data</td></tr>`;
 
-  // Route Delay Bar Chart (all routes, sorted by total delay desc)
+  // Route Delay Bar Chart (all routes, sorted by quantity desc)
   const routeMap2={};
   filtered.forEach(d=>{
     if(!d.route) return;
@@ -3636,20 +3636,20 @@ function renderDashboard(){
     routeMap2[d.route].total+=Math.max(0,d.delayMenit);
     routeMap2[d.route].count+=1;
   });
-  const allRoutes=Object.entries(routeMap2).map(([route,v])=>({route,...v})).sort((a,b)=>b.total-a.total);
+  const allRoutes=Object.entries(routeMap2).map(([route,v])=>({route,...v})).sort((a,b)=>b.count-a.count);
   const routeLabels=allRoutes.map(r=>r.route);
-  const routeDelays=allRoutes.map(r=>r.total);
+  const routeDelays=allRoutes.map(r=>r.count);
   const routeColors=routeLabels.map((_,i)=>`hsl(${(i*47)%360},65%,55%)`);
   if(window._routeBarChart) window._routeBarChart.destroy();
   if(document.getElementById('chartRouteBar') && routeDelays.length>0){
     window._routeBarChart=new Chart(document.getElementById('chartRouteBar'),{
       type:'bar',
-      data:{labels:routeLabels,datasets:[{label:'Total Delay (menit)',data:routeDelays,backgroundColor:routeColors,borderRadius:5}]},
+      data:{labels:routeLabels,datasets:[{label:'Quantity Delay',data:routeDelays,backgroundColor:routeColors,borderRadius:5}]},
       options:{
         responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${formatHM(ctx.parsed.y)}`}}},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y}`}}},
         scales:{
-          y:{grid:{color:gridColor},ticks:{color:tickColor,callback:v=>v+'m'}},
+          y:{grid:{color:gridColor},ticks:{color:tickColor,callback:v=>v}},
           x:{grid:{display:false},ticks:{color:tickColor,maxRotation:45,minRotation:30,font:{size:10}}}
         }
       }
