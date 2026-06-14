@@ -2471,58 +2471,253 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
 
 <!-- ============= TAB SOAL TRAINING ============= -->
 <section id="tab-soal" class="tab-pane">
-  <div class="card p-5 md:p-6">
-    <h2 class="text-lg font-bold mb-4">Soal Training</h2>
-    <div id="soalContainer" class="space-y-4"></div>
-    <button id="btnAddSoal" class="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl">+ Tambah Soal</button>
+  <div class="card p-5 md:p-6 mb-5">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+      <div>
+        <h2 class="text-lg font-bold">Soal Training</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Kelola bank soal pilihan ganda, kunci jawaban &amp; skor</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button id="btnStartPeserta" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl">🚀 Mulai Training (Peserta)</button>
+      </div>
+    </div>
+
+    <!-- Sub tabs -->
+    <div class="flex gap-2 border-b border-slate-200 dark:border-slate-700 mb-4 -mx-1 overflow-x-auto">
+      <button data-soal-subtab="bank" class="soal-subtab-btn active px-4 py-2 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 whitespace-nowrap">📋 Bank Soal</button>
+      <button data-soal-subtab="peserta" class="soal-subtab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">🗂️ Bank Data Peserta</button>
+    </div>
+
+    <!-- SUB TAB: BANK SOAL -->
+    <div id="soalSubBank" class="soal-subtab-pane">
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button id="btnAddSoal" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl">+ Tambah Soal</button>
+        <button id="btnDownloadSoalTemplate" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-sm font-semibold rounded-xl">⬇️ Download Template Excel</button>
+        <label class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl cursor-pointer">
+          ⬆️ Upload Soal (Excel)
+          <input type="file" id="inputUploadSoal" accept=".xlsx,.xls" class="hidden">
+        </label>
+        <button id="btnClearSoal" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-semibold rounded-xl">🗑 Hapus Semua Soal</button>
+      </div>
+      <div class="p-3 mb-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+        <strong>Format Excel:</strong> kolom <em>No, Pertanyaan, Pilihan A, Pilihan B, Pilihan C, Pilihan D, Kunci Jawaban (A/B/C/D), Skor</em>. Download template di atas untuk contoh format yang benar.
+      </div>
+      <div id="soalContainer" class="space-y-3"></div>
+      <div class="mt-4 flex items-center justify-between text-sm font-semibold p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+        <span>Total Soal: <span id="soalTotalCount">0</span></span>
+        <span>Total Skor Maksimal: <span id="soalTotalScore">0</span></span>
+      </div>
+    </div>
+
+    <!-- SUB TAB: BANK DATA PESERTA -->
+    <div id="soalSubPeserta" class="soal-subtab-pane hidden">
+      <div class="flex flex-wrap gap-2 mb-4 items-center">
+        <input id="pesertaSearch" class="input max-w-xs" placeholder="🔍 Cari nama / no sertifikat / email...">
+        <button id="btnExportPeserta" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl">⬇️ Export Excel</button>
+        <button id="btnClearPeserta" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-semibold rounded-xl">🗑 Hapus Semua Data</button>
+        <span class="text-xs text-slate-500 ml-auto">Total Peserta: <span id="pesertaTotalCount">0</span></span>
+      </div>
+      <div class="overflow-x-auto -mx-2">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-slate-500 border-b border-slate-200 dark:border-slate-700">
+              <th class="px-2 py-2 whitespace-nowrap">No Sertifikat</th>
+              <th class="px-2 py-2 whitespace-nowrap">Tanggal Training</th>
+              <th class="px-2 py-2 whitespace-nowrap">Jam</th>
+              <th class="px-2 py-2 whitespace-nowrap">Airlines</th>
+              <th class="px-2 py-2 whitespace-nowrap">Nama</th>
+              <th class="px-2 py-2 whitespace-nowrap">Stasiun</th>
+              <th class="px-2 py-2 whitespace-nowrap">Perusahaan</th>
+              <th class="px-2 py-2 whitespace-nowrap">Jabatan</th>
+              <th class="px-2 py-2 whitespace-nowrap">No HP</th>
+              <th class="px-2 py-2 whitespace-nowrap">Email</th>
+              <th class="px-2 py-2 whitespace-nowrap">Skor</th>
+              <th class="px-2 py-2 whitespace-nowrap">Berlaku Hingga</th>
+              <th class="px-2 py-2 whitespace-nowrap">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="pesertaTableBody"></tbody>
+        </table>
+        <p id="pesertaEmptyMsg" class="text-sm text-slate-500 text-center py-6">Belum ada data peserta.</p>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- ============= TAB SERTIFIKAT ============= -->
-<section id="tab-sertifikat" class="tab-pane">
-  <div class="card p-5 md:p-6">
-    <h2 class="text-lg font-bold mb-4">Generator Sertifikat Training</h2>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="space-y-4">
+<!-- ============= TAB PESERTA TRAINING (WIZARD) ============= -->
+<section id="tab-soal-peserta" class="tab-pane">
+  <div class="max-w-3xl mx-auto">
+    <!-- STEP INDICATOR -->
+    <div class="flex items-center justify-center gap-3 mb-6 no-print">
+      <div class="flex items-center gap-2">
+        <div id="pesertaStepDot1" class="step-dot active">1</div>
+        <span class="text-xs font-semibold hidden sm:inline">Biodata</span>
+      </div>
+      <div class="w-8 h-px bg-slate-300 dark:bg-slate-600"></div>
+      <div class="flex items-center gap-2">
+        <div id="pesertaStepDot2" class="step-dot pending">2</div>
+        <span class="text-xs font-semibold hidden sm:inline">Soal Training</span>
+      </div>
+      <div class="w-8 h-px bg-slate-300 dark:bg-slate-600"></div>
+      <div class="flex items-center gap-2">
+        <div id="pesertaStepDot3" class="step-dot pending">3</div>
+        <span class="text-xs font-semibold hidden sm:inline">Hasil &amp; Sertifikat</span>
+      </div>
+    </div>
+
+    <!-- STEP 1: BIODATA -->
+    <div id="pesertaStep1" class="wizard-step active card p-5 md:p-6">
+      <h2 class="text-lg font-bold mb-1">Data Peserta Training</h2>
+      <p class="text-xs text-slate-500 mb-5">Lengkapi data berikut sebelum memulai soal training.</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium mb-1.5">Nama Peserta</label>
-          <input id="certName" class="input" placeholder="Nama lengkap">
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1.5">No Sertifikat</label>
-          <input id="certNo" class="input bg-slate-50" readonly>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1.5">Ditandatangani Oleh</label>
-          <input id="certSigner" class="input" placeholder="Nama penandatangan">
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1.5">Pilih Logo</label>
-          <select id="certLogo" class="input">
+          <label class="block text-sm font-medium mb-1.5">Airlines <span class="text-red-500">*</span></label>
+          <select id="pAirlines" class="input">
+            <option value="">-- Pilih Airlines --</option>
             <option value="sriwijaya">Sriwijaya Air</option>
             <option value="nam">NAM Air</option>
           </select>
         </div>
-        <div class="flex gap-2">
-          <button id="btnGenerateCert" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl">Generate</button>
-          <button id="btnDownloadCert" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded-xl">Download PDF</button>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Tanggal Training <span class="text-red-500">*</span></label>
+          <input type="date" id="pTanggal" class="input">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Jam Training <span class="text-red-500">*</span></label>
+          <input type="time" id="pJam" class="input">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Nama Lengkap <span class="text-red-500">*</span></label>
+          <input type="text" id="pNama" class="input" placeholder="Nama sesuai identitas">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Stasiun <span class="text-red-500">*</span></label>
+          <select id="pStasiun" class="input">
+            <option value="">-- Pilih Stasiun --</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Perusahaan <span class="text-red-500">*</span></label>
+          <input type="text" id="pPerusahaan" class="input" placeholder="Nama perusahaan">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Jabatan <span class="text-red-500">*</span></label>
+          <input type="text" id="pJabatan" class="input" placeholder="Jabatan saat ini">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">No Handphone <span class="text-red-500">*</span></label>
+          <input type="tel" id="pHp" class="input" placeholder="08xxxxxxxxxx">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium mb-1.5">Email <span class="text-red-500">*</span></label>
+          <input type="email" id="pEmail" class="input" placeholder="nama@gmail.com">
+          <p class="text-xs text-slate-400 mt-1">Sertifikat akan dikirim ke email ini setelah training selesai.</p>
         </div>
       </div>
-      <div>
-        <div id="certPreview" class="relative w-full aspect-[1.414/1] bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-900 rounded-xl shadow-2xl overflow-hidden border-4 border-white dark:border-slate-700 p-8 flex flex-col items-center justify-center text-center transform perspective-1000 hover:rotate-y-3 transition-transform duration-500">
-          <div id="certLogoPreview" class="mb-4 text-4xl">✈️</div>
-          <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-2">SERTIFIKAT PELATIHAN</h3>
-          <p class="text-sm text-slate-600 dark:text-slate-300 mb-6">Basic Service Indoctrination</p>
-          <div class="text-lg font-semibold text-blue-700 dark:text-blue-400 mb-1" id="previewName">[Nama Peserta]</div>
-          <div class="text-xs text-slate-500 mb-6" id="previewNo">No: SJNAM-TRN-000000</div>
+      <div class="flex justify-end mt-6">
+        <button id="btnPesertaNext1" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl">Lanjut ke Soal Training →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: QUIZ -->
+    <div id="pesertaStep2" class="wizard-step card p-5 md:p-6">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-lg font-bold">Soal Training</h2>
+        <span class="badge bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" id="pesertaQuizProgress">0 / 0</span>
+      </div>
+      <p class="text-xs text-slate-500 mb-5">Jawab seluruh soal pilihan ganda di bawah ini, lalu klik Selesai.</p>
+      <div id="pesertaQuizContainer" class="space-y-4"></div>
+      <div class="flex justify-between mt-6">
+        <button id="btnPesertaBack2" class="px-5 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 font-semibold rounded-xl">← Kembali</button>
+        <button id="btnPesertaFinish" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl">✅ Selesai &amp; Lihat Skor</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: RESULT + CERTIFICATE -->
+    <div id="pesertaStep3" class="wizard-step">
+      <div class="card p-5 md:p-6 mb-5 text-center">
+        <h2 class="text-lg font-bold mb-1">Hasil Training</h2>
+        <p class="text-xs text-slate-500 mb-4">Terima kasih telah menyelesaikan Soal Training</p>
+        <div class="text-5xl font-extrabold text-blue-600 mb-1" id="pesertaScoreValue">0</div>
+        <p class="text-sm text-slate-500 mb-1">Total Skor (dari <span id="pesertaScoreMax">0</span>)</p>
+        <p class="text-sm font-semibold mb-4" id="pesertaScoreStatus"></p>
+        <div class="flex flex-wrap justify-center gap-2">
+          <button id="btnPesertaDownloadCert" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded-xl">⬇️ Download Sertifikat</button>
+          <button id="btnPesertaSendEmail" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl">📧 Kirim ke Email</button>
+          <button id="btnPesertaRestart" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 font-semibold rounded-xl">🔁 Training Baru</button>
+        </div>
+      </div>
+
+      <!-- CERTIFICATE PREVIEW -->
+      <div class="card p-5 md:p-6">
+        <h3 class="font-bold text-sm mb-3 text-center">Pratinjau Sertifikat</h3>
+        <div id="pesertaCertPreview" class="relative w-full aspect-[1.414/1] bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-900 rounded-xl shadow-2xl overflow-hidden border-4 border-white dark:border-slate-700 p-8 flex flex-col items-center justify-center text-center mx-auto">
+          <div id="pesertaCertLogo" class="mb-3 text-4xl">✈️</div>
+          <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-1">SERTIFIKAT PELATIHAN</h3>
+          <p class="text-sm text-slate-600 dark:text-slate-300 mb-1" id="pesertaCertSubtitle">Basic Service Indoctrination</p>
+          <p class="text-xs text-slate-400 mb-4" id="pesertaCertAirlines">Sriwijaya Air</p>
+          <div class="text-lg font-semibold text-blue-700 dark:text-blue-400 mb-1" id="pesertaCertName">[Nama Peserta]</div>
+          <p class="text-xs text-slate-500 mb-1" id="pesertaCertMeta">Stasiun - Perusahaan - Jabatan</p>
+          <p class="text-xs text-slate-500 mb-1" id="pesertaCertScore">Skor: 0 / 0</p>
+          <p class="text-xs text-slate-500 mb-1" id="pesertaCertNo">No: SJNAM-TRN-000000</p>
+          <p class="text-[11px] text-slate-400 mb-4" id="pesertaCertValidity">Berlaku s/d -</p>
           <div class="mt-auto w-full flex justify-between items-end">
             <div class="text-center">
-              <div id="previewBarcode" class="w-24 h-24 bg-white mb-1 mx-auto rounded flex items-center justify-center"></div>
-              <p class="text-[10px] text-slate-500">Barcode Verifikasi</p>
+              <div id="pesertaCertBarcode" class="w-24 h-24 bg-white mb-1 mx-auto rounded flex items-center justify-center"></div>
+              <p class="text-[10px] text-slate-500">Scan QR Verifikasi</p>
             </div>
             <div class="text-center">
-              <p class="text-xs font-semibold" id="previewSigner">[Penandatangan]</p>
-              <p class="text-[10px] text-slate-500">Training Manager</p>
+              <p class="text-xs font-semibold">Training Manager</p>
+              <p class="text-[10px] text-slate-500" id="pesertaCertDate">-</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============= TAB SERTIFIKAT ============= -->
+<section id="tab-sertifikat" class="tab-pane">
+  <div class="card p-5 md:p-6">
+    <h2 class="text-lg font-bold mb-1">Cari &amp; Cetak Ulang Sertifikat</h2>
+    <p class="text-xs text-slate-500 mb-4">Sertifikat otomatis dibuat saat peserta menyelesaikan Soal Training. Cari berdasarkan No Sertifikat, Nama, atau Email untuk cetak ulang / kirim ulang.</p>
+    <div class="flex flex-wrap gap-2 mb-5">
+      <input id="certSearchInput" class="input max-w-sm" placeholder="🔍 No Sertifikat / Nama / Email">
+      <button id="btnCertSearch" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl">Cari</button>
+    </div>
+    <div id="certSearchResults" class="space-y-2 mb-5"></div>
+
+    <div id="certReprintArea" class="hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="space-y-3">
+          <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm space-y-1" id="certReprintInfo"></div>
+          <div class="flex gap-2">
+            <button id="btnReprintDownload" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded-xl text-sm">⬇️ Download PNG</button>
+            <button id="btnReprintSendEmail" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm">📧 Kirim Email</button>
+          </div>
+        </div>
+        <div>
+          <div id="certReprintPreview" class="relative w-full aspect-[1.414/1] bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-900 rounded-xl shadow-2xl overflow-hidden border-4 border-white dark:border-slate-700 p-8 flex flex-col items-center justify-center text-center">
+            <div id="certReprintLogo" class="mb-3 text-4xl">✈️</div>
+            <h3 class="text-2xl font-bold text-slate-800 dark:text-white mb-1">SERTIFIKAT PELATIHAN</h3>
+            <p class="text-sm text-slate-600 dark:text-slate-300 mb-1" id="certReprintSubtitle">Basic Service Indoctrination</p>
+            <p class="text-xs text-slate-400 mb-4" id="certReprintAirlines">Sriwijaya Air</p>
+            <div class="text-lg font-semibold text-blue-700 dark:text-blue-400 mb-1" id="certReprintName">[Nama Peserta]</div>
+            <p class="text-xs text-slate-500 mb-1" id="certReprintMeta">Stasiun - Perusahaan - Jabatan</p>
+            <p class="text-xs text-slate-500 mb-1" id="certReprintScore">Skor: 0 / 0</p>
+            <p class="text-xs text-slate-500 mb-1" id="certReprintNo">No: SJNAM-TRN-000000</p>
+            <p class="text-[11px] text-slate-400 mb-4" id="certReprintValidity">Berlaku s/d -</p>
+            <div class="mt-auto w-full flex justify-between items-end">
+              <div class="text-center">
+                <div id="certReprintBarcode" class="w-24 h-24 bg-white mb-1 mx-auto rounded flex items-center justify-center"></div>
+                <p class="text-[10px] text-slate-500">Scan QR Verifikasi</p>
+              </div>
+              <div class="text-center">
+                <p class="text-xs font-semibold">Training Manager</p>
+                <p class="text-[10px] text-slate-500" id="certReprintDate">-</p>
+              </div>
             </div>
           </div>
         </div>
@@ -4677,7 +4872,9 @@ function updateSyncStatus(status){
 }
 
 function getAllCloudData(){
-  return { data, stations, dfsData, settings, savedAt: new Date().toISOString(), version: 'v4.1' };
+  let training = null;
+  try { training = JSON.parse(localStorage.getItem('sjn_training_v1') || 'null'); } catch(e){}
+  return { data, stations, dfsData, settings, training, savedAt: new Date().toISOString(), version: 'v4.1' };
 }
 
 // UPLOAD ke Supabase (upsert dengan record_id = 'sjnam_main')
@@ -4736,12 +4933,19 @@ async function cloudPull(){
     if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; saveStations(); }
     if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; saveDfsData(); }
     if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
+    if(rec.training){
+      localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
+      if(window.trainingData){
+        Object.assign(window.trainingData, rec.training);
+      }
+    }
     _cloudPullInProgress = false;
 
     renderTable();
     renderDashboard();
     renderStations();
     renderDfsTable();
+    if(typeof window.refreshTrainingViews === 'function') window.refreshTrainingViews();
 
     updateSyncStatus('connected');
     cloudLog('✅ Data berhasil diambil dari Supabase ('+data.length+' delay, '+dfsData.length+' DFS)', 'success');
@@ -4772,11 +4976,16 @@ function startRealtimeSubscription(){
         if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; saveStations(); }
         if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; saveDfsData(); }
         if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
+        if(rec.training){
+          localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
+          if(window.trainingData){ Object.assign(window.trainingData, rec.training); }
+        }
         _cloudPullInProgress = false;
         renderTable();
         renderDashboard();
         renderStations();
         renderDfsTable();
+        if(typeof window.refreshTrainingViews === 'function') window.refreshTrainingViews();
         showToast('⚡ Data diperbarui dari device lain!', 'info');
       }
     )
@@ -5137,7 +5346,7 @@ const originalSwitchTab = window.switchTab;
 window.switchTab = function(tab){
   // Check permission for User role
   if(currentUser && currentUser.role === 'User'){
-    const allowed = ['home','input','data','dashboard'];
+    const allowed = ['home','input','data','dashboard','materi','soal','soal-peserta','sertifikat'];
     if(!allowed.includes(tab)){
       showToast('Akses ditolak untuk role User', 'error');
       return;
@@ -5334,11 +5543,24 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
 // === TRAINING MODULE ===
 (function(){
   const TRAINING_KEY = 'sjn_training_v1';
-  let trainingData; try { trainingData = JSON.parse(localStorage.getItem(TRAINING_KEY) || ''); } catch(e){} if(!trainingData){ trainingData = {materi:[{id:'basic',title:'Basic Service Indoctrination',desc:'Pengenalan layanan dasar Sriwijaya Air & NAM Air'}],soal:[]}; }
+  let trainingData; try { trainingData = JSON.parse(localStorage.getItem(TRAINING_KEY) || ''); } catch(e){}
+  if(!trainingData){ trainingData = {materi:[{id:'basic',title:'Basic Service Indoctrination',desc:'Pengenalan layanan dasar Sriwijaya Air & NAM Air'}],soal:[],peserta:[]}; }
+  if(!Array.isArray(trainingData.soal)) trainingData.soal = [];
+  if(!Array.isArray(trainingData.peserta)) trainingData.peserta = [];
+  if(!Array.isArray(trainingData.materi)) trainingData.materi = [{id:'basic',title:'Basic Service Indoctrination',desc:'Pengenalan layanan dasar Sriwijaya Air & NAM Air'}];
 
-  function saveTraining(){ localStorage.setItem(TRAINING_KEY, JSON.stringify(trainingData)); }
+  function saveTraining(){
+    localStorage.setItem(TRAINING_KEY, JSON.stringify(trainingData));
+    if(typeof triggerAutoSync === 'function') triggerAutoSync();
+  }
+  window.trainingData = trainingData;
+  window.saveTraining = saveTraining;
 
-  // Materi
+  const esc = (s)=> String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // =============================================================
+  // MATERI
+  // =============================================================
   function renderMateri(){
     const list = document.getElementById('materiList');
     if(!list) return;
@@ -5346,12 +5568,12 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
       <div class="card p-4 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
         <div class="flex items-start justify-between">
           <div>
-            <h4 class="font-bold text-slate-800 dark:text-white">${m.title}</h4>
-            <p class="text-xs text-slate-500 mt-1">${m.desc||'Materi training'}</p>
+            <h4 class="font-bold text-slate-800 dark:text-white">${esc(m.title)}</h4>
+            <p class="text-xs text-slate-500 mt-1">${esc(m.desc||'Materi training')}</p>
           </div>
           <span class="text-2xl">📘</span>
         </div>
-        <button onclick="openMateri('${m.id}')" class="mt-3 text-xs text-blue-600 hover:underline">Buka Materi →</button>
+        <button onclick="openMateri('${esc(m.id)}')" class="mt-3 text-xs text-blue-600 hover:underline">Buka Materi →</button>
       </div>
     `).join('');
   }
@@ -5362,74 +5584,675 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
     saveTraining(); renderMateri();
   });
   window.openMateri = (id)=> {
-  if(id==='basic'){
-    const modal = document.getElementById('pdfModal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-    document.body.style.overflow = 'hidden';
-  } else {
-    alert('Membuka materi: '+id);
-  }
-};
+    if(id==='basic'){
+      const modal = document.getElementById('pdfModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+    } else {
+      alert('Membuka materi: '+id);
+    }
+  };
 
-  // Soal
+  // =============================================================
+  // BANK SOAL (Admin)
+  // =============================================================
   function renderSoal(){
     const c = document.getElementById('soalContainer');
     if(!c) return;
-    c.innerHTML = trainingData.soal.length ? trainingData.soal.map((s,i)=>`
-      <div class="p-4 border rounded-xl">${i+1}. ${s.q}</div>
-    `).join('') : '<p class="text-sm text-slate-500">Belum ada soal. Klik + Tambah Soal</p>';
+    if(!trainingData.soal.length){
+      c.innerHTML = '<p class="text-sm text-slate-500 text-center py-6">Belum ada soal. Klik "+ Tambah Soal" atau upload dari Excel.</p>';
+    } else {
+      c.innerHTML = trainingData.soal.map((s,i)=>`
+        <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-xl">
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <p class="font-semibold text-sm">${i+1}. ${esc(s.q)}</p>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span class="badge bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Skor: ${Number(s.score)||0}</span>
+              <button data-soal-edit="${s.id}" class="text-xs text-blue-600 hover:underline">Edit</button>
+              <button data-soal-del="${s.id}" class="text-xs text-red-600 hover:underline">Hapus</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
+            ${['A','B','C','D'].map(opt=>`
+              <div class="px-3 py-1.5 rounded-lg ${s.answer===opt ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-semibold' : 'bg-slate-50 dark:bg-slate-800'}">
+                ${opt}. ${esc(s.options ? s.options[opt] : '')} ${s.answer===opt ? '✓' : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+    document.getElementById('soalTotalCount').textContent = trainingData.soal.length;
+    document.getElementById('soalTotalScore').textContent = trainingData.soal.reduce((a,s)=>a+(Number(s.score)||0),0);
   }
-  document.getElementById('btnAddSoal')?.addEventListener('click', ()=>{
-    const q = prompt('Tulis soal:');
-    if(q){ trainingData.soal.push({q}); saveTraining(); renderSoal(); }
+
+  function openSoalForm(existing){
+    const isEdit = !!existing;
+    const s = existing || {id:Date.now().toString(), q:'', options:{A:'',B:'',C:'',D:''}, answer:'A', score:10};
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box max-w-lg">
+        <h3 class="text-lg font-bold mb-3">${isEdit?'Edit Soal':'Tambah Soal'}</h3>
+        <div class="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          <div>
+            <label class="block text-sm font-medium mb-1">Pertanyaan</label>
+            <textarea id="frmSoalQ" class="input" rows="2">${esc(s.q)}</textarea>
+          </div>
+          ${['A','B','C','D'].map(opt=>`
+          <div>
+            <label class="block text-sm font-medium mb-1">Pilihan ${opt}</label>
+            <input id="frmSoalOpt${opt}" class="input" value="${esc(s.options[opt]||'')}">
+          </div>`).join('')}
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Kunci Jawaban</label>
+              <select id="frmSoalAnswer" class="input">
+                ${['A','B','C','D'].map(opt=>`<option value="${opt}" ${s.answer===opt?'selected':''}>${opt}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Skor</label>
+              <input id="frmSoalScore" type="number" min="0" class="input" value="${Number(s.score)||0}">
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-3 justify-end mt-4">
+          <button id="frmSoalCancel" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 font-medium rounded-lg">Batal</button>
+          <button id="frmSoalSave" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">Simpan</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#frmSoalCancel').addEventListener('click', ()=> overlay.remove());
+    overlay.querySelector('#frmSoalSave').addEventListener('click', ()=>{
+      const q = overlay.querySelector('#frmSoalQ').value.trim();
+      if(!q){ showToast('Pertanyaan tidak boleh kosong','error'); return; }
+      const options = {
+        A: overlay.querySelector('#frmSoalOptA').value.trim(),
+        B: overlay.querySelector('#frmSoalOptB').value.trim(),
+        C: overlay.querySelector('#frmSoalOptC').value.trim(),
+        D: overlay.querySelector('#frmSoalOptD').value.trim(),
+      };
+      if(!options.A || !options.B || !options.C || !options.D){ showToast('Semua pilihan A-D harus diisi','error'); return; }
+      const answer = overlay.querySelector('#frmSoalAnswer').value;
+      const score = Number(overlay.querySelector('#frmSoalScore').value) || 0;
+      const newSoal = {id:s.id, q, options, answer, score};
+      if(isEdit){
+        const idx = trainingData.soal.findIndex(x=>x.id===s.id);
+        if(idx>-1) trainingData.soal[idx] = newSoal;
+      } else {
+        trainingData.soal.push(newSoal);
+      }
+      saveTraining(); renderSoal();
+      overlay.remove();
+      showToast(isEdit ? 'Soal diperbarui' : 'Soal ditambahkan');
+    });
+  }
+
+  document.getElementById('btnAddSoal')?.addEventListener('click', ()=> openSoalForm(null));
+
+  document.getElementById('soalContainer')?.addEventListener('click', (e)=>{
+    const editId = e.target.closest('[data-soal-edit]')?.getAttribute('data-soal-edit');
+    const delId = e.target.closest('[data-soal-del]')?.getAttribute('data-soal-del');
+    if(editId){
+      const s = trainingData.soal.find(x=>x.id===editId);
+      if(s) openSoalForm(s);
+    }
+    if(delId){
+      showConfirm('Hapus Soal','Yakin ingin menghapus soal ini?').then(ok=>{
+        if(!ok) return;
+        trainingData.soal = trainingData.soal.filter(x=>x.id!==delId);
+        saveTraining(); renderSoal();
+        showToast('Soal dihapus');
+      });
+    }
   });
 
-  // Sertifikat
+  document.getElementById('btnClearSoal')?.addEventListener('click', ()=>{
+    showConfirm('Hapus Semua Soal','Yakin ingin menghapus SEMUA soal training? Tindakan ini tidak dapat dibatalkan.').then(ok=>{
+      if(!ok) return;
+      trainingData.soal = [];
+      saveTraining(); renderSoal();
+      showToast('Semua soal dihapus');
+    });
+  });
+
+  // ---- Excel Template & Upload ----
+  document.getElementById('btnDownloadSoalTemplate')?.addEventListener('click', ()=>{
+    const rows = [
+      {No:1, Pertanyaan:'Apa kepanjangan dari SOP?', 'Pilihan A':'Standard Operating Procedure', 'Pilihan B':'System Operation Plan', 'Pilihan C':'Service Order Process', 'Pilihan D':'Staff Operation Policy', 'Kunci Jawaban':'A', Skor:10},
+      {No:2, Pertanyaan:'Berapa lama waktu maksimal check-in sebelum keberangkatan?', 'Pilihan A':'15 menit', 'Pilihan B':'30 menit', 'Pilihan C':'45 menit', 'Pilihan D':'60 menit', 'Kunci Jawaban':'B', Skor:10},
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{wch:4},{wch:40},{wch:25},{wch:25},{wch:25},{wch:25},{wch:14},{wch:8}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Soal Training');
+    XLSX.writeFile(wb, 'Template_Soal_Training_SJNAM.xlsx');
+  });
+
+  document.getElementById('inputUploadSoal')?.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      try {
+        const wb = XLSX.read(ev.target.result, {type:'array'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+        if(!rows.length){ showToast('File Excel kosong atau format tidak sesuai','error'); return; }
+        let added = 0, skipped = 0;
+        rows.forEach(r=>{
+          const getVal = (...keys)=>{
+            for(const k of keys){
+              for(const rk of Object.keys(r)){
+                if(rk.trim().toLowerCase()===k.toLowerCase()) return String(r[rk]).trim();
+              }
+            }
+            return '';
+          };
+          const q = getVal('Pertanyaan','Soal','Question');
+          const A = getVal('Pilihan A','A');
+          const B = getVal('Pilihan B','B');
+          const C = getVal('Pilihan C','C');
+          const D = getVal('Pilihan D','D');
+          const ans = getVal('Kunci Jawaban','Jawaban','Kunci','Answer').toUpperCase().replace(/[^ABCD]/g,'');
+          const score = Number(getVal('Skor','Score')) || 10;
+          if(!q || !A || !B || !C || !D || !['A','B','C','D'].includes(ans)){
+            skipped++; return;
+          }
+          trainingData.soal.push({
+            id: Date.now().toString()+'-'+Math.floor(Math.random()*10000),
+            q, options:{A,B,C,D}, answer:ans, score
+          });
+          added++;
+        });
+        saveTraining(); renderSoal();
+        showToast(`${added} soal berhasil ditambahkan${skipped?`, ${skipped} baris dilewati (format tidak lengkap)`:''}`, added?'success':'error');
+      } catch(err){
+        showToast('Gagal membaca file Excel: '+err.message, 'error');
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // =============================================================
+  // BANK DATA PESERTA
+  // =============================================================
+  function fmtDate(d){
+    if(!d) return '-';
+    try {
+      return new Date(d).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+    } catch(e){ return d; }
+  }
+
+  function renderPeserta(){
+    const tbody = document.getElementById('pesertaTableBody');
+    if(!tbody) return;
+    const search = (document.getElementById('pesertaSearch')?.value || '').toLowerCase().trim();
+    let list = trainingData.peserta.slice().sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+    if(search){
+      list = list.filter(p =>
+        (p.nama||'').toLowerCase().includes(search) ||
+        (p.certNo||'').toLowerCase().includes(search) ||
+        (p.email||'').toLowerCase().includes(search) ||
+        (p.stasiun||'').toLowerCase().includes(search)
+      );
+    }
+    document.getElementById('pesertaTotalCount').textContent = trainingData.peserta.length;
+    document.getElementById('pesertaEmptyMsg').classList.toggle('hidden', list.length>0);
+    tbody.innerHTML = list.map(p=>`
+      <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+        <td class="px-2 py-2 font-mono text-xs whitespace-nowrap">${esc(p.certNo)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${fmtDate(p.tanggal)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${esc(p.jam)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${p.airlines==='nam'?'NAM Air':'Sriwijaya Air'}</td>
+        <td class="px-2 py-2 whitespace-nowrap font-medium">${esc(p.nama)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${esc(p.stasiun)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${esc(p.perusahaan)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${esc(p.jabatan)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${esc(p.hp)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${esc(p.email)}</td>
+        <td class="px-2 py-2 whitespace-nowrap font-semibold">${p.score} / ${p.maxScore}</td>
+        <td class="px-2 py-2 whitespace-nowrap">${fmtDate(p.expiredDate)}</td>
+        <td class="px-2 py-2 whitespace-nowrap">
+          <button data-peserta-cert="${p.certNo}" class="text-xs text-blue-600 hover:underline mr-2">Lihat Sertifikat</button>
+          <button data-peserta-del="${p.id}" class="text-xs text-red-600 hover:underline">Hapus</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('pesertaSearch')?.addEventListener('input', renderPeserta);
+
+  document.getElementById('pesertaTableBody')?.addEventListener('click', (e)=>{
+    const certNo = e.target.closest('[data-peserta-cert]')?.getAttribute('data-peserta-cert');
+    const delId = e.target.closest('[data-peserta-del]')?.getAttribute('data-peserta-del');
+    if(certNo){
+      window.switchTab('sertifikat');
+      const input = document.getElementById('certSearchInput');
+      if(input){ input.value = certNo; }
+      window.dispatchCertSearch?.(certNo);
+    }
+    if(delId){
+      showConfirm('Hapus Data Peserta','Yakin ingin menghapus data peserta ini? Sertifikat terkait tidak akan bisa dicetak ulang.').then(ok=>{
+        if(!ok) return;
+        trainingData.peserta = trainingData.peserta.filter(x=>x.id!==delId);
+        saveTraining(); renderPeserta();
+        showToast('Data peserta dihapus');
+      });
+    }
+  });
+
+  document.getElementById('btnClearPeserta')?.addEventListener('click', ()=>{
+    showConfirm('Hapus Semua Data Peserta','Yakin ingin menghapus SEMUA data peserta & sertifikat? Tindakan ini tidak dapat dibatalkan.').then(ok=>{
+      if(!ok) return;
+      trainingData.peserta = [];
+      saveTraining(); renderPeserta();
+      showToast('Semua data peserta dihapus');
+    });
+  });
+
+  document.getElementById('btnExportPeserta')?.addEventListener('click', ()=>{
+    if(!trainingData.peserta.length){ showToast('Belum ada data peserta','error'); return; }
+    const rows = trainingData.peserta.map(p=>({
+      'No Sertifikat': p.certNo,
+      'Tanggal Training': p.tanggal,
+      'Jam Training': p.jam,
+      'Airlines': p.airlines==='nam'?'NAM Air':'Sriwijaya Air',
+      'Nama': p.nama,
+      'Stasiun': p.stasiun,
+      'Perusahaan': p.perusahaan,
+      'Jabatan': p.jabatan,
+      'No Handphone': p.hp,
+      'Email': p.email,
+      'Skor': p.score,
+      'Skor Maksimal': p.maxScore,
+      'Masa Berlaku (Tahun)': 2,
+      'Expired Date': p.expiredDate,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = Object.keys(rows[0]).map(()=>({wch:18}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data Peserta');
+    XLSX.writeFile(wb, `Bank_Data_Peserta_Training_${new Date().toISOString().slice(0,10)}.xlsx`);
+  });
+
+  // =============================================================
+  // SOAL SUB-TABS (Bank Soal / Bank Data Peserta)
+  // =============================================================
+  document.querySelectorAll('.soal-subtab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const target = btn.getAttribute('data-soal-subtab');
+      document.querySelectorAll('.soal-subtab-btn').forEach(b=>{
+        b.classList.toggle('active', b===btn);
+        b.classList.toggle('border-blue-600', b===btn);
+        b.classList.toggle('text-blue-600', b===btn);
+        b.classList.toggle('border-transparent', b!==btn);
+        b.classList.toggle('text-slate-500', b!==btn);
+      });
+      document.getElementById('soalSubBank').classList.toggle('hidden', target!=='bank');
+      document.getElementById('soalSubPeserta').classList.toggle('hidden', target!=='peserta');
+      if(target==='peserta') renderPeserta();
+    });
+  });
+
+  // =============================================================
+  // CERTIFICATE NUMBER & SHARED RENDERER
+  // =============================================================
   function genCertNo(){
     const now = new Date();
     const y = now.getFullYear();
     const m = String(now.getMonth()+1).padStart(2,'0');
-    const rand = Math.floor(1000+Math.random()*9000);
-    return `SJNAM-TRN-${y}${m}-${rand}`;
+    let no, exists;
+    do {
+      const rand = Math.floor(1000+Math.random()*9000);
+      no = `SJNAM-TRN-${y}${m}-${rand}`;
+      exists = trainingData.peserta.some(p=>p.certNo===no);
+    } while(exists);
+    return no;
   }
-  document.getElementById('btnGenerateCert')?.addEventListener('click', ()=>{
-    const name = document.getElementById('certName').value || '[Nama Peserta]';
-    const signer = document.getElementById('certSigner').value || '[Penandatangan]';
-    const logo = document.getElementById('certLogo').value;
-    const no = genCertNo();
-    document.getElementById('certNo').value = no;
-    document.getElementById('previewName').textContent = name;
-    document.getElementById('previewNo').textContent = 'No: '+no;
-    document.getElementById('previewSigner').textContent = signer;
-    document.getElementById('certLogoPreview').textContent = logo==='nam' ? '🛫' : '✈️';
-    // Simple barcode simulation
-    const bc = document.getElementById('previewBarcode');
-    bc.innerHTML = '';
-    bc.style.background = 'white';
-    bc.style.padding = '4px';
-    const qrData = `SJNAM-CERT|${no}|${name}|${new Date().toISOString().split('T')[0]}`;
-    if(window.QRCode){
-      QRCode.toCanvas(qrData, {width: 200, margin: 1}, function(err, canvas){
-        if(!err){
-          canvas.style.width = '100%';
-          canvas.style.height = '100%';
-          bc.appendChild(canvas);
-        }
-      });
+
+  function addYears(dateStr, years){
+    const d = new Date(dateStr);
+    if(isNaN(d.getTime())) return '';
+    d.setFullYear(d.getFullYear()+years);
+    return d.toISOString().slice(0,10);
+  }
+
+  // Render certificate into a given set of element-id prefixes
+  function renderCertificate(p, prefix){
+    const logoEl = document.getElementById(prefix+'Logo');
+    const subtitleEl = document.getElementById(prefix+'Subtitle');
+    const airlinesEl = document.getElementById(prefix+'Airlines');
+    const nameEl = document.getElementById(prefix+'Name');
+    const metaEl = document.getElementById(prefix+'Meta');
+    const scoreEl = document.getElementById(prefix+'Score');
+    const noEl = document.getElementById(prefix+'No');
+    const validityEl = document.getElementById(prefix+'Validity');
+    const dateEl = document.getElementById(prefix+'Date');
+    const barcodeEl = document.getElementById(prefix+'Barcode');
+
+    const airlinesName = p.airlines==='nam' ? 'NAM Air' : 'Sriwijaya Air';
+    if(logoEl) logoEl.textContent = p.airlines==='nam' ? '🛫' : '✈️';
+    if(subtitleEl) subtitleEl.textContent = 'Basic Service Indoctrination';
+    if(airlinesEl) airlinesEl.textContent = airlinesName;
+    if(nameEl) nameEl.textContent = p.nama;
+    if(metaEl) metaEl.textContent = `${p.stasiun} • ${p.perusahaan} • ${p.jabatan}`;
+    if(scoreEl) scoreEl.textContent = `Skor: ${p.score} / ${p.maxScore}`;
+    if(noEl) noEl.textContent = `No: ${p.certNo}`;
+    if(validityEl) validityEl.textContent = `Berlaku s/d ${fmtDate(p.expiredDate)}`;
+    if(dateEl) dateEl.textContent = fmtDate(p.tanggal);
+
+    if(barcodeEl){
+      barcodeEl.innerHTML = '';
+      barcodeEl.style.background = 'white';
+      barcodeEl.style.padding = '4px';
+      const qrData = p.certNo;
+      if(window.QRCode){
+        QRCode.toCanvas(qrData, {width: 200, margin: 1}, function(err, canvas){
+          if(!err){
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            barcodeEl.appendChild(canvas);
+          }
+        });
+      }
+    }
+  }
+  window.renderCertificate = renderCertificate;
+
+  async function downloadCertificate(previewElId, filenamePrefix, certNo){
+    const el = document.getElementById(previewElId);
+    if(typeof html2canvas === 'undefined'){ showToast('Fitur download belum siap','error'); return null; }
+    const canvas = await html2canvas(el, {scale:2});
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = `${filenamePrefix}-${certNo}.png`;
+    link.href = dataUrl;
+    link.click();
+    return dataUrl;
+  }
+  window.downloadCertificate = downloadCertificate;
+
+  function sendCertificateEmail(p){
+    const airlinesName = p.airlines==='nam' ? 'NAM Air' : 'Sriwijaya Air';
+    const subject = `Sertifikat Training ${airlinesName} - ${p.nama} (${p.certNo})`;
+    const body = [
+      `Yth. ${p.nama},`,
+      '',
+      `Terima kasih telah menyelesaikan Soal Training Basic Service Indoctrination ${airlinesName}.`,
+      '',
+      `No Sertifikat : ${p.certNo}`,
+      `Tanggal Training : ${fmtDate(p.tanggal)} pukul ${p.jam}`,
+      `Stasiun : ${p.stasiun}`,
+      `Perusahaan : ${p.perusahaan}`,
+      `Jabatan : ${p.jabatan}`,
+      `Skor : ${p.score} / ${p.maxScore}`,
+      `Berlaku hingga : ${fmtDate(p.expiredDate)}`,
+      '',
+      'Mohon lampirkan file sertifikat (PNG) yang telah didownload ke email ini sebelum dikirim.',
+      '',
+      'Salam,',
+      'Training Team SJNAM'
+    ].join('\n');
+
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(p.email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(gmailUrl, '_blank');
+    showToast('Jendela Gmail dibuka. Lampirkan sertifikat PNG yang telah didownload, lalu klik Kirim.', 'info');
+  }
+  window.sendCertificateEmail = sendCertificateEmail;
+
+  // =============================================================
+  // CERTIFICATE SEARCH (Tab Sertifikat)
+  // =============================================================
+  function dispatchCertSearch(query){
+    query = (query||'').toLowerCase().trim();
+    const resultsEl = document.getElementById('certSearchResults');
+    const reprintArea = document.getElementById('certReprintArea');
+    if(!resultsEl) return;
+    if(!query){ resultsEl.innerHTML=''; reprintArea.classList.add('hidden'); return; }
+    const matches = trainingData.peserta.filter(p =>
+      (p.certNo||'').toLowerCase().includes(query) ||
+      (p.nama||'').toLowerCase().includes(query) ||
+      (p.email||'').toLowerCase().includes(query)
+    );
+    if(!matches.length){
+      resultsEl.innerHTML = '<p class="text-sm text-slate-500">Tidak ditemukan data sertifikat.</p>';
+      reprintArea.classList.add('hidden');
+      return;
+    }
+    resultsEl.innerHTML = matches.map(p=>`
+      <div data-cert-pick="${p.certNo}" class="p-3 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+        <div>
+          <p class="font-semibold text-sm">${esc(p.nama)} <span class="text-slate-400 font-normal">(${p.airlines==='nam'?'NAM Air':'Sriwijaya Air'})</span></p>
+          <p class="text-xs text-slate-500">${esc(p.certNo)} • Skor ${p.score}/${p.maxScore} • ${fmtDate(p.tanggal)}</p>
+        </div>
+        <span class="text-xs text-blue-600">Lihat →</span>
+      </div>
+    `).join('');
+    if(matches.length===1) showCertReprint(matches[0]);
+  }
+  window.dispatchCertSearch = dispatchCertSearch;
+
+  function showCertReprint(p){
+    const reprintArea = document.getElementById('certReprintArea');
+    reprintArea.classList.remove('hidden');
+    renderCertificate(p, 'certReprint');
+    document.getElementById('certReprintInfo').innerHTML = `
+      <p><strong>No Sertifikat:</strong> ${esc(p.certNo)}</p>
+      <p><strong>Nama:</strong> ${esc(p.nama)}</p>
+      <p><strong>Airlines:</strong> ${p.airlines==='nam'?'NAM Air':'Sriwijaya Air'}</p>
+      <p><strong>Stasiun:</strong> ${esc(p.stasiun)} | <strong>Perusahaan:</strong> ${esc(p.perusahaan)} | <strong>Jabatan:</strong> ${esc(p.jabatan)}</p>
+      <p><strong>Email:</strong> ${esc(p.email)} | <strong>No HP:</strong> ${esc(p.hp)}</p>
+      <p><strong>Skor:</strong> ${p.score} / ${p.maxScore}</p>
+      <p><strong>Tanggal Training:</strong> ${fmtDate(p.tanggal)} ${esc(p.jam)}</p>
+      <p><strong>Berlaku hingga:</strong> ${fmtDate(p.expiredDate)}</p>
+    `;
+    reprintArea.dataset.certNo = p.certNo;
+  }
+
+  document.getElementById('btnCertSearch')?.addEventListener('click', ()=>{
+    dispatchCertSearch(document.getElementById('certSearchInput').value);
+  });
+  document.getElementById('certSearchInput')?.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter') dispatchCertSearch(e.target.value);
+  });
+  document.getElementById('certSearchResults')?.addEventListener('click', (e)=>{
+    const certNo = e.target.closest('[data-cert-pick]')?.getAttribute('data-cert-pick');
+    if(certNo){
+      const p = trainingData.peserta.find(x=>x.certNo===certNo);
+      if(p) showCertReprint(p);
     }
   });
-  document.getElementById('btnDownloadCert')?.addEventListener('click', async ()=>{
-    const el = document.getElementById('certPreview');
-    if(typeof html2canvas === 'undefined'){ alert('Fitur download belum siap'); return; } const canvas = await html2canvas(el, {scale:2});
-    const link = document.createElement('a');
-    link.download = 'sertifikat-'+(document.getElementById('certNo').value||'training')+'.png';
-    link.href = canvas.toDataURL();
-    link.click();
+  document.getElementById('btnReprintDownload')?.addEventListener('click', ()=>{
+    const certNo = document.getElementById('certReprintArea').dataset.certNo;
+    const p = trainingData.peserta.find(x=>x.certNo===certNo);
+    if(p) downloadCertificate('certReprintPreview', 'sertifikat', p.certNo);
+  });
+  document.getElementById('btnReprintSendEmail')?.addEventListener('click', ()=>{
+    const certNo = document.getElementById('certReprintArea').dataset.certNo;
+    const p = trainingData.peserta.find(x=>x.certNo===certNo);
+    if(p) sendCertificateEmail(p);
   });
 
-  // Initialize
-  setTimeout(()=>{ renderMateri(); renderSoal(); document.getElementById('certNo').value = genCertNo(); }, 500);
+  // =============================================================
+  // PESERTA WIZARD (Soal Training Flow)
+  // =============================================================
+  let pesertaCurrentResult = null; // holds quiz answers in progress
+  let pesertaWizardStep = 1;
+
+  function populateStasiunOptions(){
+    const sel = document.getElementById('pStasiun');
+    if(!sel) return;
+    const list = (typeof stations !== 'undefined' ? stations : []).slice().sort((a,b)=>(a.iata||'').localeCompare(b.iata||''));
+    sel.innerHTML = '<option value="">-- Pilih Stasiun --</option>' +
+      list.map(s=>`<option value="${esc(s.iata)} - ${esc(s.name)}">${esc(s.iata)} - ${esc(s.name)}</option>`).join('');
+  }
+
+  function gotoPesertaStep(step){
+    pesertaWizardStep = step;
+    [1,2,3].forEach(i=>{
+      document.getElementById('pesertaStep'+i)?.classList.toggle('active', i===step);
+      const dot = document.getElementById('pesertaStepDot'+i);
+      if(dot){
+        dot.classList.remove('active','done','pending');
+        if(i<step) dot.classList.add('done');
+        else if(i===step) dot.classList.add('active');
+        else dot.classList.add('pending');
+      }
+    });
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  document.getElementById('btnStartPeserta')?.addEventListener('click', ()=>{
+    if(!trainingData.soal.length){
+      showToast('Belum ada soal training. Tambahkan soal terlebih dahulu di Bank Soal.', 'error');
+      return;
+    }
+    // reset form
+    ['pAirlines','pTanggal','pJam','pNama','pStasiun','pPerusahaan','pJabatan','pHp','pEmail'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.value = '';
+    });
+    populateStasiunOptions();
+    pesertaCurrentResult = null;
+    gotoPesertaStep(1);
+    window.switchTab('soal-peserta');
+  });
+
+  document.getElementById('btnPesertaNext1')?.addEventListener('click', ()=>{
+    const required = {
+      pAirlines:'Airlines', pTanggal:'Tanggal Training', pJam:'Jam Training', pNama:'Nama',
+      pStasiun:'Stasiun', pPerusahaan:'Perusahaan', pJabatan:'Jabatan', pHp:'No Handphone', pEmail:'Email'
+    };
+    for(const [id,label] of Object.entries(required)){
+      const el = document.getElementById(id);
+      if(!el || !el.value.trim()){
+        showToast(`Mohon lengkapi: ${label}`, 'error');
+        el?.focus();
+        return;
+      }
+    }
+    const emailVal = document.getElementById('pEmail').value.trim();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)){
+      showToast('Format email tidak valid', 'error');
+      return;
+    }
+    renderPesertaQuiz();
+    gotoPesertaStep(2);
+  });
+
+  document.getElementById('btnPesertaBack2')?.addEventListener('click', ()=> gotoPesertaStep(1));
+
+  function renderPesertaQuiz(){
+    const c = document.getElementById('pesertaQuizContainer');
+    c.innerHTML = trainingData.soal.map((s,i)=>`
+      <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-xl">
+        <p class="font-semibold text-sm mb-3">${i+1}. ${esc(s.q)}</p>
+        <div class="space-y-2">
+          ${['A','B','C','D'].map(opt=>`
+            <label class="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 has-[:checked]:bg-blue-50 has-[:checked]:border-blue-400 dark:has-[:checked]:bg-blue-900/20 transition">
+              <input type="radio" name="quiz_${s.id}" value="${opt}" class="accent-blue-600">
+              <span class="text-sm">${opt}. ${esc(s.options[opt])}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+    updatePesertaQuizProgress();
+  }
+
+  function updatePesertaQuizProgress(){
+    const total = trainingData.soal.length;
+    let answered = 0;
+    trainingData.soal.forEach(s=>{
+      if(document.querySelector(`input[name="quiz_${s.id}"]:checked`)) answered++;
+    });
+    document.getElementById('pesertaQuizProgress').textContent = `${answered} / ${total}`;
+  }
+
+  document.getElementById('btnPesertaFinish')?.addEventListener('click', async ()=>{
+    const total = trainingData.soal.length;
+    let answered = 0;
+    let score = 0;
+    let maxScore = 0;
+    trainingData.soal.forEach(s=>{
+      maxScore += Number(s.score)||0;
+      const checked = document.querySelector(`input[name="quiz_${s.id}"]:checked`);
+      if(checked){
+        answered++;
+        if(checked.value === s.answer) score += Number(s.score)||0;
+      }
+    });
+    if(answered < total){
+      const ok = await showConfirm('Soal Belum Lengkap', `Anda baru menjawab ${answered} dari ${total} soal. Soal yang belum dijawab dianggap salah. Lanjutkan?`);
+      if(!ok) return;
+    }
+
+    const airlines = document.getElementById('pAirlines').value;
+    const tanggal = document.getElementById('pTanggal').value;
+    const certNo = genCertNo();
+    const peserta = {
+      id: Date.now().toString(),
+      certNo,
+      airlines,
+      tanggal,
+      jam: document.getElementById('pJam').value,
+      nama: document.getElementById('pNama').value.trim(),
+      stasiun: document.getElementById('pStasiun').value,
+      perusahaan: document.getElementById('pPerusahaan').value.trim(),
+      jabatan: document.getElementById('pJabatan').value.trim(),
+      hp: document.getElementById('pHp').value.trim(),
+      email: document.getElementById('pEmail').value.trim(),
+      score,
+      maxScore,
+      createdAt: new Date().toISOString(),
+      expiredDate: addYears(tanggal || new Date().toISOString().slice(0,10), 2),
+    };
+    trainingData.peserta.push(peserta);
+    saveTraining();
+    if(typeof renderPeserta === 'function') renderPeserta();
+
+    // Show result
+    document.getElementById('pesertaScoreValue').textContent = score;
+    document.getElementById('pesertaScoreMax').textContent = maxScore;
+    const pct = maxScore>0 ? (score/maxScore*100) : 0;
+    const statusEl = document.getElementById('pesertaScoreStatus');
+    if(pct>=80){ statusEl.textContent='✅ LULUS'; statusEl.className='text-sm font-semibold mb-4 text-emerald-600'; }
+    else if(pct>=60){ statusEl.textContent='⚠️ CUKUP'; statusEl.className='text-sm font-semibold mb-4 text-amber-600'; }
+    else { statusEl.textContent='❌ PERLU PENGULANGAN'; statusEl.className='text-sm font-semibold mb-4 text-red-600'; }
+
+    renderCertificate(peserta, 'pesertaCert');
+    pesertaCurrentResult = peserta;
+    gotoPesertaStep(3);
+  });
+
+  document.getElementById('btnPesertaDownloadCert')?.addEventListener('click', ()=>{
+    if(!pesertaCurrentResult) return;
+    downloadCertificate('pesertaCertPreview', 'sertifikat', pesertaCurrentResult.certNo);
+  });
+  document.getElementById('btnPesertaSendEmail')?.addEventListener('click', ()=>{
+    if(!pesertaCurrentResult) return;
+    sendCertificateEmail(pesertaCurrentResult);
+  });
+  document.getElementById('btnPesertaRestart')?.addEventListener('click', ()=>{
+    document.getElementById('btnStartPeserta')?.click();
+  });
+
+  // =============================================================
+  // INITIALIZE
+  // =============================================================
+  function refreshTrainingViews(){
+    renderMateri();
+    renderSoal();
+    renderPeserta();
+  }
+  window.refreshTrainingViews = refreshTrainingViews;
+
+  setTimeout(refreshTrainingViews, 500);
 })();
 
 // === DELAY NOW LOCAL TIME FIX ===
