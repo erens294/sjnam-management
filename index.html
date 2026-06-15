@@ -2569,11 +2569,12 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
 
     <!-- SUB TAB: BANK STATION -->
     <div id="soalSubStation" class="soal-subtab-pane hidden">
+      <div class="p-3 mb-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+        ℹ️ Data Bank Station diambil otomatis dari <strong>Bank Data Peserta</strong> (Stasiun, Perusahaan, Tanggal Training, Berlaku Hingga). Kolom <strong>No</strong> dibuat otomatis berurutan.
+      </div>
       <div class="flex flex-wrap gap-2 mb-4">
-        <button id="btnAddStation" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl">+ Tambah Station</button>
         <button id="btnExportStation" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-sm font-semibold rounded-xl">⬇️ Export Excel</button>
-        <input type="file" id="importStation" accept=".xlsx,.xls" class="hidden">
-        <button onclick="document.getElementById('importStation').click()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl">⬆️ Import Excel</button>
+        <span class="text-xs text-slate-500 ml-auto self-center">Total Station: <span id="stationTotalCount">0</span></span>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
@@ -2583,7 +2584,6 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
             <th class="px-3 py-2 text-left">Perusahaan</th>
             <th class="px-3 py-2 text-left">Tanggal Training</th>
             <th class="px-3 py-2 text-left">Berlaku Hingga</th>
-            <th class="px-3 py-2 text-left">Aksi</th>
           </tr></thead>
           <tbody id="stationTableBody" class="divide-y divide-slate-200 dark:divide-slate-700"></tbody>
         </table>
@@ -4949,7 +4949,9 @@ function updateSyncStatus(status){
 function getAllCloudData(){
   let training = null;
   try { training = JSON.parse(localStorage.getItem('sjn_training_v1') || 'null'); } catch(e){}
-  return { data, stations, dfsData, settings, training, savedAt: new Date().toISOString(), version: 'v4.1' };
+  let users = null;
+  try { users = JSON.parse(localStorage.getItem('sjnam_users_v1') || 'null'); } catch(e){}
+  return { data, stations, dfsData, settings, training, users, savedAt: new Date().toISOString(), version: 'v4.1' };
 }
 
 // UPLOAD ke Supabase (upsert dengan record_id = 'sjnam_main')
@@ -5014,6 +5016,10 @@ async function cloudPull(){
         Object.assign(window.trainingData, rec.training);
       }
     }
+    if(Array.isArray(rec.users)){
+      localStorage.setItem('sjnam_users_v1', JSON.stringify(rec.users));
+      if(typeof renderUserTable === 'function') renderUserTable();
+    }
     _cloudPullInProgress = false;
 
     renderTable();
@@ -5054,6 +5060,10 @@ function startRealtimeSubscription(){
         if(rec.training){
           localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
           if(window.trainingData){ Object.assign(window.trainingData, rec.training); }
+        }
+        if(Array.isArray(rec.users)){
+          localStorage.setItem('sjnam_users_v1', JSON.stringify(rec.users));
+          if(typeof renderUserTable === 'function') renderUserTable();
         }
         _cloudPullInProgress = false;
         renderTable();
@@ -5192,6 +5202,13 @@ const SESSION_KEY = 'sjnam_session_v1';
 const CURRENT_TAB_KEY = 'sjnam_current_tab';
 
 let currentUser = null;
+
+// Simpan data user + picu sinkronisasi cloud (Auto-Sync / Sinkronkan)
+function saveUsers(users){
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  if(typeof triggerAutoSync === 'function') triggerAutoSync();
+}
+window.saveUsers = saveUsers;
 
 
 // === PATCH LOGIN v5.1 - fix key mismatch ===
@@ -5423,6 +5440,7 @@ document.getElementById('btnAddUser')?.addEventListener('click', function(){
   });
   
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  if(typeof triggerAutoSync === 'function') triggerAutoSync();
   renderUserTable();
   showToast('User berhasil ditambahkan', 'success');
 });
@@ -5456,6 +5474,7 @@ function editUser(id){
   }
   
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  if(typeof triggerAutoSync === 'function') triggerAutoSync();
   renderUserTable();
   showToast('User diperbarui', 'success');
 }
@@ -5472,6 +5491,7 @@ function deleteUser(id){
   let users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
   users = users.filter(u => u.id !== id);
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  if(typeof triggerAutoSync === 'function') triggerAutoSync();
   renderUserTable();
   showToast('User dihapus', 'success');
 }
@@ -6009,6 +6029,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
       return new Date(d).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
     } catch(e){ return d; }
   }
+  window.fmtDate = fmtDate;
 
   function renderPeserta(){
     const tbody = document.getElementById('pesertaTableBody');
@@ -6045,6 +6066,9 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
         </td>
       </tr>
     `).join('');
+
+    // Bank Station diturunkan dari Bank Data Peserta — refresh setiap kali data peserta berubah
+    if(typeof window.renderBankStations === 'function') window.renderBankStations();
   }
 
   document.getElementById('pesertaSearch')?.addEventListener('input', renderPeserta);
@@ -6126,17 +6150,34 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
   // =============================================================
   // CERTIFICATE NUMBER & SHARED RENDERER
   // =============================================================
-  function genCertNo(){
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth()+1).padStart(2,'0');
-    let no, exists;
-    do {
-      const rand = Math.floor(1000+Math.random()*9000);
-      no = `SJNAM-TRN-${y}${m}-${rand}`;
-      exists = trainingData.peserta.some(p=>p.certNo===no);
-    } while(exists);
-    return no;
+  // Konversi angka 1-12 menjadi angka romawi I-XII
+  function monthToRoman(m){
+    const romans = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+    return romans[(Number(m)-1+12)%12] || 'I';
+  }
+
+  // Format Nomor Sertifikat: 00000/TRN/CS-SJ/<bulan romawi>/<yyyy>  (Sriwijaya Air)
+  //                            00000/TRN/CS-IN/<bulan romawi>/<yyyy>  (NAM Air)
+  // Nomor urut 5 digit dihitung per kombinasi kode airline + tahun, dan bulan diambil dari tanggal training (pTanggal).
+  function genCertNo(airlines, tanggal){
+    const ref = tanggal ? new Date(tanggal) : new Date();
+    const y = isNaN(ref.getTime()) ? new Date().getFullYear() : ref.getFullYear();
+    const m = isNaN(ref.getTime()) ? (new Date().getMonth()+1) : (ref.getMonth()+1);
+    const code = (airlines === 'nam') ? 'CS-IN' : 'CS-SJ';
+    const romanMonth = monthToRoman(m);
+
+    // Cari nomor urut tertinggi yang sudah dipakai untuk kombinasi kode+tahun ini
+    const prefixPattern = new RegExp(`^(\\d{5})/TRN/${code}/[IVX]+/${y}$`);
+    let maxSeq = 0;
+    trainingData.peserta.forEach(p=>{
+      const match = (p.certNo||'').match(prefixPattern);
+      if(match){
+        const seq = parseInt(match[1], 10);
+        if(seq > maxSeq) maxSeq = seq;
+      }
+    });
+    const nextSeq = String(maxSeq + 1).padStart(5,'0');
+    return `${nextSeq}/TRN/${code}/${romanMonth}/${y}`;
   }
 
   function addYears(dateStr, years){
@@ -6327,6 +6368,8 @@ function renderCertificate(p, prefix){
   // === DRAG & RESIZE untuk 3 field ===
   function makeDraggable(el){
     if(!el) return;
+    if(el.dataset.draggableInit === '1') return; // cegah pemasangan listener berulang
+    el.dataset.draggableInit = '1';
     let isDown = false, startX, startY, startLeft, startTop;
 
     el.addEventListener('mousedown', (e)=>{
@@ -6704,7 +6747,7 @@ function renderCertificate(p, prefix){
 
     const airlines = document.getElementById('pAirlines').value;
     const tanggal = document.getElementById('pTanggal').value;
-    const certNo = genCertNo();
+    const certNo = genCertNo(airlines, tanggal);
     const peserta = {
       id: Date.now().toString(),
       certNo,
@@ -6864,109 +6907,74 @@ window.addEventListener('beforeunload', ()=>{
 });
 
 
-// === Bank Station & Service Training Sync ===
+// === Bank Station (derived from Bank Data Peserta) & Service Training Sync ===
 (function(){
   const trainingData = window.trainingData;
   const esc = window.esc;
   const saveTraining = window.saveTraining;
+  const fmtDate = window.fmtDate || (d=>d||'-');
 
-  if(!trainingData.stations) trainingData.stations = [];
+  // Bangun daftar Bank Station dari Bank Data Peserta.
+  // Setiap kombinasi unik (Stasiun, Perusahaan, Tanggal Training, Berlaku Hingga) jadi satu baris.
+  // Kolom "No" SELALU dibuat ulang/berurutan, tidak diambil dari data peserta.
+  function buildStationRows(){
+    const peserta = Array.isArray(trainingData.peserta) ? trainingData.peserta : [];
+    const map = new Map();
+    peserta.forEach(p=>{
+      const stasiun = (p.stasiun||'').trim();
+      if(!stasiun) return;
+      const perusahaan = (p.perusahaan||'').trim();
+      const tanggal = p.tanggal||'';
+      const berlaku = p.expiredDate||'';
+      const key = [stasiun.toLowerCase(), perusahaan.toLowerCase(), tanggal, berlaku].join('|');
+      if(!map.has(key)){
+        map.set(key, {stasiun, perusahaan, tanggal, berlaku});
+      }
+    });
+    // Urutkan berdasarkan tanggal training terbaru, lalu nama stasiun
+    return Array.from(map.values()).sort((a,b)=>{
+      const da = a.tanggal||'', db = b.tanggal||'';
+      if(da !== db) return db.localeCompare(da);
+      return (a.stasiun||'').localeCompare(b.stasiun||'');
+    });
+  }
 
   function renderBankStations(){
     const tbody = document.getElementById('stationTableBody');
     if(!tbody) return;
-    tbody.innerHTML = '';
-    if(!(trainingData.stations||[]).length){
-      tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">Belum ada data station.</td></tr>';
+    const rows = buildStationRows();
+    // Simpan hasil derive ke trainingData.stations agar tersedia untuk export/cloud sync
+    const changed = JSON.stringify(trainingData.stations||[]) !== JSON.stringify(rows);
+    trainingData.stations = rows;
+    if(changed && typeof saveTraining === 'function') saveTraining();
+
+    const countEl = document.getElementById('stationTotalCount');
+    if(countEl) countEl.textContent = rows.length;
+
+    if(!rows.length){
+      tbody.innerHTML = '<tr><td colspan="5" class="px-3 py-6 text-center text-sm text-slate-500">Belum ada data station (isi Bank Data Peserta terlebih dahulu).</td></tr>';
       return;
     }
-    (trainingData.stations||[]).forEach((s,i)=>{
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="px-3 py-2">${i+1}</td>
+    tbody.innerHTML = rows.map((s,i)=>`
+      <tr>
+        <td class="px-3 py-2">${i+1}</td>
         <td class="px-3 py-2">${esc(s.stasiun||'')}</td>
         <td class="px-3 py-2">${esc(s.perusahaan||'')}</td>
-        <td class="px-3 py-2">${esc(s.tanggal||'')}</td>
-        <td class="px-3 py-2">${esc(s.berlaku||'')}</td>
-        <td class="px-3 py-2"><button class="text-red-500 text-xs hover:underline" onclick="delBankStation(${i})">Hapus</button></td>`;
-      tbody.appendChild(tr);
-    });
+        <td class="px-3 py-2">${esc(fmtDate(s.tanggal))}</td>
+        <td class="px-3 py-2">${esc(fmtDate(s.berlaku))}</td>
+      </tr>`).join('');
   }
   window.renderBankStations = renderBankStations;
 
-  window.delBankStation = function(i){
-    showConfirm('Hapus Station','Yakin ingin menghapus data station ini?').then(ok=>{
-      if(!ok) return;
-      trainingData.stations.splice(i,1);
-      saveTraining();
-      renderBankStations();
-      showToast('Station dihapus');
-    });
-  };
-
-  document.getElementById('btnAddStation')?.addEventListener('click', ()=>{
-    const stasiun = prompt('Nama Stasiun:'); if(!stasiun || !stasiun.trim()) return;
-    const perusahaan = prompt('Perusahaan:')||'';
-    let tanggal = prompt('Tanggal Training (YYYY-MM-DD):', new Date().toISOString().slice(0,10)) || new Date().toISOString().slice(0,10);
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) tanggal = new Date().toISOString().slice(0,10);
-    const d = new Date(tanggal); d.setFullYear(d.getFullYear()+2);
-    const berlaku = d.toISOString().slice(0,10);
-    trainingData.stations.push({stasiun: stasiun.trim(), perusahaan: perusahaan.trim(), tanggal, berlaku});
-    saveTraining(); renderBankStations(); showToast('Station ditambahkan','success');
-  });
-
   document.getElementById('btnExportStation')?.addEventListener('click', ()=>{
-    if(!(trainingData.stations||[]).length){ showToast('Belum ada data station','error'); return; }
-    const rows = trainingData.stations.map((s,i)=>({No:i+1, Stasiun:s.stasiun, Perusahaan:s.perusahaan, 'Tanggal Training':s.tanggal, 'Berlaku Hingga':s.berlaku}));
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const rows = buildStationRows();
+    if(!rows.length){ showToast('Belum ada data station','error'); return; }
+    const exportRows = rows.map((s,i)=>({No:i+1, Stasiun:s.stasiun, Perusahaan:s.perusahaan, 'Tanggal Training':s.tanggal, 'Berlaku Hingga':s.berlaku}));
+    const ws = XLSX.utils.json_to_sheet(exportRows);
     ws['!cols'] = [{wch:4},{wch:20},{wch:25},{wch:16},{wch:16}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Bank Station');
     XLSX.writeFile(wb, `Bank_Station_${new Date().toISOString().slice(0,10)}.xlsx`);
-  });
-
-  document.getElementById('importStation')?.addEventListener('change', (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev)=>{
-      try {
-        const wb = XLSX.read(ev.target.result, {type:'array'});
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-        if(!rows.length){ showToast('File Excel kosong atau format tidak sesuai','error'); return; }
-        let added = 0;
-        rows.forEach(r=>{
-          const getVal = (...keys)=>{
-            for(const k of keys){
-              for(const rk of Object.keys(r)){
-                if(rk.trim().toLowerCase()===k.toLowerCase()) return String(r[rk]).trim();
-              }
-            }
-            return '';
-          };
-          const stasiun = getVal('Stasiun','Station');
-          if(!stasiun) return;
-          const perusahaan = getVal('Perusahaan','Company');
-          let tanggal = getVal('Tanggal Training','Tanggal','Tanggal Training (YYYY-MM-DD)');
-          let berlaku = getVal('Berlaku Hingga','Berlaku');
-          if(!/^\d{4}-\d{2}-\d{2}/.test(tanggal)) tanggal = new Date().toISOString().slice(0,10);
-          else tanggal = tanggal.slice(0,10);
-          if(!/^\d{4}-\d{2}-\d{2}/.test(berlaku)){
-            const d = new Date(tanggal); d.setFullYear(d.getFullYear()+2);
-            berlaku = d.toISOString().slice(0,10);
-          } else berlaku = berlaku.slice(0,10);
-          trainingData.stations.push({stasiun, perusahaan, tanggal, berlaku});
-          added++;
-        });
-        saveTraining(); renderBankStations();
-        showToast(`${added} station berhasil ditambahkan`, added?'success':'error');
-      } catch(err){
-        showToast('Gagal membaca file Excel: '+err.message, 'error');
-      } finally {
-        e.target.value = '';
-      }
-    };
-    reader.readAsArrayBuffer(file);
   });
 
   // =============================================================
