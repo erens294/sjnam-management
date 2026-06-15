@@ -1,6 +1,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth"><head><meta charset="UTF-8">
 
@@ -4952,6 +4953,37 @@ function updateSyncStatus(status){
   }
 }
 
+// === MERGE HELPERS - anti tabrakan ===
+function mergeById(localArr=[], remoteArr=[]){
+  const map = new Map();
+  [...remoteArr,...localArr].forEach(it=>{
+    if(!it) return;
+    const key = it.id || it.code || it.certNo || JSON.stringify(it);
+    const cur = map.get(key);
+    if(!cur || new Date(it.createdAt||it.updatedAt||it.updated_at||0) > new Date(cur.createdAt||cur.updatedAt||cur.updated_at||0)){
+      map.set(key, it);
+    }
+  });
+  return Array.from(map.values());
+}
+
+function mergeTraining(local, remote){
+  if(!remote) return local;
+  const out = {...local, ...remote};
+  out.peserta = mergeById(local.peserta||[], remote.peserta||[]);
+  out.materi = mergeById(local.materi||[], remote.materi||[]);
+  out.stations = mergeById(local.stations||[], remote.stations||[]);
+  out.banks = (remote.banks||[]).map(rb=>{
+    const lb = (local.banks||[]).find(b=>b.id===rb.id) || {questions:[]};
+    return {...rb, questions: mergeById(lb.questions||[], rb.questions||[])};
+  });
+  // pertahankan banks lokal yang tidak ada di remote
+  (local.banks||[]).forEach(lb=>{
+    if(!out.banks.find(b=>b.id===lb.id)) out.banks.push(lb);
+  });
+  return out;
+}
+
 function getAllCloudData(){
   let training = null;
   try { training = JSON.parse(localStorage.getItem('sjn_training_v1') || 'null'); } catch(e){}
@@ -5015,14 +5047,17 @@ async function cloudPull(silent = false){
     }
 
     _cloudPullInProgress = true;
-    if(Array.isArray(rec.data)) { data = rec.data; saveData(); }
-    if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; saveStations(); }
-    if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; saveDfsData(); }
+    if(Array.isArray(rec.data)) { data = mergeById(data||[], rec.data); saveData(); }
+    if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = mergeById(stations||[], rec.stations); saveStations(); }
+    if(Array.isArray(rec.dfsData)) { dfsData = mergeById(dfsData||[], rec.dfsData); saveDfsData(); }
     if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
     if(rec.training){
-      localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
+      const local = JSON.parse(localStorage.getItem('sjn_training_v1')||'{}');
+      const merged = mergeTraining(local, rec.training);
+      localStorage.setItem('sjn_training_v1', JSON.stringify(merged));
       if(window.trainingData){
-        Object.assign(window.trainingData, rec.training);
+        Object.keys(window.trainingData).forEach(k=>delete window.trainingData[k]);
+        Object.assign(window.trainingData, merged);
       }
     }
     if(Array.isArray(rec.users)){
@@ -5063,13 +5098,18 @@ function startRealtimeSubscription(){
         if(!rec) return;
         cloudLog('🔄 Update masuk dari device lain — memuat ulang data...', 'info');
         _cloudPullInProgress = true;
-        if(Array.isArray(rec.data)) { data = rec.data; saveData(); }
-        if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; saveStations(); }
-        if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; saveDfsData(); }
+        if(Array.isArray(rec.data)) { data = mergeById(data||[], rec.data); saveData(); }
+        if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = mergeById(stations||[], rec.stations); saveStations(); }
+        if(Array.isArray(rec.dfsData)) { dfsData = mergeById(dfsData||[], rec.dfsData); saveDfsData(); }
         if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
         if(rec.training){
-          localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
-          if(window.trainingData){ Object.assign(window.trainingData, rec.training); }
+          const local = JSON.parse(localStorage.getItem('sjn_training_v1')||'{}');
+          const merged = mergeTraining(local, rec.training);
+          localStorage.setItem('sjn_training_v1', JSON.stringify(merged));
+          if(window.trainingData){
+            Object.keys(window.trainingData).forEach(k=>delete window.trainingData[k]);
+            Object.assign(window.trainingData, merged);
+          }
         }
         if(Array.isArray(rec.users)){
           localStorage.setItem('sjnam_users_v1', JSON.stringify(rec.users));
@@ -5095,12 +5135,29 @@ function startRealtimeSubscription(){
 // Auto-sync: patch saveData, saveStations, saveDfsData untuk trigger cloud sync otomatis
 let _autoSyncTimer = null;
 let _cloudPullInProgress = false;
+let _syncInProgress = false;
+
+async function safeSync(){
+  if(_syncInProgress || _cloudPullInProgress) return;
+  if(!cloudConfig.autoSync || !cloudConfig.supabaseUrl || !cloudConfig.supabaseKey) return;
+  _syncInProgress = true;
+  try{
+    // 1. tarik dulu untuk dapat versi terbaru
+    await cloudPull(true);
+    // 2. push hasil merge
+    await cloudPush(true);
+  }catch(e){
+    console.error('[Sync Error]', e);
+  }finally{
+    _syncInProgress = false;
+  }
+}
 
 function triggerAutoSync(){
-  if(_cloudPullInProgress) return;
+  if(_cloudPullInProgress || _syncInProgress) return;
   if(!cloudConfig.autoSync || !cloudConfig.supabaseUrl || !cloudConfig.supabaseKey) return;
   clearTimeout(_autoSyncTimer);
-  _autoSyncTimer = setTimeout(()=>cloudPush(true), 3000); // debounce 3 detik
+  _autoSyncTimer = setTimeout(()=>safeSync(), 1500); // debounce 1.5 detik
 }
 
 // Patch save functions to trigger auto-sync
@@ -5146,12 +5203,10 @@ $('#btnCloudSave').addEventListener('click', async()=>{
   cloudConfig.supabaseKey = key;
   _supabaseClient = null; // reset client agar dibuat ulang dengan kredensial baru
   saveCloudConfig();
-  const ok = await cloudPush();
-  if(ok){
-    const guide = $('#cloudSetupGuide');
-    if(guide) guide.classList.add('hidden');
-    if(cloudConfig.autoSync) startRealtimeSubscription();
-  }
+  await safeSync();
+  const guide = $('#cloudSetupGuide');
+  if(guide) guide.classList.add('hidden');
+  if(cloudConfig.autoSync) startRealtimeSubscription();
 });
 
 $('#btnCloudLoad').addEventListener('click', async()=>{
@@ -7013,8 +7068,8 @@ window.addEventListener('beforeunload', ()=>{
   document.getElementById('btnSyncService')?.addEventListener('click', async ()=>{
     saveTraining(); // pastikan data tersimpan ke localStorage
     if(typeof cloudConfig !== 'undefined' && cloudConfig.supabaseUrl && cloudConfig.supabaseKey){
-      const ok = await cloudPush(false);
-      if(ok) showToast('Data Service Training berhasil disinkronkan','success');
+      const ok = await safeSync();
+      if(ok!==false) showToast('Data Service Training berhasil disinkronkan','success');
     } else {
       showToast('Data Service Training tersimpan secara lokal','success');
     }
