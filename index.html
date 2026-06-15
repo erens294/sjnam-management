@@ -4957,11 +4957,10 @@ function updateSyncStatus(status){
 function mergeById(localArr=[], remoteArr=[]){
   const map = new Map();
   [...remoteArr,...localArr].forEach(it=>{
-    if(!it) return;
-    const key = it.id || it.code || it.certNo || JSON.stringify(it);
-    const cur = map.get(key);
-    if(!cur || new Date(it.createdAt||it.updatedAt||it.updated_at||0) > new Date(cur.createdAt||cur.updatedAt||cur.updated_at||0)){
-      map.set(key, it);
+    if(!it || !it.id) return;
+    const cur = map.get(it.id);
+    if(!cur || new Date(it.createdAt||it.updatedAt||0) > new Date(cur.createdAt||cur.updatedAt||0)){
+      map.set(it.id, it);
     }
   });
   return Array.from(map.values());
@@ -5047,17 +5046,14 @@ async function cloudPull(silent = false){
     }
 
     _cloudPullInProgress = true;
-    if(Array.isArray(rec.data)) { data = mergeById(data||[], rec.data); saveData(); }
-    if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = mergeById(stations||[], rec.stations); saveStations(); }
-    if(Array.isArray(rec.dfsData)) { dfsData = mergeById(dfsData||[], rec.dfsData); saveDfsData(); }
+    if(Array.isArray(rec.data)) { data = rec.data; saveData(); }
+    if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; saveStations(); }
+    if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; saveDfsData(); }
     if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
     if(rec.training){
-      const local = JSON.parse(localStorage.getItem('sjn_training_v1')||'{}');
-      const merged = mergeTraining(local, rec.training);
-      localStorage.setItem('sjn_training_v1', JSON.stringify(merged));
+      localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
       if(window.trainingData){
-        Object.keys(window.trainingData).forEach(k=>delete window.trainingData[k]);
-        Object.assign(window.trainingData, merged);
+        Object.assign(window.trainingData, rec.training);
       }
     }
     if(Array.isArray(rec.users)){
@@ -5098,18 +5094,13 @@ function startRealtimeSubscription(){
         if(!rec) return;
         cloudLog('🔄 Update masuk dari device lain — memuat ulang data...', 'info');
         _cloudPullInProgress = true;
-        if(Array.isArray(rec.data)) { data = mergeById(data||[], rec.data); saveData(); }
-        if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = mergeById(stations||[], rec.stations); saveStations(); }
-        if(Array.isArray(rec.dfsData)) { dfsData = mergeById(dfsData||[], rec.dfsData); saveDfsData(); }
+        if(Array.isArray(rec.data)) { data = rec.data; saveData(); }
+        if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; saveStations(); }
+        if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; saveDfsData(); }
         if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
         if(rec.training){
-          const local = JSON.parse(localStorage.getItem('sjn_training_v1')||'{}');
-          const merged = mergeTraining(local, rec.training);
-          localStorage.setItem('sjn_training_v1', JSON.stringify(merged));
-          if(window.trainingData){
-            Object.keys(window.trainingData).forEach(k=>delete window.trainingData[k]);
-            Object.assign(window.trainingData, merged);
-          }
+          localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
+          if(window.trainingData){ Object.assign(window.trainingData, rec.training); }
         }
         if(Array.isArray(rec.users)){
           localStorage.setItem('sjnam_users_v1', JSON.stringify(rec.users));
@@ -5135,29 +5126,12 @@ function startRealtimeSubscription(){
 // Auto-sync: patch saveData, saveStations, saveDfsData untuk trigger cloud sync otomatis
 let _autoSyncTimer = null;
 let _cloudPullInProgress = false;
-let _syncInProgress = false;
-
-async function safeSync(){
-  if(_syncInProgress || _cloudPullInProgress) return;
-  if(!cloudConfig.autoSync || !cloudConfig.supabaseUrl || !cloudConfig.supabaseKey) return;
-  _syncInProgress = true;
-  try{
-    // 1. tarik dulu untuk dapat versi terbaru
-    await cloudPull(true);
-    // 2. push hasil merge
-    await cloudPush(true);
-  }catch(e){
-    console.error('[Sync Error]', e);
-  }finally{
-    _syncInProgress = false;
-  }
-}
 
 function triggerAutoSync(){
-  if(_cloudPullInProgress || _syncInProgress) return;
+  if(_cloudPullInProgress) return;
   if(!cloudConfig.autoSync || !cloudConfig.supabaseUrl || !cloudConfig.supabaseKey) return;
   clearTimeout(_autoSyncTimer);
-  _autoSyncTimer = setTimeout(()=>safeSync(), 1500); // debounce 1.5 detik
+  _autoSyncTimer = setTimeout(()=>cloudPush(true), 3000); // debounce 3 detik
 }
 
 // Patch save functions to trigger auto-sync
@@ -5203,10 +5177,12 @@ $('#btnCloudSave').addEventListener('click', async()=>{
   cloudConfig.supabaseKey = key;
   _supabaseClient = null; // reset client agar dibuat ulang dengan kredensial baru
   saveCloudConfig();
-  await safeSync();
-  const guide = $('#cloudSetupGuide');
-  if(guide) guide.classList.add('hidden');
-  if(cloudConfig.autoSync) startRealtimeSubscription();
+  const ok = await cloudPush();
+  if(ok){
+    const guide = $('#cloudSetupGuide');
+    if(guide) guide.classList.add('hidden');
+    if(cloudConfig.autoSync) startRealtimeSubscription();
+  }
 });
 
 $('#btnCloudLoad').addEventListener('click', async()=>{
@@ -6845,6 +6821,10 @@ function renderCertificate(p, prefix){
     trainingData.peserta.push(peserta);
     saveTraining();
     if(typeof renderPeserta === 'function') renderPeserta();
+    // RULE BARU: langsung sync ke cloud saat peserta klik Selesai
+    if(typeof cloudConfig !== 'undefined' && cloudConfig.autoSync && cloudConfig.supabaseUrl){
+      safeSync().then(()=>showToast('Data peserta langsung tersinkron ke Bank Data','success'));
+    }
 
     // Show result
     document.getElementById('pesertaScoreValue').textContent = score;
@@ -7068,8 +7048,8 @@ window.addEventListener('beforeunload', ()=>{
   document.getElementById('btnSyncService')?.addEventListener('click', async ()=>{
     saveTraining(); // pastikan data tersimpan ke localStorage
     if(typeof cloudConfig !== 'undefined' && cloudConfig.supabaseUrl && cloudConfig.supabaseKey){
-      const ok = await safeSync();
-      if(ok!==false) showToast('Data Service Training berhasil disinkronkan','success');
+      const ok = await cloudPush(false);
+      if(ok) showToast('Data Service Training berhasil disinkronkan','success');
     } else {
       showToast('Data Service Training tersimpan secara lokal','success');
     }
