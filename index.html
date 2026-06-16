@@ -2585,6 +2585,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
             <th class="px-3 py-2 text-left">Perusahaan</th>
             <th class="px-3 py-2 text-left">Tanggal Training</th>
             <th class="px-3 py-2 text-left">Berlaku Hingga</th>
+            <th class="px-3 py-2 text-center">Qty Peserta</th>
           </tr></thead>
           <tbody id="stationTableBody" class="divide-y divide-slate-200 dark:divide-slate-700"></tbody>
         </table>
@@ -5067,6 +5068,7 @@ async function cloudPull(silent = false){
     renderStations();
     renderDfsTable();
     if(typeof window.refreshTrainingViews === 'function') window.refreshTrainingViews();
+    if(typeof window.renderBankStations === 'function') window.renderBankStations();
 
     updateSyncStatus('connected');
     cloudLog('✅ Data berhasil diambil dari Supabase ('+data.length+' delay, '+dfsData.length+' DFS)', 'success');
@@ -5112,6 +5114,7 @@ function startRealtimeSubscription(){
         renderStations();
         renderDfsTable();
         if(typeof window.refreshTrainingViews === 'function') window.refreshTrainingViews();
+        if(typeof window.renderBankStations === 'function') window.renderBankStations();
         showToast('⚡ Data diperbarui dari device lain!', 'info');
       }
     )
@@ -5614,11 +5617,8 @@ function restoreSession(){
 
 // Tab buttons already bound in original code
 
-// Disable Supabase requirement - auto set local mode
-if(typeof cloudConfig !== 'undefined'){
-  cloudConfig.autoSync = false;
-}
-console.log('[AUTH] Sistem Administrasi aktif - tanpa Supabase');
+// Sistem Administrasi aktif - Supabase tetap berjalan
+console.log('[AUTH] Sistem Administrasi aktif - Supabase auto-sync ON');
 
 </script>
 
@@ -5692,6 +5692,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
       b.classList.toggle('active', b.getAttribute('data-tab')===tab);
     });
   }
+  window.syncSidebarActive = syncSidebarActive;
   
   // Attach click handlers
   sidebarBtns.forEach(btn => {
@@ -5787,6 +5788,8 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
   function saveTraining(){
     localStorage.setItem(TRAINING_KEY, JSON.stringify(trainingData));
     if(typeof triggerAutoSync === 'function') triggerAutoSync();
+    // Auto-refresh Bank Station tiap kali data training tersimpan
+    setTimeout(()=>{ if(typeof window.renderBankStations === 'function') window.renderBankStations(); }, 50);
   }
   window.trainingData = trainingData;
   window.saveTraining = saveTraining;
@@ -6821,9 +6824,9 @@ function renderCertificate(p, prefix){
     trainingData.peserta.push(peserta);
     saveTraining();
     if(typeof renderPeserta === 'function') renderPeserta();
-    // RULE BARU: langsung sync ke cloud saat peserta klik Selesai
-    if(typeof cloudConfig !== 'undefined' && cloudConfig.autoSync && cloudConfig.supabaseUrl){
-      safeSync().then(()=>showToast('Data peserta langsung tersinkron ke Bank Data','success'));
+    // RULE BARU: langsung sync ke cloud saat peserta klik Selesai & Lihat Skor
+    if(typeof cloudPush === 'function' && typeof cloudConfig !== 'undefined' && cloudConfig.supabaseUrl && cloudConfig.supabaseKey){
+      cloudPush(true).then(ok=>{ if(ok) showToast('✅ Data peserta langsung tersinkron ke Bank Data','success'); });
     }
 
     // Show result
@@ -6982,7 +6985,9 @@ window.addEventListener('beforeunload', ()=>{
       const berlaku = p.expiredDate||'';
       const key = [stasiun.toLowerCase(), perusahaan.toLowerCase(), tanggal, berlaku].join('|');
       if(!map.has(key)){
-        map.set(key, {stasiun, perusahaan, tanggal, berlaku});
+        map.set(key, {stasiun, perusahaan, tanggal, berlaku, qty: 1});
+      } else {
+        map.get(key).qty++;
       }
     });
     // Urutkan berdasarkan tanggal training terbaru, lalu nama stasiun
@@ -7006,7 +7011,7 @@ window.addEventListener('beforeunload', ()=>{
     if(countEl) countEl.textContent = rows.length;
 
     if(!rows.length){
-      tbody.innerHTML = '<tr><td colspan="5" class="px-3 py-6 text-center text-sm text-slate-500">Belum ada data station (isi Bank Data Peserta terlebih dahulu).</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">Belum ada data station (isi Bank Data Peserta terlebih dahulu).</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map((s,i)=>`
@@ -7016,6 +7021,7 @@ window.addEventListener('beforeunload', ()=>{
         <td class="px-3 py-2">${esc(s.perusahaan||'')}</td>
         <td class="px-3 py-2">${esc(fmtDate(s.tanggal))}</td>
         <td class="px-3 py-2">${esc(fmtDate(s.berlaku))}</td>
+        <td class="px-3 py-2 text-center font-semibold text-blue-700 dark:text-blue-300">${s.qty||1}</td>
       </tr>`).join('');
   }
   window.renderBankStations = renderBankStations;
@@ -7023,9 +7029,9 @@ window.addEventListener('beforeunload', ()=>{
   document.getElementById('btnExportStation')?.addEventListener('click', ()=>{
     const rows = buildStationRows();
     if(!rows.length){ showToast('Belum ada data station','error'); return; }
-    const exportRows = rows.map((s,i)=>({No:i+1, Stasiun:s.stasiun, Perusahaan:s.perusahaan, 'Tanggal Training':s.tanggal, 'Berlaku Hingga':s.berlaku}));
+    const exportRows = rows.map((s,i)=>({No:i+1, Stasiun:s.stasiun, Perusahaan:s.perusahaan, 'Tanggal Training':s.tanggal, 'Berlaku Hingga':s.berlaku, 'Qty Peserta':s.qty||1}));
     const ws = XLSX.utils.json_to_sheet(exportRows);
-    ws['!cols'] = [{wch:4},{wch:20},{wch:25},{wch:16},{wch:16}];
+    ws['!cols'] = [{wch:4},{wch:20},{wch:25},{wch:16},{wch:16},{wch:12}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Bank Station');
     XLSX.writeFile(wb, `Bank_Station_${new Date().toISOString().slice(0,10)}.xlsx`);
