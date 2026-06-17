@@ -2969,9 +2969,20 @@ function switchTab(name){
   if(name==='stations') renderStations();
   if(name==='request'){refreshRequestSelect();$('#requestPreview').textContent='Pilih data terlebih dahulu...';}
   if(name==='settings'){$('#settingsTotalData').textContent=data.length+' record';}
+  if(name==='soal'){
+    // Render konten sub-tab yang aktif saat tab soal dibuka
+    const activePeserta = document.getElementById('soalSubPeserta');
+    const activeStation = document.getElementById('soalSubStation');
+    if(activePeserta && !activePeserta.classList.contains('hidden') && typeof window.renderPeserta === 'function') window.renderPeserta();
+    if(activeStation && !activeStation.classList.contains('hidden') && typeof window.renderBankStations === 'function') window.renderBankStations();
+  }
   window.scrollTo({top:0,behavior:'smooth'});
 }
-$$('[data-tab]').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+// NOTE: Menggunakan window.switchTab agar permission check (role-based) ikut berlaku.
+$$('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
+  if(window.switchTab && window.switchTab !== switchTab) window.switchTab(b.dataset.tab);
+  else switchTab(b.dataset.tab);
+}));
 
 // =================================================================
 // CLOCK
@@ -3520,12 +3531,11 @@ function renderTable(){
       <td class="px-2 py-2 font-mono text-xs">${oclDisplay}</td>
       <td class="px-2 py-2"><span class="badge ${katColor}">${d.kategori}</span></td>
       <td class="px-2 py-2"><span class="badge ${apColor}">${d.approval||'Not-Approved'}</span></td>
-      <td class="px-2 py-2 text-center"><input type="number" min="0" value="${d.qtyPax||0}" data-qty-id="${d.id}" class="qty-input text-xs"/></td>
+      <td class="px-2 py-2 text-center"><input type="number" min="0" value="${d.qtyPax||0}" data-qty-id="${d.id}" class="qty-input text-xs" ${window.currentUserReadOnly?'disabled readonly style="opacity:0.5;cursor:not-allowed"':''}></td>
       <td class="px-2 py-2 text-right text-xs font-medium text-purple-700 dark:text-purple-300">${formatRupiah(costVal)}</td>
       <td class="px-2 py-2 max-w-[120px] truncate text-xs text-slate-500" title="${d.keterangan||''}">${d.keterangan||'-'}</td>
       <td class="px-2 py-2 text-center whitespace-nowrap">
-        <button data-edit="${d.id}" class="text-blue-600 hover:text-blue-800 mr-1.5 text-xs font-semibold">Edit</button>
-        <button data-del="${d.id}" class="text-red-600 hover:text-red-800 text-xs font-semibold">Del</button>
+        ${window.currentUserReadOnly ? '<span class="text-xs text-slate-400">-</span>' : `<button data-edit="${d.id}" class="text-blue-600 hover:text-blue-800 mr-1.5 text-xs font-semibold">Edit</button><button data-del="${d.id}" class="text-red-600 hover:text-red-800 text-xs font-semibold">Del</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -3554,8 +3564,7 @@ function renderTable(){
         <div class="flex items-center justify-between mt-2">
           <span class="flight-status-badge ${sColor}">${d.flightStatus||'Delay'}</span>
           <div class="flex gap-2">
-            <button data-edit="${d.id}" class="text-blue-600 text-xs font-semibold">Edit</button>
-            <button data-del="${d.id}" class="text-red-600 text-xs font-semibold">Hapus</button>
+            ${window.currentUserReadOnly ? '' : `<button data-edit="${d.id}" class="text-blue-600 text-xs font-semibold">Edit</button><button data-del="${d.id}" class="text-red-600 text-xs font-semibold">Hapus</button>`}
           </div>
         </div>
       </div>`;
@@ -3565,6 +3574,7 @@ function renderTable(){
   // Qty inline save
   tbody.querySelectorAll('[data-qty-id]').forEach(input=>{
     input.addEventListener('change',e=>{
+      if(window.currentUserReadOnly) return;
       const id=parseInt(e.target.dataset.qtyId);
       const idx=data.findIndex(d=>d.id===id);
       if(idx>-1){data[idx].qtyPax=parseInt(e.target.value)||0;saveData();renderTable();}
@@ -3583,6 +3593,8 @@ function renderTable(){
 }
 
 function handleTableClick(e){
+  // Read-only mode: User tidak bisa edit/hapus data
+  if(window.currentUserReadOnly) return;
   if(e.target.dataset.edit){
     const id=parseInt(e.target.dataset.edit);
     const item=data.find(d=>d.id===id);
@@ -3713,6 +3725,7 @@ $('#btnExportPdf').addEventListener('click',()=>{
 });
 
 $('#fileImportJson').addEventListener('change',async e=>{
+  if(window.currentUserReadOnly){ showToast('Akses ditolak: mode read-only','error'); e.target.value=''; return; }
   const file=e.target.files[0];if(!file) return;
   try{
     const arr=JSON.parse(await file.text());
@@ -3730,6 +3743,7 @@ $('#fileImportJson').addEventListener('change',async e=>{
 });
 
 $('#btnHapusSemua').addEventListener('click',async()=>{
+  if(window.currentUserReadOnly){ showToast('Akses ditolak: mode read-only','error'); return; }
   const ok=await showConfirm('Hapus Semua','Semua data delay akan dihapus permanen!');
   if(ok){data=[];saveData();renderTable();showToast('Semua data dihapus');}
 });
@@ -5425,13 +5439,55 @@ function applyPermissions(){
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
     if(trainingMenuGroup) trainingMenuGroup.style.display = '';
   } else if(isUser){
-    // User hanya: Home, Input, Data, Dashboard
+    // User: Home, Input, Data (read-only), Dashboard + Service Training (Mulai Training sub-tab)
     if(tabAdminBtn) tabAdminBtn.style.display = 'none';
     if(tabStations) tabStations.style.display = 'none';
     if(tabDfs) tabDfs.style.display = 'none';
     if(tabRequest) tabRequest.style.display = 'none';
     if(tabSettings) tabSettings.style.display = 'none';
+    // Sembunyikan Materi, Sertifikat — Soal ditampilkan (Mulai Training sub-tab)
+    if(tabMateri) tabMateri.style.display = 'none';
+    if(tabSoal) tabSoal.style.display = ''; // User BISA akses tab Soal (Mulai Training)
+    if(tabSertifikat) tabSertifikat.style.display = 'none';
+    // Tampilkan Training menu group & tombol Mulai Training Peserta
+    if(trainingMenuGroup) trainingMenuGroup.style.display = '';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
+    // Tampilkan Home menu group
+    if(homeMenuGroup) homeMenuGroup.style.display = '';
+    // Sembunyikan tombol Import & Hapus Semua di tab Data (read-only untuk User)
+    setTimeout(()=>{
+      const elImport = document.getElementById('fileImportJson')?.closest('label');
+      if(elImport) elImport.style.display = 'none';
+      const elHapusSemua = document.getElementById('btnHapusSemua');
+      if(elHapusSemua) elHapusSemua.style.display = 'none';
+      // Sembunyikan sub-tab "Bank Soal" di dalam tab Soal (User tidak boleh kelola soal)
+      const btnBankSoalTab = document.querySelector('[data-soal-subtab="bank"]');
+      if(btnBankSoalTab) btnBankSoalTab.style.display = 'none';
+      // Sembunyikan tombol Hapus Semua Data di Bank Data Peserta
+      const btnClearPeserta = document.getElementById('btnClearPeserta');
+      if(btnClearPeserta) btnClearPeserta.style.display = 'none';
+      // Sembunyikan sync & mulai training peserta buttons di header tab-soal (admin only)
+      const btnSyncService = document.getElementById('btnSyncService');
+      if(btnSyncService) btnSyncService.style.display = 'none';
+      const btnStartPeserta = document.getElementById('btnStartPeserta');
+      if(btnStartPeserta) btnStartPeserta.style.display = 'none';
+      // Auto-switch ke sub-tab Peserta saat tab Soal dibuka
+      const soalSubBank = document.getElementById('soalSubBank');
+      const soalSubPeserta = document.getElementById('soalSubPeserta');
+      const btnPesertaTab = document.querySelector('[data-soal-subtab="peserta"]');
+      if(soalSubBank) soalSubBank.classList.add('hidden');
+      if(soalSubPeserta){ soalSubPeserta.classList.remove('hidden'); }
+      if(btnPesertaTab){ 
+        document.querySelectorAll('.soal-subtab-btn').forEach(b=>{
+          b.classList.remove('active','border-blue-600','text-blue-600');
+          b.classList.add('border-transparent','text-slate-500');
+        });
+        btnPesertaTab.classList.add('active','border-blue-600','text-blue-600');
+        btnPesertaTab.classList.remove('border-transparent','text-slate-500');
+      }
+    }, 100);
+    // Sembunyikan tombol Edit & Del di tabel data (read-only)
+    window.currentUserReadOnly = true;
   } else {
     // Admin & Co-Admin: semua tab
     if(tabAdminBtn) tabAdminBtn.style.display = '';
@@ -5439,7 +5495,31 @@ function applyPermissions(){
     if(tabDfs) tabDfs.style.display = '';
     if(tabRequest) tabRequest.style.display = '';
     if(tabSettings) tabSettings.style.display = '';
+    if(tabMateri) tabMateri.style.display = '';
+    if(tabSoal) tabSoal.style.display = '';
+    if(tabSertifikat) tabSertifikat.style.display = '';
+    if(trainingMenuGroup) trainingMenuGroup.style.display = '';
+    if(homeMenuGroup) homeMenuGroup.style.display = '';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
+    // Pastikan tombol import/hapus semua tampil lagi
+    setTimeout(()=>{
+      const elImport2 = document.getElementById('fileImportJson')?.closest('label');
+      if(elImport2) elImport2.style.display = '';
+      const elHapusSemua2 = document.getElementById('btnHapusSemua');
+      if(elHapusSemua2) elHapusSemua2.style.display = '';
+      // Restore sub-tab Bank Soal
+      const btnBankSoalTab = document.querySelector('[data-soal-subtab="bank"]');
+      if(btnBankSoalTab) btnBankSoalTab.style.display = '';
+      // Restore Hapus Semua Data Peserta
+      const btnClearPeserta = document.getElementById('btnClearPeserta');
+      if(btnClearPeserta) btnClearPeserta.style.display = '';
+      // Restore sync & mulai peserta buttons
+      const btnSyncService = document.getElementById('btnSyncService');
+      if(btnSyncService) btnSyncService.style.display = '';
+      const btnStartPeserta = document.getElementById('btnStartPeserta');
+      if(btnStartPeserta) btnStartPeserta.style.display = '';
+    }, 100);
+    window.currentUserReadOnly = false;
   }
   
   // User management capabilities
@@ -5592,7 +5672,8 @@ window.switchTab = function(tab){
   }
   // Check permission for User role
   if(currentUser && currentUser.role === 'User'){
-    const allowed = ['home','input','data','dashboard','materi','soal','soal-peserta','sertifikat'];
+    // User bisa akses: Home Menu (home, input, data, dashboard) + Service Training Mulai Training (soal, soal-peserta)
+    const allowed = ['home','input','data','dashboard','soal','soal-peserta'];
     if(!allowed.includes(tab)){
       showToast('Akses ditolak untuk role User', 'error');
       return;
@@ -5725,7 +5806,9 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
   }
   window.syncSidebarActive = syncSidebarActive;
   
-  // Attach click handlers
+  // Attach click handlers untuk sidebar
+  // Catatan: tombol [data-tab] sudah punya listener switchTab di atas (global).
+  // Sidebar hanya perlu handle: btnPesertaSidebarStart (non data-tab) + tutup mobile sidebar.
   sidebarBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       if(btn.id === 'btnPesertaSidebarStart'){
@@ -5733,9 +5816,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
         document.getElementById('sidebar')?.classList.remove('open');
         return;
       }
-      const tab = btn.getAttribute('data-tab');
-      if(!tab) return;
-      if(window.switchTab) window.switchTab(tab);
+      // Untuk data-tab buttons: tutup mobile sidebar saja (switchTab sudah dipanggil oleh listener global)
       document.getElementById('sidebar')?.classList.remove('open');
     });
   });
@@ -6146,7 +6227,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
         <td class="px-2 py-2 whitespace-nowrap">${fmtDate(p.expiredDate)}</td>
         <td class="px-2 py-2 whitespace-nowrap">
           <button data-peserta-cert="${p.certNo}" class="text-xs text-blue-600 hover:underline mr-2">Lihat Sertifikat</button>
-          <button data-peserta-del="${p.id}" class="text-xs text-red-600 hover:underline">Hapus</button>
+          ${window.currentUserReadOnly ? '' : `<button data-peserta-del="${p.id}" class="text-xs text-red-600 hover:underline">Hapus</button>`}
         </td>
       </tr>
     `).join('');
@@ -6154,6 +6235,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
     // Bank Station diturunkan dari Bank Data Peserta — refresh setiap kali data peserta berubah
     if(typeof window.renderBankStations === 'function') window.renderBankStations();
   }
+  window.renderPeserta = renderPeserta; // expose globally
 
   document.getElementById('pesertaSearch')?.addEventListener('input', renderPeserta);
 
@@ -6177,6 +6259,7 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
   });
 
   document.getElementById('btnClearPeserta')?.addEventListener('click', ()=>{
+    if(window.currentUserReadOnly){ showToast('Akses ditolak','error'); return; }
     showConfirm('Hapus Semua Data Peserta','Yakin ingin menghapus SEMUA data peserta & sertifikat? Tindakan ini tidak dapat dibatalkan.').then(ok=>{
       if(!ok) return;
       trainingData.peserta = [];
