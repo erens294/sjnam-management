@@ -5696,6 +5696,7 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
   resetBFState(username);
   
   currentUser = {username:user.username, role:user.role, name:user.name, loginTime:Date.now()};
+  window.currentUser = currentUser; // Expose globally for patched functions
   localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
   
   document.getElementById('loginOverlay').style.display = 'none';
@@ -5726,6 +5727,7 @@ document.getElementById('btnLogout')?.addEventListener('click', function(){
   if(confirm('Keluar dari sistem?')){
     localStorage.removeItem(SESSION_KEY);
     currentUser = null;
+    window.currentUser = null;
     location.reload();
   }
 });
@@ -5773,6 +5775,7 @@ document.getElementById('btnLogout')?.addEventListener('click', function(){
       console.log('[AUTO-LOGOUT] Idle 30 menit');
       localStorage.removeItem(SESSION_KEY);
       currentUser = null;
+      window.currentUser = null;
       location.reload();
     }, IDLE_TIMEOUT);
   }
@@ -5929,9 +5932,19 @@ function renderUserTable(){
   const tbody = document.getElementById('userTableBody');
   if(!tbody || !currentUser) return;
   
-  const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+  let users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
   const canDelete = window.currentUserCanDelete;
   const canEdit = window.currentUserCanAdd;
+  // Filter berdasarkan role
+  if(currentUser){
+    if(currentUser.role === 'Co-Admin'){
+      // Co-Admin tidak bisa melihat akun Admin
+      users = users.filter(u => u.role !== 'Admin');
+    } else if(currentUser.role === 'User' || currentUser.role === 'Peserta'){
+      // User dan Peserta tidak boleh lihat siapapun
+      users = [];
+    }
+  }
   const pesertaCount = users.filter(u=>u.role==='Peserta').length;
   
   tbody.innerHTML = users.map(u => `
@@ -5953,6 +5966,11 @@ function renderUserTable(){
 
 // Add user
 document.getElementById('btnAddUser')?.addEventListener('click', function(){
+  // Guard: hanya Admin dan Co-Admin
+  if(!currentUser || (currentUser.role !== 'Admin' && currentUser.role !== 'Co-Admin')){
+    showToast('Hanya Admin/Co-Admin yang dapat menambah user', 'error');
+    return;
+  }
   if(!window.currentUserCanAdd){
     showToast('Hanya Admin/Co-Admin yang dapat menambah user', 'error');
     return;
@@ -6003,9 +6021,19 @@ document.getElementById('btnAddUser')?.addEventListener('click', function(){
 
 // Edit user
 function editUser(id){
+  // Guard: hanya Admin dan Co-Admin yang boleh edit user
+  if(!currentUser || (currentUser.role !== 'Admin' && currentUser.role !== 'Co-Admin')){
+    showToast('Akses ditolak: tidak ada izin untuk mengedit user', 'error');
+    return;
+  }
   const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
   const user = users.find(u => u.id === id);
   if(!user) return;
+  // Co-Admin tidak bisa edit akun Admin
+  if(currentUser && currentUser.role === 'Co-Admin' && user.role === 'Admin'){
+    showToast('Co-Admin tidak dapat mengubah akun Admin', 'error');
+    return;
+  }
   
   const newName = prompt('Nama:', user.name);
   if(newName) user.name = newName;
@@ -6047,8 +6075,20 @@ function editUser(id){
 
 // Delete user
 function deleteUser(id){
+  // Guard: hanya Admin yang boleh hapus user
+  if(!currentUser || currentUser.role !== 'Admin'){
+    showToast('Hanya Admin yang dapat menghapus user', 'error');
+    return;
+  }
   if(!window.currentUserCanDelete){
     showToast('Hanya Admin yang dapat menghapus user', 'error');
+    return;
+  }
+  // Co-Admin tidak bisa hapus akun Admin
+  const allUsers = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+  const targetUser = allUsers.find(u => u.id === id);
+  if(currentUser && currentUser.role === 'Co-Admin' && targetUser && targetUser.role === 'Admin'){
+    showToast('Co-Admin tidak dapat menghapus akun Admin', 'error');
     return;
   }
   
@@ -6068,17 +6108,15 @@ window.switchTab = function(tab){
   // Check permission for Peserta role - hanya boleh akses wizard training
   if(currentUser && currentUser.role === 'Peserta'){
     if(tab !== 'soal-peserta'){
-      showToast('Akses ditolak. Role Peserta hanya dapat mengakses Soal Training.', 'error');
+      // Diam-diam block tanpa toast (mengurangi spam notifikasi)
       return;
     }
   }
   // Check permission for User role
   if(currentUser && currentUser.role === 'User'){
-    // User bisa akses: Home Menu (home, input, data, dashboard) + Service Training Mulai Training (soal, soal-peserta)
     const allowed = ['home','input','data','dashboard','soal','soal-peserta'];
     if(!allowed.includes(tab)){
-      showToast('Akses ditolak untuk role User', 'error');
-      return;
+      return; // Silent block
     }
   }
   // Call original
@@ -6113,6 +6151,7 @@ function restoreSession(){
   if(session){
     try {
       currentUser = JSON.parse(session);
+      window.currentUser = currentUser; // Expose globally
       document.getElementById('loginOverlay').style.display = 'none';
       document.getElementById('userPanel').classList.remove('hidden');
       document.getElementById('userPanel').classList.add('flex');
@@ -7693,8 +7732,10 @@ window.addEventListener('beforeunload', ()=>{
   // PATCH applyPermissions to use role perms config
   const _origApplyPermissions = window.applyPermissions;
   window.applyPermissions = function(){
-    if(!window.currentUser) return;
-    const role = window.currentUser.role;
+    // Read from window.currentUser OR local currentUser (for timing safety)
+    const _cu = window.currentUser || (typeof currentUser !== 'undefined' ? currentUser : null);
+    if(!_cu) return;
+    const role = _cu.role;
     const isAdmin = role === 'Admin';
     const isCoAdmin = role === 'Co-Admin';
     const isUser = role === 'User';
@@ -7705,6 +7746,8 @@ window.addEventListener('beforeunload', ()=>{
       if(_origApplyPermissions) _origApplyPermissions();
       return;
     }
+
+    // Pastikan Co-Admin TIDAK bypass — lanjutkan ke permission check di bawah
 
     // Determine which roleKey to check
     let roleKey = isCoAdmin ? 'coAdmin' : isUser ? 'user' : 'peserta';
@@ -7762,7 +7805,7 @@ window.addEventListener('beforeunload', ()=>{
     }, 120);
 
     window.currentUserCanDelete = canSee('feat-delete');
-    window.currentUserCanAdd = isCoAdmin ? true : canSee('feat-edit');
+    window.currentUserCanAdd = canSee('feat-edit') || (isCoAdmin && canSee('tab-admin'));
     if(typeof renderUserTable === 'function') renderUserTable();
 
     // Peserta auto redirect
