@@ -2870,8 +2870,6 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
           </div>
         </div>
       </div>
-        </div>
-      </div>
     </div>
   </div>
 </section>
@@ -5539,7 +5537,7 @@ window.saveUsers = saveUsers;
     const newUsers = localStorage.getItem(NEW_KEY);
     if(oldUsers && !newUsers){
       localStorage.setItem(NEW_KEY, oldUsers);
-      console.log('[AUTH] Migrated users from old key');
+      // Migration done
     }
     // Force create default if still empty
     let users = JSON.parse(localStorage.getItem(NEW_KEY) || '[]');
@@ -5602,7 +5600,7 @@ function quickLogin(u,p){
   
   if(changed > 0){
     localStorage.setItem('sjnam_users_v1', JSON.stringify(users));
-    console.log(`[SHA-256 MIGRATE] ${changed} user password(s) upgraded to SHA-256`);
+    // Passwords upgraded to SHA-256
   }
   localStorage.setItem(MIGRATED_KEY, '1');
 })();
@@ -5707,20 +5705,34 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
   
   applyPermissions();
   restoreSession();
-  console.log('[LOGIN OK]', user.username); showToast('Selamat datang, ' + user.name + '!', 'success');
+  showToast('Selamat datang, ' + user.name + '!', 'success');
 });
 
-// Countdown timer for lock message
-setInterval(()=>{
-  const unEl = document.getElementById('loginUser');
-  const lmEl = document.getElementById('loginLockMsg');
-  if(!lmEl || lmEl.style.display==='none') return;
-  const username = unEl ? unEl.value.trim().toLowerCase() : '';
-  if(!username) return;
-  const lu = checkBFLocked(username);
-  if(lu) updateLoginLockMsg(username, lu);
-  else updateLoginLockMsg(username, 0);
-}, 1000);
+// Countdown timer for lock message - only runs on login page, clears after login
+let _bfCountdownInterval = null;
+function startBFCountdown(){
+  if(_bfCountdownInterval) return;
+  _bfCountdownInterval = setInterval(()=>{
+    const overlay = document.getElementById('loginOverlay');
+    // Stop when login overlay is gone (user logged in)
+    if(!overlay || overlay.style.display === 'none'){ 
+      clearInterval(_bfCountdownInterval); 
+      _bfCountdownInterval = null; 
+      return; 
+    }
+    const unEl = document.getElementById('loginUser');
+    const lmEl = document.getElementById('loginLockMsg');
+    if(!lmEl || lmEl.style.display==='none') return;
+    const username = unEl ? unEl.value.trim().toLowerCase() : '';
+    if(!username) return;
+    const lu = checkBFLocked(username);
+    if(lu) updateLoginLockMsg(username, lu);
+    else updateLoginLockMsg(username, 0);
+  }, 1000);
+}
+// Start only when login form is interacted with
+document.getElementById('loginUser')?.addEventListener('blur', startBFCountdown);
+document.getElementById('loginPass')?.addEventListener('focus', startBFCountdown);
 
 // Logout
 document.getElementById('btnLogout')?.addEventListener('click', function(){
@@ -6304,7 +6316,9 @@ document.addEventListener('DOMContentLoaded', function(){ document.getElementByI
   const observer = new MutationObserver(syncUser);
   const nameNode = document.getElementById('userNameDisplay');
   if(nameNode) observer.observe(nameNode, {childList:true, characterData:true, subtree:true});
-  setInterval(syncUser, 1000);
+  // Interval fallback - only runs 30x then stops (MutationObserver handles the rest)
+  let _syncCount = 0;
+  const _syncInterval = setInterval(()=>{ syncUser(); if(++_syncCount >= 30) clearInterval(_syncInterval); }, 1000);
   
   document.getElementById('btnLogoutSide')?.addEventListener('click', ()=> document.getElementById('btnLogout')?.click());
   
