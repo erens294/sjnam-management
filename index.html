@@ -2661,14 +2661,22 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
       </div>
       <div class="stcr-filter-group"><label>Urutkan</label>
         <select id="stcr-s-sort" class="stcr-sort-select" onchange="STCR.renderTable()">
-          <option value="newest">Terbaru</option>
-          <option value="oldest">Terlama</option>
-          <option value="stcr-desc">STCR Terbesar</option>
-          <option value="stcr-asc">STCR Terkecil</option>
-          <option value="pob-desc">POB Terbesar</option>
-          <option value="pob-asc">POB Terkecil</option>
-          <option value="airlines-sj">Airlines: SJ Dulu</option>
-          <option value="airlines-in">Airlines: IN Dulu</option>
+          <optgroup label="— Tanggal —">
+            <option value="newest">Terbaru (Tgl Flight)</option>
+            <option value="oldest">Terlama (Tgl Flight)</option>
+            <option value="month-asc">Bulan: Jan → Des</option>
+            <option value="month-desc">Bulan: Des → Jan</option>
+          </optgroup>
+          <optgroup label="— Jumlah —">
+            <option value="stcr-desc">STCR Terbesar</option>
+            <option value="stcr-asc">STCR Terkecil</option>
+            <option value="pob-desc">POB Terbesar</option>
+            <option value="pob-asc">POB Terkecil</option>
+          </optgroup>
+          <optgroup label="— Airlines —">
+            <option value="airlines-sj">Airlines: SJ Dulu</option>
+            <option value="airlines-in">Airlines: IN Dulu</option>
+          </optgroup>
         </select>
       </div>
       <button class="stcr-btn stcr-btn-add" onclick="STCR.openModal()">+ Input Data Baru</button>
@@ -2711,14 +2719,26 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <select id="stcr-st-sort" class="stcr-filter-group select" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--text);background:#fff;" onchange="STCR.renderStation()">
-          <option value="count-desc">Request: Terbesar → Terkecil</option>
-          <option value="count-asc">Request: Terkecil → Terbesar</option>
-          <option value="stcr-desc">STCR: Terbesar → Terkecil</option>
-          <option value="stcr-asc">STCR: Terkecil → Terbesar</option>
-          <option value="pob-desc">POB: Terbesar → Terkecil</option>
-          <option value="pob-asc">POB: Terkecil → Terbesar</option>
-          <option value="airlines-sj">Airlines: SJ Dulu</option>
-          <option value="airlines-in">Airlines: IN Dulu</option>
+          <optgroup label="— Request —">
+            <option value="count-desc">Request: Terbesar → Terkecil</option>
+            <option value="count-asc">Request: Terkecil → Terbesar</option>
+          </optgroup>
+          <optgroup label="— Jumlah —">
+            <option value="stcr-desc">STCR: Terbesar → Terkecil</option>
+            <option value="stcr-asc">STCR: Terkecil → Terbesar</option>
+            <option value="pob-desc">POB: Terbesar → Terkecil</option>
+            <option value="pob-asc">POB: Terkecil → Terbesar</option>
+          </optgroup>
+          <optgroup label="— Airlines —">
+            <option value="airlines-sj">Airlines: SJ Dulu</option>
+            <option value="airlines-in">Airlines: IN Dulu</option>
+          </optgroup>
+          <optgroup label="— Bulan & Tahun —">
+            <option value="month-asc">Bulan: Jan → Des (Terbaru Terakhir)</option>
+            <option value="month-desc">Bulan: Des → Jan (Terbaru Dulu)</option>
+            <option value="year-desc">Tahun: Terbaru Dulu</option>
+            <option value="year-asc">Tahun: Terlama Dulu</option>
+          </optgroup>
         </select>
         <button id="btnStcrStationExportExcel" class="stcr-btn" style="background:#16a34a;color:#fff;font-size:12px;padding:6px 12px">📗 Excel</button>
         <button id="btnStcrStationExportPdf" class="stcr-btn" style="background:#dc2626;color:#fff;font-size:12px;padding:6px 12px">📕 PDF</button>
@@ -3231,7 +3251,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
           <div id="pesertaCertName" class="cert-field absolute cursor-move select-none font-bold text-black" style="left:50%;top:48%;transform:translate(-50%,-50%);font-size:28px;white-space:nowrap;">[Nama Peserta]</div>
           <p id="pesertaCertNo" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:58%;transform:translate(-50%,-50%);font-size:14px;white-space:nowrap;">No: SJNAM-TRN-000000</p>
           <p id="pesertaCertValidity" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:65%;transform:translate(-50%,-50%);font-size:12px;white-space:nowrap;">Berlaku s/d -</p>
-          <div id="pesertaCertBarcode" class="absolute hidden" style="left:4%;bottom:4%;width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
+          <div id="pesertaCertBarcode" class="absolute" style="display:none;left:4%;bottom:4%;width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
         </div>
       </div>
     </div>
@@ -3313,7 +3333,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
             <div id="certReprintName" class="cert-field absolute cursor-move select-none font-bold text-black" style="left:50%;top:48%;transform:translate(-50%,-50%);font-size:28px;white-space:nowrap;">[Nama Peserta]</div>
             <p id="certReprintNo" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:58%;transform:translate(-50%,-50%);font-size:14px;white-space:nowrap;">No: SJNAM-TRN-000000</p>
             <p id="certReprintValidity" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:65%;transform:translate(-50%,-50%);font-size:12px;white-space:nowrap;">Berlaku s/d -</p>
-            <div id="certReprintBarcode" class="absolute hidden" style="left:4%;bottom:4%;width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
+            <div id="certReprintBarcode" class="absolute" style="display:none;left:4%;bottom:4%;width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
           </div>
         </div>
       </div>
@@ -7353,14 +7373,24 @@ function renderCertificate(p, prefix){
     const showBarcode = localStorage.getItem('sjn_cert_barcode_v1') === '1';
     if(barcodeEl){
       barcodeEl.innerHTML = '';
+      // Remove tailwind 'hidden' class if present, use inline style only
+      barcodeEl.classList.remove('hidden');
       barcodeEl.style.display = showBarcode ? 'block' : 'none';
       if(showBarcode && window.QRCode){
-        const qrData = p.certNo;
-        QRCode.toCanvas(qrData, {width: 200, margin: 1}, function(err, canvas){
+        // QR berisi: Nama Peserta + Nomor Sertifikat untuk verifikasi
+        const qrData = [
+          'SJNAM SERTIFIKAT',
+          'Nama: ' + (p.nama || ''),
+          'No: ' + (p.certNo || ''),
+          'Berlaku: ' + (p.expiredDate || '')
+        ].join('\n');
+        QRCode.toCanvas(qrData, {width: 200, margin: 1, errorCorrectionLevel: 'M'}, function(err, canvas){
           if(!err){
             canvas.style.width = '100%';
             canvas.style.height = '100%';
             barcodeEl.appendChild(canvas);
+          } else {
+            console.warn('[QR] Error generating QR:', err);
           }
         });
       }
@@ -7502,9 +7532,14 @@ function renderCertificate(p, prefix){
   });
   document.getElementById('toggleBarcode')?.addEventListener('change', (e)=>{
     localStorage.setItem(BARCODE_KEY, e.target.checked ? '1' : '0');
-    showToast('Barcode ' + (e.target.checked ? 'diaktifkan' : 'dimatikan'),'success');
-    // re-render current
+    showToast('Barcode ' + (e.target.checked ? 'diaktifkan ✅' : 'dimatikan'), e.target.checked ? 'success' : 'info');
+    // Force re-render of current certificate to apply barcode toggle
     if(window.lastCertData){
+      // Remove Tailwind hidden class on both barcode elements before re-render
+      ['pesertaCertBarcode','certReprintBarcode'].forEach(id=>{
+        const el = document.getElementById(id);
+        if(el) el.classList.remove('hidden');
+      });
       renderCertificate(window.lastCertData.p, window.lastCertData.prefix);
     }
   });
@@ -8959,6 +8994,17 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     rows.sort((a,b) => {
       const ka = sortKey(a.item), kb = sortKey(b.item);
       if(sortMode === 'oldest') return ka - kb;
+      if(sortMode === 'month-asc' || sortMode === 'month-desc'){
+        // Sort by month number (1–12) extracted from Date of Flight
+        const getMonth = d => {
+          const dateStr = d['Date of Flight'];
+          if(!dateStr) return 0;
+          const dt = new Date(dateStr);
+          return isNaN(dt.getTime()) ? 0 : dt.getMonth()+1;
+        };
+        const ma = getMonth(a.item), mb = getMonth(b.item);
+        return sortMode === 'month-asc' ? ma - mb : mb - ma;
+      }
       if(sortMode === 'stcr-desc') return (b.item.StretcherCase||0) - (a.item.StretcherCase||0);
       if(sortMode === 'stcr-asc') return (a.item.StretcherCase||0) - (b.item.StretcherCase||0);
       if(sortMode === 'pob-desc') return (b.item['Total POB']||0) - (a.item['Total POB']||0);
@@ -9066,6 +9112,25 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const sortSel = $id('stcr-st-sort');
     const sortMode = sortSel ? sortSel.value : 'count-desc';
 
+    // For month/year sorts, we need the most-recent month/year per station
+    const stMonthMap = {}; // station -> {lastMonth, lastYear, firstMonth, firstYear}
+    ALL_DATA.forEach(d=>{
+      const s = d.Station; if(!s) return;
+      const dateStr = d['Date of Flight'];
+      if(!dateStr) return;
+      const dt = new Date(dateStr);
+      if(isNaN(dt.getTime())) return;
+      const mo = dt.getMonth()+1;
+      const yr = dt.getFullYear();
+      if(!stMonthMap[s]) stMonthMap[s]={lastMonth:0, lastYear:0, firstMonth:13, firstYear:9999};
+      if(yr > stMonthMap[s].lastYear || (yr === stMonthMap[s].lastYear && mo > stMonthMap[s].lastMonth)){
+        stMonthMap[s].lastMonth = mo; stMonthMap[s].lastYear = yr;
+      }
+      if(yr < stMonthMap[s].firstYear || (yr === stMonthMap[s].firstYear && mo < stMonthMap[s].firstMonth)){
+        stMonthMap[s].firstMonth = mo; stMonthMap[s].firstYear = yr;
+      }
+    });
+
     let sorted = Object.entries(stMap);
     if(sortMode === 'count-desc') sorted.sort((a,b)=>b[1].count-a[1].count);
     else if(sortMode === 'count-asc') sorted.sort((a,b)=>a[1].count-b[1].count);
@@ -9075,11 +9140,34 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     else if(sortMode === 'pob-asc') sorted.sort((a,b)=>a[1].pob-b[1].pob);
     else if(sortMode === 'airlines-sj') sorted.sort((a,b)=>b[1].sjCount-a[1].sjCount || b[1].count-a[1].count);
     else if(sortMode === 'airlines-in') sorted.sort((a,b)=>b[1].inCount-a[1].inCount || b[1].count-a[1].count);
+    else if(sortMode === 'month-asc') sorted.sort((a,b)=>{
+      const ma = stMonthMap[a[0]]?.firstMonth||0, mb2 = stMonthMap[b[0]]?.firstMonth||0;
+      return ma - mb2 || b[1].count-a[1].count;
+    });
+    else if(sortMode === 'month-desc') sorted.sort((a,b)=>{
+      const ma = stMonthMap[a[0]]?.lastMonth||0, mb2 = stMonthMap[b[0]]?.lastMonth||0;
+      return mb2 - ma || b[1].count-a[1].count;
+    });
+    else if(sortMode === 'year-desc') sorted.sort((a,b)=>{
+      const ya = stMonthMap[a[0]]?.lastYear||0, yb = stMonthMap[b[0]]?.lastYear||0;
+      return yb - ya || b[1].count-a[1].count;
+    });
+    else if(sortMode === 'year-asc') sorted.sort((a,b)=>{
+      const ya = stMonthMap[a[0]]?.firstYear||9999, yb = stMonthMap[b[0]]?.firstYear||9999;
+      return ya - yb || b[1].count-a[1].count;
+    });
 
-    el.innerHTML = sorted.map(([s,info])=>`
+    const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const showMonthYear = ['month-asc','month-desc','year-asc','year-desc'].includes(sortMode);
+
+    el.innerHTML = sorted.map(([s,info])=>{
+      const mInfo = stMonthMap[s] || {};
+      const lastLabel = mInfo.lastMonth ? `${MONTH_NAMES[mInfo.lastMonth]} ${mInfo.lastYear}` : '';
+      return `
       <div class="stcr-station-card">
         <div class="stcr-station-name">${escapeHtml(s)}</div>
         <div class="stcr-station-aoc">${info.aocs.includes('SJ')&&info.aocs.includes('IN')?'🔴 SJ · 🔵 IN':info.aoc==='SJ'?'🔴 Sriwijaya Air':'🔵 NAM Air'}</div>
+        ${showMonthYear && lastLabel ? `<div style="font-size:10px;color:var(--sky);font-weight:600;margin-bottom:4px">📅 Aktivitas terakhir: ${lastLabel}</div>` : ''}
         <div class="stcr-station-stats">
           <div class="stcr-station-stat"><div class="stcr-station-stat-val">${info.count}</div><div class="stcr-station-stat-lbl">Request</div></div>
           <div class="stcr-station-stat"><div class="stcr-station-stat-val">${info.stcr}</div><div class="stcr-station-stat-lbl">STCR</div></div>
@@ -9091,7 +9179,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         </div>
         ${info.revenue>0?`<div style="font-size:11px;color:var(--success);margin-top:8px;font-weight:700">${fmtCurrency(info.revenue)}</div>`:''}
       </div>
-    `).join('');
+    `}).join('');
   }
 
   // ── MODAL INPUT / EDIT ───────────────────────────────────────────────
