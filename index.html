@@ -3303,7 +3303,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
           <div id="pesertaCertName" class="cert-field absolute cursor-move select-none font-bold text-black" style="left:50%;top:48%;transform:translate(-50%,-50%);font-size:28px;white-space:nowrap;">[Nama Peserta]</div>
           <p id="pesertaCertNo" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:58%;transform:translate(-50%,-50%);font-size:14px;white-space:nowrap;">No: SJNAM-TRN-000000</p>
           <p id="pesertaCertValidity" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:65%;transform:translate(-50%,-50%);font-size:12px;white-space:nowrap;">Berlaku s/d -</p>
-          <div id="pesertaCertBarcode" class="absolute" style="display:none;left:4%;bottom:4%;width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
+          <div id="pesertaCertBarcode" class="cert-field absolute cursor-move select-none" style="display:none;left:50%;top:38%;transform:translate(-50%,-50%);width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
         </div>
       </div>
     </div>
@@ -3319,7 +3319,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
     <div class="flex items-start justify-between">
       <div>
         <h2 class="text-lg font-bold flex items-center gap-2">🎨 Template Sertifikat</h2>
-        <p class="text-xs text-slate-500 mt-0.5">Upload 2 background untuk sertifikat. Pilih template aktif dan atur barcode. Posisi teks bisa digeser & diperbesar langsung di preview.</p>
+        <p class="text-xs text-slate-500 mt-0.5">Upload 2 background untuk sertifikat. Pilih template aktif dan atur barcode. Posisi teks & QR Code bisa digeser, dan diperbesar/diperkecil dengan scroll + tahan Ctrl, langsung di preview.</p>
       </div>
       <span class="badge bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Admin Only</span>
     </div>
@@ -3385,7 +3385,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
             <div id="certReprintName" class="cert-field absolute cursor-move select-none font-bold text-black" style="left:50%;top:48%;transform:translate(-50%,-50%);font-size:28px;white-space:nowrap;">[Nama Peserta]</div>
             <p id="certReprintNo" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:58%;transform:translate(-50%,-50%);font-size:14px;white-space:nowrap;">No: SJNAM-TRN-000000</p>
             <p id="certReprintValidity" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:65%;transform:translate(-50%,-50%);font-size:12px;white-space:nowrap;">Berlaku s/d -</p>
-            <div id="certReprintBarcode" class="absolute" style="display:none;left:4%;bottom:4%;width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
+            <div id="certReprintBarcode" class="cert-field absolute cursor-move select-none" style="display:none;left:50%;top:38%;transform:translate(-50%,-50%);width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
           </div>
         </div>
       </div>
@@ -7621,11 +7621,12 @@ function renderCertificate(p, prefix){
     }
   });
 
-  // === DRAG & RESIZE untuk 3 field ===
-  function makeDraggable(el){
+  // === DRAG & RESIZE untuk field teks + QR Barcode ===
+  function makeDraggable(el, opts){
     if(!el) return;
     if(el.dataset.draggableInit === '1') return; // cegah pemasangan listener berulang
     el.dataset.draggableInit = '1';
+    const resizeMode = (opts && opts.resizeMode) || 'font'; // 'font' atau 'box'
     let isDown = false, startX, startY, startLeft, startTop;
 
     el.addEventListener('mousedown', (e)=>{
@@ -7680,21 +7681,29 @@ function renderCertificate(p, prefix){
     });
     document.addEventListener('touchend', ()=>{ if(isDown){ isDown=false; savePositions(); }});
 
-    // wheel + ctrl/alt/meta to resize font
+    // wheel + ctrl/alt/meta untuk resize (font untuk teks, kotak untuk QR Barcode)
     el.addEventListener('wheel', (e)=>{
       if(!e.ctrlKey && !e.altKey && !e.metaKey) return; // require modifier to avoid scroll conflict
       e.preventDefault();
-      const style = window.getComputedStyle(el);
-      let size = parseFloat(style.fontSize) || 16;
-      size += (e.deltaY < 0 ? 1 : -1);
-      size = Math.max(8, Math.min(72, size));
-      el.style.fontSize = size + 'px';
+      if(resizeMode === 'box'){
+        const curW = parseFloat(el.style.width) || el.offsetWidth || 90;
+        let w = curW + (e.deltaY < 0 ? 4 : -4);
+        w = Math.max(40, Math.min(220, w));
+        el.style.width = w + 'px';
+        el.style.height = w + 'px';
+      } else {
+        const style = window.getComputedStyle(el);
+        let size = parseFloat(style.fontSize) || 16;
+        size += (e.deltaY < 0 ? 1 : -1);
+        size = Math.max(8, Math.min(72, size));
+        el.style.fontSize = size + 'px';
+      }
       savePositions();
     });
   }
 
   function savePositions(){
-    const fields = ['Name','No','Validity'];
+    const fields = ['Name','No','Validity','Barcode'];
     const prefixes = ['pesertaCert','certReprint'];
     const pos = {};
     prefixes.forEach(pre=>{
@@ -7705,6 +7714,8 @@ function renderCertificate(p, prefix){
             left: el.style.left,
             top: el.style.top,
             fontSize: el.style.fontSize,
+            width: el.style.width,
+            height: el.style.height,
             transform: el.style.transform
           };
         }
@@ -7721,13 +7732,18 @@ function renderCertificate(p, prefix){
         el.style.left = pos[id].left || el.style.left;
         el.style.top = pos[id].top || el.style.top;
         if(pos[id].fontSize) el.style.fontSize = pos[id].fontSize;
+        if(pos[id].width) el.style.width = pos[id].width;
+        if(pos[id].height) el.style.height = pos[id].height;
         el.style.transform = pos[id].transform || 'translate(-50%,-50%)';
         if(pos[id].left && pos[id].left.includes('%')) el.style.transform = 'translate(0,0)';
       }
     });
-    // make draggable
+    // make draggable — teks (resize via font) + QR Barcode (resize via kotak)
     ['pesertaCertName','pesertaCertNo','pesertaCertValidity','certReprintName','certReprintNo','certReprintValidity'].forEach(id=>{
-      makeDraggable(document.getElementById(id));
+      makeDraggable(document.getElementById(id), {resizeMode:'font'});
+    });
+    ['pesertaCertBarcode','certReprintBarcode'].forEach(id=>{
+      makeDraggable(document.getElementById(id), {resizeMode:'box'});
     });
   }
 
