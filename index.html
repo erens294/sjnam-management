@@ -9724,6 +9724,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     } catch(e){ alert('Gagal export Excel: '+e.message); }
   }
 
+  // Export PDF untuk Data Request (tabel detail)
   function stcrExportPdfData(sourceData, title, filename){
     if(!window.jspdf){ alert('Library jsPDF belum dimuat.'); return; }
     try {
@@ -9760,6 +9761,209 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
       });
       doc.save(filename);
     } catch(e){ alert('Gagal export PDF: '+e.message); }
+  }
+
+  // Export PDF khusus Dashboard — menampilkan KPI, ringkasan per bulan, per stasiun, dan tabel data
+  // sesuai filter yang aktif (sama persis dengan tampilan dashboard di layar)
+  function stcrExportDashboardPdf(sourceData, filterDesc, filename){
+    if(!window.jspdf){ alert('Library jsPDF belum dimuat.'); return; }
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+      const PW = doc.internal.pageSize.getWidth();   // 297mm
+      const PH = doc.internal.pageSize.getHeight();  // 210mm
+      const NAVY = [11,30,58];
+      const TEAL = [13,110,138];
+      const GOLD = [232,164,39];
+      const PURPLE = [124,58,237];
+      const GREEN = [22,163,74];
+      const LIGHT = [240,246,250];
+
+      // ── KPI Kalkulasi ───────────────────────────────────────────
+      const total      = sourceData.length;
+      const totalAll   = ALL_DATA.length;
+      const totalSTCR  = sourceData.filter(d=>d.StretcherCase>0).length;
+      const totalPOBbt = sourceData.filter(d=>d['Total POB']>0).reduce((s,d)=>s+d['Total POB'],0);
+      const revenue    = sourceData.filter(d=>d['Price POB']>0).reduce((s,d)=>s+d['Price POB'],0);
+      const sjCount    = sourceData.filter(d=>d.AOC==='SJ').length;
+      const inCount    = sourceData.filter(d=>d.AOC==='IN').length;
+      const onlySTCR   = sourceData.filter(d=>d.Request==='STCR').length;
+      const onlyPOB    = sourceData.filter(d=>d.Request==='POB').length;
+      const bothReq    = sourceData.filter(d=>d.Request==='STCR & POB').length;
+      const pct = n => total ? (n/total*100).toFixed(1)+'%' : '0.0%';
+
+      const fmtRp = v => {
+        if(!v) return 'Rp 0';
+        if(v>=1000000000) return 'Rp '+(v/1000000000).toFixed(2)+' M';
+        if(v>=1000000) return 'Rp '+(v/1000000).toFixed(1)+' jt';
+        return 'Rp '+v.toLocaleString('id-ID');
+      };
+
+      // ── HALAMAN 1: Header + KPI + Ringkasan ─────────────────────
+      // Header banner
+      doc.setFillColor(...NAVY);
+      doc.rect(0, 0, PW, 18, 'F');
+      doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+      doc.text('STRETCHERCASE & POB — DASHBOARD REPORT', 14, 7);
+      doc.setFontSize(8); doc.setFont('helvetica','normal');
+      doc.text('Sriwijaya Air & NAM Air · Medical Assistance Management', 14, 12);
+      const filterLabel = filterDesc || ' (Semua Data)';
+      doc.text('Filter: '+filterLabel.replace(/[()]/g,'').trim(), 14, 16.5);
+      doc.text('Dicetak: '+new Date().toLocaleString('id-ID'), PW-14, 16.5, {align:'right'});
+      doc.setTextColor(0,0,0);
+
+      // ── KPI CARDS (6 kartu, 2 baris × 3) ────────────────────────
+      const kpiData = [
+        { label:'TOTAL REQUEST',    value: String(total),      sub: 'dari '+totalAll+' keseluruhan', color: NAVY },
+        { label:'STRETCHERCASE',    value: String(totalSTCR),  sub: onlySTCR+' hanya STCR · '+bothReq+' STCR+POB', color: PURPLE },
+        { label:'TOTAL POB (BTL)',  value: String(totalPOBbt), sub: onlyPOB+' hanya POB · '+bothReq+' STCR+POB', color: TEAL },
+        { label:'REVENUE POB',      value: fmtRp(revenue),     sub: 'total pendapatan', color: GOLD },
+        { label:'SRIWIJAYA AIR (SJ)',value: String(sjCount),   sub: pct(sjCount)+' dari total request', color: [228,91,43] },
+        { label:'NAM AIR (IN)',     value: String(inCount),    sub: pct(inCount)+' dari total request', color: [43,127,228] },
+      ];
+      const cardW = (PW - 28 - 10) / 3;
+      const cardH = 22;
+      const cardStartY = 22;
+      kpiData.forEach((k, i) => {
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        const x = 14 + col * (cardW + 5);
+        const y = cardStartY + row * (cardH + 4);
+        // card background
+        doc.setFillColor(...LIGHT);
+        doc.roundedRect(x, y, cardW, cardH, 2, 2, 'F');
+        // color accent bar kiri
+        doc.setFillColor(...k.color);
+        doc.rect(x, y, 3, cardH, 'F');
+        // label
+        doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(100,110,120);
+        doc.text(k.label, x+6, y+5);
+        // value
+        doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(...k.color);
+        doc.text(k.value, x+6, y+14);
+        // sub
+        doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(100,110,120);
+        doc.text(k.sub, x+6, y+19.5);
+      });
+      doc.setTextColor(0,0,0);
+
+      // ── RINGKASAN PER BULAN ──────────────────────────────────────
+      const monthMap = {};
+      sourceData.forEach(d=>{
+        const m = d.Month||''; if(!m) return;
+        const y = d.Year||'';
+        const key = y ? y+' '+m : m;
+        if(!monthMap[key]) monthMap[key]={count:0,stcr:0,pob:0,revenue:0,sj:0,inC:0};
+        monthMap[key].count++;
+        if(d.StretcherCase>0) monthMap[key].stcr++;
+        if(d['Total POB']>0) monthMap[key].pob++;
+        if(d['Price POB']>0) monthMap[key].revenue += d['Price POB'];
+        if(d.AOC==='SJ') monthMap[key].sj++;
+        if(d.AOC==='IN') monthMap[key].inC++;
+      });
+      const MONTH_ORDER = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const monthRows = Object.entries(monthMap)
+        .sort((a,b)=>{
+          const [ay,am]=a[0].split(' '); const [by,bm]=b[0].split(' ');
+          const yi = (ay||'0000').localeCompare(by||'0000');
+          if(yi!==0) return yi;
+          return MONTH_ORDER.indexOf(am) - MONTH_ORDER.indexOf(bm);
+        })
+        .map(([key,v],i)=>[i+1, key, v.count, v.stcr, v.pob, v.sj, v.inC, fmtRp(v.revenue)]);
+
+      const summaryStartY = cardStartY + 2*(cardH+4) + 6;
+
+      // Ringkasan per bulan (kiri) + per stasiun (kanan) side by side
+      const halfW = (PW - 28 - 8) / 2;
+
+      // Tren per Bulan
+      doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(...NAVY);
+      doc.text('📈 Tren Request per Bulan', 14, summaryStartY);
+      doc.autoTable({
+        startY: summaryStartY + 2,
+        tableWidth: halfW,
+        margin: { left: 14 },
+        head: [['#','Periode','Total','STCR','POB','SJ','IN','Revenue']],
+        body: monthRows,
+        styles: { fontSize: 6.5, cellPadding: 1.5 },
+        headStyles: { fillColor: NAVY, textColor:255, fontStyle:'bold', fontSize:6.5 },
+        alternateRowStyles: { fillColor: LIGHT },
+        columnStyles: { 7: { cellWidth: 24 } }
+      });
+
+      // Per Stasiun (kanan)
+      const stationMap = {};
+      sourceData.forEach(d=>{
+        const s = d.Station; if(!s) return;
+        if(!stationMap[s]) stationMap[s]={count:0,stcr:0,pob:0,revenue:0};
+        stationMap[s].count++;
+        if(d.StretcherCase>0) stationMap[s].stcr++;
+        if(d['Total POB']>0) stationMap[s].pob++;
+        if(d['Price POB']>0) stationMap[s].revenue += d['Price POB'];
+      });
+      const stRows = Object.entries(stationMap)
+        .sort((a,b)=>b[1].count-a[1].count)
+        .slice(0,20)
+        .map(([s,v],i)=>[i+1, s, v.count, v.stcr, v.pob, fmtRp(v.revenue)]);
+
+      const stationX = 14 + halfW + 8;
+      doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(...NAVY);
+      doc.text('🏢 Top Stasiun', stationX, summaryStartY);
+      doc.autoTable({
+        startY: summaryStartY + 2,
+        tableWidth: halfW,
+        margin: { left: stationX },
+        head: [['#','Station','Total','STCR','POB','Revenue']],
+        body: stRows,
+        styles: { fontSize: 6.5, cellPadding: 1.5 },
+        headStyles: { fillColor: NAVY, textColor:255, fontStyle:'bold', fontSize:6.5 },
+        alternateRowStyles: { fillColor: LIGHT },
+        columnStyles: { 5: { cellWidth: 24 } }
+      });
+
+      doc.setTextColor(0,0,0);
+
+      // ── HALAMAN 2: Tabel Detail Data ─────────────────────────────
+      doc.addPage();
+      doc.setFillColor(...NAVY);
+      doc.rect(0, 0, PW, 14, 'F');
+      doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+      doc.text('DETAIL DATA REQUEST'+filterDesc, 14, 9);
+      doc.setTextColor(0,0,0);
+
+      const tableData = sourceData.map((d,i)=>[
+        i+1,
+        d['Date of Flight']||'',
+        d['App Service & Tehnik']||'',
+        d.AOC||'',
+        d.Request||'',
+        d['Flight No']||'',
+        d.Route||'',
+        d['Nama Pasien']||'',
+        d.StretcherCase>0?'✓':'—',
+        d['Total POB']||'—',
+        d['Price POB']?(+d['Price POB']).toLocaleString('id-ID'):'—',
+        d.Station||''
+      ]);
+
+      doc.autoTable({
+        startY: 17,
+        head: [['#','Tgl Flight','No.Req','AOC','Request','Flight No','Route','Pasien','STCR','POB','Revenue (Rp)','Station']],
+        body: tableData,
+        styles: { fontSize: 6.5, cellPadding: 1.5 },
+        headStyles: { fillColor: NAVY, textColor:255, fontStyle:'bold', fontSize:6.5 },
+        alternateRowStyles: { fillColor: LIGHT },
+        didDrawPage: (data) => {
+          // footer setiap halaman
+          doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(150,150,150);
+          doc.text('STCR Dashboard Report — '+new Date().toLocaleDateString('id-ID'), 14, PH-4);
+          doc.text('Hal '+doc.internal.getCurrentPageInfo().pageNumber, PW-14, PH-4, {align:'right'});
+          doc.setTextColor(0,0,0);
+        }
+      });
+
+      doc.save(filename);
+    } catch(e){ alert('Gagal export Dashboard PDF: '+e.message); console.error(e); }
   }
 
   function stcrExportStationPdf(filename, filterDesc){
@@ -9821,7 +10025,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     if(dashPdfBtn) dashPdfBtn.addEventListener('click', ()=>{
       const filteredDash = getFiltered();
       const filterDesc = buildFilterLabel(['stcr-f-year','stcr-f-month','stcr-f-aoc','stcr-f-req','stcr-f-station']);
-      stcrExportPdfData(filteredDash, 'STCR & POB — Dashboard' + filterDesc, 'STCR_Dashboard_'+new Date().toISOString().slice(0,10)+'.pdf');
+      stcrExportDashboardPdf(filteredDash, filterDesc, 'STCR_Dashboard_'+new Date().toISOString().slice(0,10)+'.pdf');
     });
 
     // Data Request exports (export filtered data)
