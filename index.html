@@ -16,6 +16,8 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={darkMode:'class'}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>if(window.Chart && window.ChartDataLabels){Chart.register(ChartDataLabels);Chart.defaults.set('plugins.datalabels',{display:false});}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -688,6 +690,13 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
             <option value="Approved">Approved</option>
           </select>
         </div>
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Verifikasi</label>
+          <select id="verifikasi" class="input">
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </select>
+        </div>
       </div>
       <div class="flex justify-end mt-5">
         <button type="button" id="btnStep1Next" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition">Lanjut →</button>
@@ -867,7 +876,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
             <th class="px-2 py-2.5 font-semibold text-xs uppercase">Kat.</th>
             <th class="px-2 py-2.5 font-semibold text-xs uppercase">Approval</th>
             <th class="px-2 py-2.5 font-semibold text-xs uppercase">
-              <span class="group relative inline-flex items-center gap-1 cursor-help" title="Verifikasi otomatis mengikuti status Approval: Yes jika Approved, No jika belum">
+              <span class="group relative inline-flex items-center gap-1 cursor-help" title="Verifikasi dapat diatur manual: Yes atau No">
                 Verifikasi
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               </span>
@@ -3310,6 +3319,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
           <p id="pesertaCertNo" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:48%;transform:translate(-50%,-50%);font-size:13px;white-space:nowrap;text-align:center;">No: SJNAM-TRN-000000</p>
           <p id="pesertaCertValidity" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:66%;transform:translate(-50%,-50%);font-size:12px;white-space:nowrap;text-align:center;">Berlaku s/d -</p>
           <div id="pesertaCertBarcode" class="cert-field absolute cursor-move select-none" style="display:none;left:50%;top:38%;transform:translate(-50%,-50%);width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
+          <img id="pesertaCertParaf" class="cert-field absolute cursor-move select-none" style="display:none;left:78%;top:78%;transform:translate(-50%,-50%);width:110px;height:60px;object-fit:contain;background:transparent;" alt="paraf">
         </div>
       </div>
     </div>
@@ -3357,6 +3367,38 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
           <button id="btnResetTemplate" class="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs font-semibold rounded-lg">♻️ Reset</button>
           <button id="btnDownloadTemplate" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg">⬇️ Download Aktif</button>
         </div>
+
+        <!-- ===== PARAF (SIGNATURE) UPLOAD ===== -->
+        <div class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+          <p class="text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">✍️ Paraf / Tanda Tangan</p>
+          <p class="text-[11px] text-slate-500 mb-2">Upload gambar paraf (PNG disarankan). Aktifkan opsi transparan agar warna putih pada gambar dijadikan transparan otomatis.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <input type="file" id="certParafInput" accept="image/png,image/jpeg,image/webp" class="input mt-1">
+              <div class="flex flex-wrap items-center gap-2 mt-2">
+                <label class="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                  <input type="checkbox" id="toggleParafTransparent" class="w-4 h-4" checked>
+                  <span>Background transparan</span>
+                </label>
+              </div>
+              <div class="flex gap-1 mt-2">
+                <button id="btnSaveParaf" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg">💾 Simpan Paraf</button>
+                <button id="btnToggleParafShow" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg">👁️ Tampilkan</button>
+                <button id="btnRemoveParaf" class="px-3 py-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs font-semibold rounded-lg">🗑️ Hapus</button>
+              </div>
+              <p id="parafStatus" class="text-xs text-slate-500 mt-1.5">Status: belum ada paraf.</p>
+            </div>
+            <div>
+              <label class="text-xs font-semibold">Preview Paraf</label>
+              <div id="parafPreviewBox" class="mt-1 h-20 w-full bg-slate-100 dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center overflow-hidden relative">
+                <span class="text-[11px] text-slate-400">Preview kosong</span>
+                <img id="parafPreviewImg" class="absolute inset-0 m-auto max-h-full max-w-full object-contain hidden" alt="preview paraf">
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- ===== END PARAF UPLOAD ===== -->
+
 
         <!-- Airlines template status -->
         <div class="flex flex-wrap gap-3 mt-1" id="airlinesTemplateStatus">
@@ -3595,6 +3637,7 @@ body { background: radial-gradient(ellipse at top, #0f172a 0%, #020617 100%); }
             <p id="certReprintNo" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:48%;transform:translate(-50%,-50%);font-size:13px;white-space:nowrap;text-align:center;">No: SJNAM-TRN-000000</p>
             <p id="certReprintValidity" class="cert-field absolute cursor-move select-none text-black" style="left:50%;top:66%;transform:translate(-50%,-50%);font-size:12px;white-space:nowrap;text-align:center;">Berlaku s/d -</p>
             <div id="certReprintBarcode" class="cert-field absolute cursor-move select-none" style="display:none;left:50%;top:38%;transform:translate(-50%,-50%);width:90px;height:90px;background:white;padding:3px;border-radius:6px;"></div>
+            <img id="certReprintParaf" class="cert-field absolute cursor-move select-none" style="display:none;left:78%;top:78%;transform:translate(-50%,-50%);width:110px;height:60px;object-fit:contain;background:transparent;" alt="paraf">
           </div>
         </div>
       </div>
@@ -4193,6 +4236,7 @@ $('#btnSimpan').addEventListener('click',()=>{
     kategori: $('#kategori').value,
     flightStatus: $('#flightStatus').value||'Delay Flight',
     approval: $('#approval').value,
+    verifikasi: $('#verifikasi').value||'No',
     qtyPax: parseInt($('#qtyPax').value||0),
     costPerPax: parseInt($('#costPerPax').value||settings.costPerPax||300000),
     about: $('#about').value.trim(),
@@ -4223,6 +4267,7 @@ function resetForm(){
   $('#kategori').value='';
   $('#flightStatus').value='Delay Flight';
   $('#approval').value='Not-Approved';
+  $('#verifikasi').value='No';
   $('#qtyPax').value='';
   $('#costPerPax').value=settings.costPerPax||300000;
   editingId=null;
@@ -4350,8 +4395,8 @@ function renderTable(){
     const delayColor=d.delayMenit>=240?'bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-200':d.delayMenit>0?'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300':'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
     const katColor=katColors[d.kategori]||'bg-slate-100 text-slate-700';
     const apColor=d.approval==='Approved'?'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300':d.approval==='On-Process'?'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300':'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
-    // Verifikasi: Yes jika sudah Approved, No jika belum (On-Process / Not-Approved)
-    const isVerified = d.approval==='Approved';
+    // Verifikasi: field independen yang bisa diedit manual (Yes/No). Fallback ke status Approval untuk data lama.
+    const isVerified = d.verifikasi ? d.verifikasi==='Yes' : d.approval==='Approved';
     const verifLabel = isVerified ? 'Yes' : 'No';
     const verifColor = isVerified ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
     const sColor=statusColor[d.flightStatus]||'status-delay';
@@ -4396,7 +4441,12 @@ function renderTable(){
       <td class="px-2 py-2 font-mono text-xs">${oclDisplay}</td>
       <td class="px-2 py-2"><span class="badge ${katColor}">${d.kategori}</span></td>
       <td class="px-2 py-2"><span class="badge ${apColor}">${d.approval||'Not-Approved'}</span></td>
-      <td class="px-2 py-2"><span class="badge ${verifColor}">${verifLabel}</span></td>
+      <td class="px-2 py-2">
+        <select data-verif-id="${d.id}" class="badge ${verifColor} border-0 cursor-pointer ${window.currentUserReadOnly?'pointer-events-none opacity-60':''}" ${window.currentUserReadOnly?'disabled':''}>
+          <option value="No" ${!isVerified?'selected':''}>No</option>
+          <option value="Yes" ${isVerified?'selected':''}>Yes</option>
+        </select>
+      </td>
       <td class="px-2 py-2 text-center"><input type="number" min="0" value="${d.qtyPax||0}" data-qty-id="${d.id}" class="qty-input text-xs" ${window.currentUserReadOnly?'disabled readonly style="opacity:0.5;cursor:not-allowed"':''}></td>
       <td class="px-2 py-2 text-right text-xs font-medium text-purple-700 dark:text-purple-300">${formatRupiah(costVal)}</td>
       <td class="px-2 py-2 max-w-[120px] truncate text-xs text-slate-500" title="${d.keterangan||''}">${d.keterangan||'-'}</td>
@@ -4415,8 +4465,7 @@ function renderTable(){
       const etdInfo=formatTimeLocal(d.etdUtc,origin);
       const delayColor=d.delayMenit>0?'text-red-600':'text-emerald-600';
       const sColor=statusColor[d.flightStatus]||'status-delay';
-      const isVerifiedM = d.approval==='Approved';
-      const verifLabelM = isVerifiedM ? 'Yes' : 'No';
+      const isVerifiedM = d.verifikasi ? d.verifikasi==='Yes' : d.approval==='Approved';
       const verifColorM = isVerifiedM ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
       return `<div class="card p-4 rounded-xl">
         <div class="flex items-start justify-between mb-2">
@@ -4433,7 +4482,10 @@ function renderTable(){
         <div class="flex items-center justify-between mt-2">
           <div class="flex items-center gap-1.5">
             <span class="flight-status-badge ${sColor}">${d.flightStatus||'Delay'}</span>
-            <span class="badge ${verifColorM}" title="Verifikasi">✓ ${verifLabelM}</span>
+            <select data-verif-id="${d.id}" class="badge ${verifColorM} border-0 cursor-pointer text-xs ${window.currentUserReadOnly?'pointer-events-none opacity-60':''}" ${window.currentUserReadOnly?'disabled':''} title="Verifikasi">
+              <option value="No" ${!isVerifiedM?'selected':''}>No</option>
+              <option value="Yes" ${isVerifiedM?'selected':''}>Yes</option>
+            </select>
           </div>
           <div class="flex gap-2">
             ${window.currentUserReadOnly ? '' : `<button data-edit="${d.id}" class="text-blue-600 text-xs font-semibold">Edit</button><button data-del="${d.id}" class="text-red-600 text-xs font-semibold">Hapus</button>`}
@@ -4450,6 +4502,24 @@ function renderTable(){
       const id=parseInt(e.target.dataset.qtyId);
       const idx=data.findIndex(d=>d.id===id);
       if(idx>-1){data[idx].qtyPax=parseInt(e.target.value)||0;saveData();renderTable();}
+    });
+  });
+
+  // Verifikasi inline save (desktop + mobile)
+  [tbody, mobile].forEach(container=>{
+    if(!container) return;
+    container.querySelectorAll('[data-verif-id]').forEach(sel=>{
+      sel.addEventListener('change',e=>{
+        if(window.currentUserReadOnly) return;
+        const id=parseInt(e.target.dataset.verifId);
+        const idx=data.findIndex(d=>d.id===id);
+        if(idx>-1){
+          data[idx].verifikasi=e.target.value;
+          saveData();
+          renderTable();
+          showToast('Verifikasi diperbarui');
+        }
+      });
     });
   });
 
@@ -4482,6 +4552,7 @@ function handleTableClick(e){
     $('#kategori').value=item.kategori;
     $('#flightStatus').value=item.flightStatus||'Delay Flight';
     $('#approval').value=item.approval||'Not-Approved';
+    $('#verifikasi').value=item.verifikasi||(item.approval==='Approved'?'Yes':'No');
     $('#qtyPax').value=item.qtyPax||'';
     $('#costPerPax').value=item.costPerPax||settings.costPerPax||300000;
     $('#about').value=item.about||'';
@@ -4537,7 +4608,7 @@ $('#btnExportExcel').addEventListener('click',()=>{
       Delay_Menit:d.delayMenit, Delay_HH_MM:formatHM(d.delayMenit),
       Flight_Status:d.flightStatus||'Delay Flight',
       Kategori:d.kategori, Approval:d.approval||'Not-Approved',
-      Verifikasi: d.approval==='Approved' ? 'Yes' : 'No',
+      Verifikasi: d.verifikasi ? d.verifikasi : (d.approval==='Approved' ? 'Yes' : 'No'),
       Pax:d.qtyPax||0, Cost_PM89:(d.qtyPax||0)*(d.costPerPax||300000),
       Notice:d.about||'', Keterangan:d.keterangan||''
     }
@@ -4583,7 +4654,7 @@ $('#btnExportPdf').addEventListener('click',()=>{
       toLocal(d.stdUtc,d.route),toLocal(d.etdUtc,d.route),
       formatHM(d.delayMenit),d.flightStatus||'Delay',
       d.kategori,d.approval||'',
-      d.approval==='Approved'?'Yes':'No',
+      d.verifikasi ? d.verifikasi : (d.approval==='Approved'?'Yes':'No'),
       d.qtyPax||0,formatRupiah((d.qtyPax||0)*(d.costPerPax||300000))
     ]);
   // total
@@ -4705,7 +4776,9 @@ function renderDashboard(){
     data:{labels:cats,datasets:[{data:barData,backgroundColor:catColors,borderRadius:6}]},
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y} menit`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y} menit`}},
+        datalabels:{display:true,color:isDark?'#e2e8f0':'#1e293b',font:{size:10,weight:'bold'},anchor:'end',align:'top',formatter:v=>v>0?formatHM(v):''}
+      },
       scales:{y:{grid:{color:gridColor},ticks:{color:tickColor}},x:{grid:{display:false},ticks:{color:tickColor}}},
       onClick:(evt,elements)=>{
         if(elements.length){
@@ -4741,8 +4814,8 @@ function renderDashboard(){
     data:{
       labels:monthLabels,
       datasets:[
-        {label:'Cost PM (Rp)',data:monthlyCost,backgroundColor:'rgba(37,99,235,.7)',borderColor:'#2563eb',borderWidth:1,borderRadius:4,yAxisID:'y'},
-        {label:'Jumlah Flight',data:sortedMonths.map(ym=>monthlyMap[ym].count),type:'line',borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.1)',tension:.4,fill:false,pointBackgroundColor:'#f59e0b',pointRadius:4,yAxisID:'y1'}
+        {label:'Cost PM (Rp)',data:monthlyCost,backgroundColor:'rgba(37,99,235,.7)',borderColor:'#2563eb',borderWidth:1,borderRadius:4,yAxisID:'y',datalabels:{display:true,color:isDark?'#e2e8f0':'#1e293b',font:{size:9,weight:'bold'},anchor:'end',align:'top',formatter:v=>v>=1000000?'Rp'+(v/1000000).toFixed(1)+'jt':v>0?'Rp'+(v/1000).toFixed(0)+'k':''}},
+        {label:'Jumlah Flight',data:sortedMonths.map(ym=>monthlyMap[ym].count),type:'line',borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.1)',tension:.4,fill:false,pointBackgroundColor:'#f59e0b',pointRadius:4,yAxisID:'y1',datalabels:{display:true,color:'#f59e0b',font:{size:10,weight:'bold'},anchor:'end',align:'top',offset:6,formatter:v=>v>0?v:''}}
       ]
     },
     options:{
@@ -4773,6 +4846,7 @@ function renderDashboard(){
       plugins:{
         legend:{position:'bottom',labels:{color:tickColor,padding:10,font:{size:11}}},
         tooltip:{callbacks:{label:ctx=>{const total=pieDelayData.reduce((a,b)=>a+b,0);const pct=total?Math.round(ctx.parsed/total*100):0;return `${ctx.label}: ${formatHM(ctx.parsed)} (${pct}%)`;}}},
+        datalabels:{display:true,color:'#fff',font:{size:10,weight:'bold'},formatter:(v)=>{const total=pieDelayData.reduce((a,b)=>a+b,0);const pct=total?Math.round(v/total*100):0;return v>0?`${pct}%`:'';}}
       }
     }
   });
@@ -4784,7 +4858,9 @@ function renderDashboard(){
   statusChart=new Chart(document.getElementById('chartStatus'),{
     type:'doughnut',
     data:{labels:statusKeys,datasets:[{data:statusCounts,backgroundColor:['#f59e0b','#8b5cf6','#ef4444'],borderWidth:2,borderColor:isDark?'#1e293b':'#fff'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:tickColor,padding:12}}},cutout:'60%'}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:tickColor,padding:12}},
+      datalabels:{display:true,color:'#fff',font:{size:11,weight:'bold'},formatter:(v)=>{const total=statusCounts.reduce((a,b)=>a+b,0);const pct=total?Math.round(v/total*100):0;return v>0?`${v} (${pct}%)`:'';}}
+    },cutout:'60%'}
   });
 
     const top10=filtered.slice().sort((a,b)=>b.delayMenit-a.delayMenit).slice(0,3);
@@ -4825,7 +4901,9 @@ function renderDashboard(){
       data:{labels:routeLabels,datasets:[{label:'Quantity Delay',data:routeDelays,backgroundColor:routeColors,borderRadius:5}]},
       options:{
         responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y}`}}},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.parsed.y}`}},
+          datalabels:{display:true,color:isDark?'#e2e8f0':'#1e293b',font:{size:10,weight:'bold'},anchor:'end',align:'top',formatter:v=>v>0?v:''}
+        },
         scales:{
           y:{grid:{color:gridColor},ticks:{color:tickColor,callback:v=>v}},
           x:{grid:{display:false},ticks:{color:tickColor,maxRotation:45,minRotation:30,font:{size:10}}}
@@ -4853,7 +4931,9 @@ function renderDashboard(){
       data:{labels:stationLabels,datasets:[{label:'Total Cost PM (Rp)',data:stationCosts,backgroundColor:stationColors,borderRadius:5}]},
       options:{
         responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>formatRupiah(ctx.parsed.y)}}},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>formatRupiah(ctx.parsed.y)}},
+          datalabels:{display:true,color:isDark?'#e2e8f0':'#1e293b',font:{size:9,weight:'bold'},anchor:'end',align:'top',formatter:v=>v>=1000000?'Rp'+(v/1000000).toFixed(1)+'jt':v>0?'Rp'+(v/1000).toFixed(0)+'k':''}
+        },
         scales:{
           y:{grid:{color:gridColor},ticks:{color:tickColor,callback:v=>v>=1000000?'Rp '+(v/1000000).toFixed(0)+'jt':'Rp '+(v/1000).toFixed(0)+'k'}},
           x:{grid:{display:false},ticks:{color:tickColor,maxRotation:45,font:{size:10}}}
@@ -4880,6 +4960,7 @@ function renderDashboard(){
         plugins:{
           legend:{position:'bottom',labels:{color:tickColor,padding:10,font:{size:11}}},
           tooltip:{callbacks:{label:ctx=>{const total=airlinePieData.reduce((a,b)=>a+b,0);const pct=total?Math.round(ctx.parsed/total*100):0;return `${ctx.label}: ${ctx.parsed>=1000000?'Rp '+(ctx.parsed/1000000).toFixed(1)+'jt':formatRupiah(ctx.parsed)} (${pct}%)`;}}},
+          datalabels:{display:true,color:'#fff',font:{size:10,weight:'bold'},formatter:(v)=>{const total=airlinePieData.reduce((a,b)=>a+b,0);const pct=total?Math.round(v/total*100):0;return v>0?`${pct}%`:'';}}
         }
       }
     });
@@ -5916,10 +5997,15 @@ function getAllCloudData(){
   // Custom text block tambahan pada sertifikat
   let certCustomTexts = null;
   try { certCustomTexts = JSON.parse(localStorage.getItem('sjn_cert_custom_texts_v1') || 'null'); } catch(e){}
+  // Paraf / tanda tangan pada sertifikat
+  let certParaf = null;
+  try { certParaf = JSON.parse(localStorage.getItem('sjn_cert_paraf_v1') || 'null'); } catch(e){}
+  const certParafShow = localStorage.getItem('sjn_cert_paraf_show_v1');
 
   return {
     data, stations, dfsData, settings, training, users, stcrData,
     rolePerms, certTemplate1, certTemplate2, certTemplateActive, certPositions, certBarcode, certCustomTexts,
+    certParaf, certParafShow,
     savedAt: new Date().toISOString(), version: 'v4.2'
   };
 }
@@ -6015,6 +6101,8 @@ async function cloudPull(silent = false){
     if(rec.certPositions){ localStorage.setItem('sjn_cert_positions_v1', JSON.stringify(rec.certPositions)); certChanged = true; }
     if(rec.certBarcode !== undefined && rec.certBarcode !== null){ localStorage.setItem('sjn_cert_barcode_v1', rec.certBarcode); certChanged = true; }
     if(rec.certCustomTexts){ localStorage.setItem('sjn_cert_custom_texts_v1', JSON.stringify(rec.certCustomTexts)); certChanged = true; }
+    if(rec.certParaf){ localStorage.setItem('sjn_cert_paraf_v1', JSON.stringify(rec.certParaf)); certChanged = true; }
+    if(rec.certParafShow !== undefined && rec.certParafShow !== null){ localStorage.setItem('sjn_cert_paraf_show_v1', rec.certParafShow); certChanged = true; }
     if(certChanged){
       if(typeof window.loadCertificateTemplate === 'function') window.loadCertificateTemplate();
       if(typeof window.ctbRenderAll === 'function') window.ctbRenderAll();
@@ -6108,6 +6196,8 @@ function startRealtimeSubscription(){
         if(rec.certPositions){ localStorage.setItem('sjn_cert_positions_v1', JSON.stringify(rec.certPositions)); certChangedRt = true; }
         if(rec.certBarcode !== undefined && rec.certBarcode !== null){ localStorage.setItem('sjn_cert_barcode_v1', rec.certBarcode); certChangedRt = true; }
         if(rec.certCustomTexts){ localStorage.setItem('sjn_cert_custom_texts_v1', JSON.stringify(rec.certCustomTexts)); certChangedRt = true; }
+        if(rec.certParaf){ localStorage.setItem('sjn_cert_paraf_v1', JSON.stringify(rec.certParaf)); certChangedRt = true; }
+        if(rec.certParafShow !== undefined && rec.certParafShow !== null){ localStorage.setItem('sjn_cert_paraf_show_v1', rec.certParafShow); certChangedRt = true; }
         if(certChangedRt){
           if(typeof window.loadCertificateTemplate === 'function') window.loadCertificateTemplate();
           if(typeof window.ctbRenderAll === 'function') window.ctbRenderAll();
@@ -7776,6 +7866,8 @@ function renderCertificate(p, prefix){
   const TEMPLATE_ACTIVE = 'sjn_cert_template_active';
   const BARCODE_KEY = 'sjn_cert_barcode_v1';
   const POS_KEY = 'sjn_cert_positions_v1';
+  const PARAF_KEY = 'sjn_cert_paraf_v1';
+  const PARAF_SHOW_KEY = 'sjn_cert_paraf_show_v1';
 
   // Kembalikan data template berdasarkan airlines peserta:
   //   airlines === 'nam'       → Template 2 (NAM Air)
@@ -7860,7 +7952,74 @@ function renderCertificate(p, prefix){
     if(toggle) toggle.checked = localStorage.getItem(BARCODE_KEY) !== '0';
     loadPositions();
     updateAirlinesTemplateStatus();
+    loadParaf();
   }
+
+  // Proses gambar paraf: jika opsi transparan aktif, ubah piksel putih/terang menjadi transparan
+  function processParafImage(dataUrl, makeTransparent){
+    return new Promise((resolve)=>{
+      if(!makeTransparent){ resolve(dataUrl); return; }
+      const img = new Image();
+      img.onload = ()=>{
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        try {
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imgData.data;
+          for(let i=0; i<d.length; i+=4){
+            const r=d[i], g=d[i+1], b=d[i+2];
+            // anggap piksel terang (mendekati putih) sebagai background → transparan
+            if(r>235 && g>235 && b>235){
+              d[i+3] = 0;
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        } catch(e){
+          // gagal proses (misal CORS) → kembalikan dataUrl asli
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = ()=> resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
+  // Muat paraf tersimpan ke kedua preview sertifikat
+  function loadParaf(){
+    const saved = JSON.parse(localStorage.getItem(PARAF_KEY) || 'null');
+    const show = localStorage.getItem(PARAF_SHOW_KEY) !== '0';
+    const ids = ['pesertaCertParaf','certReprintParaf'];
+    ids.forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      if(saved && saved.dataUrl && show){
+        el.src = saved.dataUrl;
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+    // Update preview admin & status
+    const prevImg = document.getElementById('parafPreviewImg');
+    const prevBox = document.getElementById('parafPreviewBox');
+    const status = document.getElementById('parafStatus');
+    if(saved && saved.dataUrl){
+      if(prevImg){ prevImg.src = saved.dataUrl; prevImg.classList.remove('hidden'); }
+      if(prevBox) prevBox.querySelector('span')?.classList.add('hidden');
+      if(status) status.textContent = `Status: paraf tersimpan${saved.transparent ? ' (background transparan)' : ''} — ${new Date(saved.savedAt).toLocaleString('id-ID')}. ${show ? 'Ditampilkan pada sertifikat.' : 'Disembunyikan dari sertifikat.'}`;
+    } else {
+      if(prevImg) prevImg.classList.add('hidden');
+      if(prevBox) prevBox.querySelector('span')?.classList.remove('hidden');
+      if(status) status.textContent = 'Status: belum ada paraf.';
+    }
+    const btnToggle = document.getElementById('btnToggleParafShow');
+    if(btnToggle) btnToggle.textContent = show ? '🙈 Sembunyikan' : '👁️ Tampilkan';
+  }
+  window.loadParaf = loadParaf;
 
   // Perbarui label status template per airlines di panel admin
   function updateAirlinesTemplateStatus(){
@@ -7924,6 +8083,57 @@ function renderCertificate(p, prefix){
   handleTemplateInput('certTemplateInput1', TEMPLATE_KEY1);
   handleTemplateInput('certTemplateInput2', TEMPLATE_KEY2);
 
+  // === PARAF (SIGNATURE) UPLOAD ===
+  const PARAF_TEMP_KEY = 'temp_'+PARAF_KEY;
+  document.getElementById('certParafInput')?.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      sessionStorage.setItem(PARAF_TEMP_KEY, ev.target.result);
+      const prevImg = document.getElementById('parafPreviewImg');
+      const prevBox = document.getElementById('parafPreviewBox');
+      if(prevImg){ prevImg.src = ev.target.result; prevImg.classList.remove('hidden'); }
+      if(prevBox) prevBox.querySelector('span')?.classList.add('hidden');
+      const status = document.getElementById('parafStatus');
+      if(status) status.textContent = 'Preview siap. Klik Simpan Paraf.';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('btnSaveParaf')?.addEventListener('click', async ()=>{
+    const rawDataUrl = sessionStorage.getItem(PARAF_TEMP_KEY);
+    if(!rawDataUrl) return showToast('Pilih file paraf dulu','error');
+    const makeTransparent = document.getElementById('toggleParafTransparent')?.checked !== false;
+    showToast('⏳ Memproses paraf…','info');
+    const processedUrl = await processParafImage(rawDataUrl, makeTransparent);
+    localStorage.setItem(PARAF_KEY, JSON.stringify({dataUrl: processedUrl, transparent: makeTransparent, savedAt: Date.now()}));
+    localStorage.setItem(PARAF_SHOW_KEY, '1');
+    loadParaf();
+    if(typeof triggerAutoSync === 'function') triggerAutoSync();
+    showToast('Paraf disimpan & ditampilkan pada sertifikat ✅','success');
+  });
+
+  document.getElementById('btnToggleParafShow')?.addEventListener('click', ()=>{
+    if(!localStorage.getItem(PARAF_KEY)) return showToast('Belum ada paraf tersimpan','error');
+    const current = localStorage.getItem(PARAF_SHOW_KEY) !== '0';
+    localStorage.setItem(PARAF_SHOW_KEY, current ? '0' : '1');
+    loadParaf();
+    if(typeof triggerAutoSync === 'function') triggerAutoSync();
+    showToast(current ? 'Paraf disembunyikan dari sertifikat' : 'Paraf ditampilkan pada sertifikat', 'info');
+  });
+
+  document.getElementById('btnRemoveParaf')?.addEventListener('click', ()=>{
+    localStorage.removeItem(PARAF_KEY);
+    localStorage.removeItem(PARAF_SHOW_KEY);
+    sessionStorage.removeItem(PARAF_TEMP_KEY);
+    const input = document.getElementById('certParafInput');
+    if(input) input.value = '';
+    loadParaf();
+    if(typeof triggerAutoSync === 'function') triggerAutoSync();
+    showToast('Paraf dihapus','success');
+  });
+
   document.getElementById('btnSaveTemplate1')?.addEventListener('click', ()=>{
     const dataUrl = sessionStorage.getItem('temp_'+TEMPLATE_KEY1);
     if(!dataUrl) return showToast('Pilih file Template 1 dulu','error');
@@ -7958,7 +8168,7 @@ function renderCertificate(p, prefix){
   });
   
   document.getElementById('btnDownloadTemplate')?.addEventListener('click', ()=>{
-    const data = getActiveTemplate();
+    const { data } = getTemplateForAirlines(undefined);
     if(!data) return showToast('Tidak ada template','error');
     const a = document.createElement('a');
     a.href = data.dataUrl;
@@ -8072,7 +8282,7 @@ function renderCertificate(p, prefix){
   }
 
   function savePositions(){
-    const fields = ['Name','No','Validity','Barcode'];
+    const fields = ['Name','No','Validity','Barcode','Paraf'];
     const prefixes = ['pesertaCert','certReprint'];
     const pos = {};
     prefixes.forEach(pre=>{
@@ -8108,7 +8318,7 @@ function renderCertificate(p, prefix){
       ['pesertaCertName','pesertaCertNo','pesertaCertValidity','certReprintName','certReprintNo','certReprintValidity'].forEach(id=>{
         makeDraggable(document.getElementById(id), {resizeMode:'font'});
       });
-      ['pesertaCertBarcode','certReprintBarcode'].forEach(id=>{
+      ['pesertaCertBarcode','certReprintBarcode','pesertaCertParaf','certReprintParaf'].forEach(id=>{
         makeDraggable(document.getElementById(id), {resizeMode:'box'});
       });
       return;
@@ -8136,7 +8346,7 @@ function renderCertificate(p, prefix){
     ['pesertaCertName','pesertaCertNo','pesertaCertValidity','certReprintName','certReprintNo','certReprintValidity'].forEach(id=>{
       makeDraggable(document.getElementById(id), {resizeMode:'font'});
     });
-    ['pesertaCertBarcode','certReprintBarcode'].forEach(id=>{
+    ['pesertaCertBarcode','certReprintBarcode','pesertaCertParaf','certReprintParaf'].forEach(id=>{
       makeDraggable(document.getElementById(id), {resizeMode:'box'});
     });
   }
@@ -9382,7 +9592,9 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         borderColor:'#1AA7C4',backgroundColor:'rgba(26,167,196,.12)',
         borderWidth:2,pointRadius:3,fill:true,tension:.3
       }]},
-      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxRotation:45,font:{size:10}}}}}
+      options:{responsive:true,plugins:{legend:{display:false},
+        datalabels:{display:true,color:'#1AA7C4',font:{size:9,weight:'bold'},align:'top',anchor:'end',formatter:v=>v>0?v:''}
+      },scales:{x:{ticks:{maxRotation:45,font:{size:10}}}}}
     });
 
     const stcrCount = data.filter(d=>d.Request==='STCR').length;
@@ -9395,7 +9607,9 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
       type:'doughnut',
       data:{labels:['STCR','POB','STCR & POB','Lainnya'],
         datasets:[{data:[stcrCount,pobCount,bothCount,other],backgroundColor:['#7C3AED','#0D6E8A','#E8A427','#9CA3AF'],borderWidth:2}]},
-      options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}
+      options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:11}}},
+        datalabels:{display:true,color:'#fff',font:{size:10,weight:'bold'},formatter:(v,ctx)=>{const arr=ctx.chart.data.datasets[0].data;const total=arr.reduce((a,b)=>a+b,0);const pct=total?Math.round(v/total*100):0;return v>0?`${v} (${pct}%)`:'';}}
+      }}
     });
 
     const revMap = {};
@@ -9409,7 +9623,9 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         label:'Revenue (juta Rp)',data:revKeys.map(k=>revMap[k]/1000000),
         backgroundColor:'#E8A427',borderRadius:5
       }]},
-      options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'Rp '+v+'jt'}},x:{ticks:{maxRotation:45,font:{size:10}}}}}
+      options:{responsive:true,plugins:{legend:{display:false},
+        datalabels:{display:true,color:'#92400e',font:{size:9,weight:'bold'},anchor:'end',align:'top',formatter:v=>v>0?'Rp'+v.toFixed(1)+'jt':''}
+      },scales:{y:{ticks:{callback:v=>'Rp '+v+'jt'}},x:{ticks:{maxRotation:45,font:{size:10}}}}}
     });
 
     const stMap = {};
@@ -9420,7 +9636,9 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     charts.stationChart = new Chart(stCanvas,{
       type:'bar',
       data:{labels:topSt.map(s=>s[0]),datasets:[{label:'Request',data:topSt.map(s=>s[1]),backgroundColor:'#0B1E3A',borderRadius:4}]},
-      options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:11}}}}}
+      options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false},
+        datalabels:{display:true,color:'#fff',font:{size:10,weight:'bold'},anchor:'end',align:'start',formatter:v=>v>0?v:''}
+      },scales:{x:{ticks:{font:{size:11}}}}}
     });
   }
 
