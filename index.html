@@ -6828,23 +6828,46 @@ async function cloudPush(silent=false){
     // === CONFLICT CHECK: baca updated_at cloud dulu ===
     let mergedPayload = localPayload;
     const { data: cloudRow } = await sb.from('sjnam_sync').select('payload, updated_at').eq('id','sjnam_main').maybeSingle();
-    if(cloudRow && cloudRow.updated_at && _lastCloudUpdatedAt && cloudRow.updated_at > _lastCloudUpdatedAt){
+    if(cloudRow && cloudRow.updated_at && (
+      !_lastCloudUpdatedAt ||                          // Sesi baru (belum pernah pull) → selalu merge
+      cloudRow.updated_at > _lastCloudUpdatedAt         // Cloud lebih baru dari pull terakhir
+    )){
       // Cloud lebih baru dari pull terakhir kita → ada perubahan dari device lain
-      // Merge array data (delay, DFS, STCR, peserta training) agar tidak kehilangan data
+      // Merge semua array data agar tidak kehilangan data dari device lain
       const cloudPayload = cloudRow.payload || {};
-      const delayKeyFn = r => (r['App Service & Tehnik'] || r.id || JSON.stringify(r));
+      const byIdOrKey = r => (r.id || r['App Service & Tehnik'] || JSON.stringify(r));
       const pesertaKeyFn = r => (r.id || r.username || JSON.stringify(r));
+      const dgTrxKeyFn = r => r.id || JSON.stringify(r);
       mergedPayload = {
         ...localPayload,
-        data:     _mergeArrays(cloudPayload.data,     localPayload.data,     delayKeyFn),
-        dfsData:  _mergeArrays(cloudPayload.dfsData,  localPayload.dfsData,  delayKeyFn),
-        stcrData: _mergeArrays(cloudPayload.stcrData, localPayload.stcrData, delayKeyFn),
+        data:     _mergeArrays(cloudPayload.data,     localPayload.data,     byIdOrKey),
+        dfsData:  _mergeArrays(cloudPayload.dfsData,  localPayload.dfsData,  byIdOrKey),
+        stcrData: _mergeArrays(cloudPayload.stcrData, localPayload.stcrData, byIdOrKey),
       };
       // Merge peserta training jika ada
       if(localPayload.training && cloudPayload.training){
         mergedPayload.training = {...localPayload.training};
         if(Array.isArray(localPayload.training.peserta) && Array.isArray(cloudPayload.training.peserta)){
           mergedPayload.training.peserta = _mergeArrays(cloudPayload.training.peserta, localPayload.training.peserta, pesertaKeyFn);
+        }
+      }
+      // Merge drygoods transactions (yang paling sering berubah per-device)
+      if(localPayload.drygoodsData && cloudPayload.drygoodsData){
+        mergedPayload.drygoodsData = {...localPayload.drygoodsData};
+        if(Array.isArray(localPayload.drygoodsData.transactions) && Array.isArray(cloudPayload.drygoodsData.transactions)){
+          mergedPayload.drygoodsData.transactions = _mergeArrays(
+            cloudPayload.drygoodsData.transactions, localPayload.drygoodsData.transactions, dgTrxKeyFn
+          );
+        }
+        if(Array.isArray(localPayload.drygoodsData.employees) && Array.isArray(cloudPayload.drygoodsData.employees)){
+          mergedPayload.drygoodsData.employees = _mergeArrays(
+            cloudPayload.drygoodsData.employees, localPayload.drygoodsData.employees, dgTrxKeyFn
+          );
+        }
+        if(Array.isArray(localPayload.drygoodsData.bankItems) && Array.isArray(cloudPayload.drygoodsData.bankItems)){
+          mergedPayload.drygoodsData.bankItems = _mergeArrays(
+            cloudPayload.drygoodsData.bankItems, localPayload.drygoodsData.bankItems, dgTrxKeyFn
+          );
         }
       }
       cloudLog('🔀 Konflik terdeteksi — data digabung otomatis (merge). Cloud: '+cloudRow.updated_at, 'info');
@@ -6855,14 +6878,18 @@ async function cloudPush(silent=false){
     mergedPayload._pushedBy = getDeviceId();
     mergedPayload._pushedAt = new Date().toISOString();
 
-    const { error } = await sb
+    const { data: upsertResult, error } = await sb
       .from('sjnam_sync')
-      .upsert({ id: 'sjnam_main', payload: mergedPayload, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+      .upsert({ id: 'sjnam_main', payload: mergedPayload, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+      .select('updated_at')
+      .single();
 
     if(error) throw new Error(error.message);
 
+    // Gunakan updated_at dari server (bukan waktu lokal) agar perbandingan timestamp realtime akurat
+    const serverUpdatedAt = upsertResult?.updated_at || mergedPayload._pushedAt;
     _lastPushedHash = _hashPayload(mergedPayload);
-    _lastCloudUpdatedAt = mergedPayload._pushedAt;
+    _lastCloudUpdatedAt = serverUpdatedAt;
     updateSyncStatus('connected');
     cloudLog('✅ Data tersimpan ke Supabase ('+data.length+' delay, '+dfsData.length+' DFS)', 'success');
     if(!silent) showToast('⚡ Supabase Sync berhasil! ('+data.length+' records)','success');
@@ -6916,10 +6943,11 @@ async function cloudPull(silent = false){
 
     _cloudPullInProgress = true;
     try {
-    if(Array.isArray(rec.data)) { data = rec.data; localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); /* no triggerAutoSync */ }
+    if(Array.isArray(rec.data)) { data = rec.data; localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
     if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; localStorage.setItem(STATIONS_KEY, JSON.stringify(stations)); }
     if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; localStorage.setItem(DFS_KEY, JSON.stringify(dfsData)); }
-    if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
+    // Gunakan localStorage langsung (BUKAN saveSettings) agar tidak memicu triggerAutoSync di tengah pull
+    if(rec.settings) { settings = {...settings, ...rec.settings}; localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); applyDarkMode(); }
     if(rec.training){
       localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
       if(window.trainingData){
@@ -6970,6 +6998,8 @@ async function cloudPull(silent = false){
       if(typeof window.ctbRenderAll === 'function') window.ctbRenderAll();
     }
     // Simpan timestamp & hash SEBELUM melepas flag, agar triggerAutoSync tidak push balik
+    // Batalkan push timer yang mungkin sedang menunggu (debounce) — data sudah diambil dari cloud
+    if(_autoSyncTimer){ clearTimeout(_autoSyncTimer); _autoSyncTimer = null; }
     _lastCloudUpdatedAt = cloudUpdatedAt;
     _lastPushedHash = _hashPayload(getAllCloudData());
     } finally {
@@ -7033,7 +7063,8 @@ function startRealtimeSubscription(){
         if(Array.isArray(rec.data)) { data = rec.data; localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
         if(Array.isArray(rec.stations) && rec.stations.length > 0) { stations = rec.stations; localStorage.setItem(STATIONS_KEY, JSON.stringify(stations)); }
         if(Array.isArray(rec.dfsData)) { dfsData = rec.dfsData; localStorage.setItem(DFS_KEY, JSON.stringify(dfsData)); }
-        if(rec.settings) { settings = {...settings, ...rec.settings}; saveSettings(); applyDarkMode(); }
+        // Gunakan localStorage langsung (BUKAN saveSettings) agar tidak memicu triggerAutoSync
+        if(rec.settings) { settings = {...settings, ...rec.settings}; localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); applyDarkMode(); }
         if(rec.training){
           localStorage.setItem('sjn_training_v1', JSON.stringify(rec.training));
           if(window.trainingData){ Object.assign(window.trainingData, rec.training); }
@@ -7081,7 +7112,12 @@ function startRealtimeSubscription(){
           if(typeof window.loadCertificateTemplate === 'function') window.loadCertificateTemplate();
           if(typeof window.ctbRenderAll === 'function') window.ctbRenderAll();
         }
+        // Simpan server timestamp — PENTING: gunakan updated_at dari server, bukan waktu lokal
         if(payload.new?.updated_at) _lastCloudUpdatedAt = payload.new.updated_at;
+        // Batalkan push timer yang mungkin sedang menunggu — data sudah datang dari cloud,
+        // tidak perlu push balik (akan mengoverwrite data cloud yang baru saja diterima)
+        if(_autoSyncTimer){ clearTimeout(_autoSyncTimer); _autoSyncTimer = null; }
+        // Set hash SETELAH semua data diapply ke localStorage & variabel in-memory
         _lastPushedHash = _hashPayload(getAllCloudData());
         } finally {
         _cloudPullInProgress = false; // always reset — prevents deadlock
@@ -7177,24 +7213,28 @@ function startRealtimeSubscription(){
 // ⚡ SMART-SYNC: push segera jika ada perubahan data, tanpa delay, tanpa toggle
 // Dipanggil setiap kali ada save (data, user, drygoods, stcr, training, dll)
 function triggerAutoSync(){
+  // JANGAN push jika sedang pull dari cloud — akan overwrite data cloud yang baru datang
   if(_cloudPullInProgress) return;
   if(!cloudConfig.supabaseUrl || !cloudConfig.supabaseKey) return;
-  // Debounce singkat (300ms) agar burst save tidak spam — tapi JAUH lebih cepat dari auto-sync lama
+  // Debounce 800ms — cukup lama untuk menunggu serangkaian save selesai semuanya,
+  // tapi cukup cepat agar user tidak menunggu. Setelah debounce, cek hash dulu.
   clearTimeout(_autoSyncTimer);
   _autoSyncTimer = setTimeout(async ()=>{
+    // Guard kedua di dalam setTimeout — pastikan pull tidak sedang berjalan
+    if(_cloudPullInProgress) return;
     const localPayload = getAllCloudData();
     const currentHash = _hashPayload(localPayload);
     if(currentHash && currentHash === _lastPushedHash){
-      // Tidak ada perubahan — skip, tidak kirim ke cloud
+      // Hash sama = tidak ada perubahan nyata → skip, tidak kirim ke cloud
       return;
     }
-    // Ada perubahan → push sekarang
+    // Ada perubahan → push sekarang (silent)
     const ok = await cloudPush(true);
     if(ok){
       const el = document.getElementById('smartSyncLastPush');
       if(el) el.textContent = 'Terakhir sync: ' + new Date().toLocaleTimeString('id-ID');
     }
-  }, 300);
+  }, 800);
 }
 
 // Patch save functions to trigger auto-sync
