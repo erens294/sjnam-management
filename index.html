@@ -4273,6 +4273,19 @@ let currentWizardStep = 1;
 
 // Load data
 try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e){ data=[]; }
+// Sanitasi data: pastikan field kritis tidak null/undefined (mencegah TypeError localeCompare)
+data = data.map(d => ({
+  ...d,
+  tanggal:       d.tanggal      || '',
+  flightNumber:  d.flightNumber || '',
+  route:         d.route        || '',
+  stdUtc:        d.stdUtc       || '',
+  etdUtc:        d.etdUtc       || '',
+  kategori:      d.kategori     || '',
+  flightStatus:  d.flightStatus || 'Delay Flight',
+  approval:      d.approval     || 'Not-Approved',
+  verifikasi:    d.verifikasi   || 'No',
+}));
 try { stations = JSON.parse(localStorage.getItem(STATIONS_KEY) || '[]'); } catch(e){ stations=[]; }
 try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'); settings={...settings,...s}; } catch(e){}
 
@@ -4903,15 +4916,15 @@ function getFilteredData(){
   const from=$('#filterTglFrom').value, to=$('#filterTglTo').value;
   const airline=$('#filterAirline')?$('#filterAirline').value:'';
   const selectedKats=Array.from(document.querySelectorAll('.katChk:checked')).map(cb=>cb.value);
-  if(search) filtered=filtered.filter(d=>d.flightNumber.toLowerCase().includes(search)||d.route.toLowerCase().includes(search));
-  if(airline) filtered=filtered.filter(d=>d.flightNumber.toUpperCase().startsWith(airline));
-  if(from) filtered=filtered.filter(d=>d.tanggal>=from);
-  if(to) filtered=filtered.filter(d=>d.tanggal<=to);
+  if(search) filtered=filtered.filter(d=>(d.flightNumber||'').toLowerCase().includes(search)||(d.route||'').toLowerCase().includes(search));
+  if(airline) filtered=filtered.filter(d=>(d.flightNumber||'').toUpperCase().startsWith(airline));
+  if(from) filtered=filtered.filter(d=>(d.tanggal||'')>=from);
+  if(to) filtered=filtered.filter(d=>(d.tanggal||'')<=to);
   if(selectedKats.length) filtered=filtered.filter(d=>selectedKats.includes(d.kategori));
   if(sortOrder==='asc'){
-    filtered.sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.stdUtc.localeCompare(b.stdUtc));
+    filtered.sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||'')||(a.stdUtc||'').localeCompare(b.stdUtc||''));
   } else {
-    filtered.sort((a,b)=>b.tanggal.localeCompare(a.tanggal)||b.stdUtc.localeCompare(a.stdUtc));
+    filtered.sort((a,b)=>(b.tanggal||'').localeCompare(a.tanggal||'')||(b.stdUtc||'').localeCompare(a.stdUtc||''));
   }
   return filtered;
 }
@@ -5889,8 +5902,8 @@ $('#btnWaRequest').addEventListener('click',()=>{
 function renderStations(){
   const tbody=$('#stationBody');
   const search=($('#searchStation').value||'').toLowerCase();
-  let list=stations.slice().sort((a,b)=>a.iata.localeCompare(b.iata));
-  if(search) list=list.filter(s=>s.iata.toLowerCase().includes(search)||s.name.toLowerCase().includes(search));
+  let list=stations.slice().sort((a,b)=>(a.iata||'').localeCompare(b.iata||''));
+  if(search) list=list.filter(s=>(s.iata||'').toLowerCase().includes(search)||(s.name||'').toLowerCase().includes(search));
   $('#stationCount').textContent=stations.length+' station';
 
   tbody.innerHTML=list.map(s=>{
@@ -5979,6 +5992,22 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey&&e.key==='n'){e.preventDefault();resetForm();switchTab('input');}
   if(e.altKey&&e.key==='s'){e.preventDefault();cloudPush();}
 });
+
+// === FIX: pre-declare cloud-sync state so it's safe to call saveStations()/triggerAutoSync()
+// from the DEFAULT STATIONS block just below. These were previously declared with let/const
+// far later in the file (in the "CLOUD SYNC" section); accessing them earlier than that
+// threw "Cannot access '_cloudPullInProgress' before initialization" (temporal-dead-zone
+// ReferenceError), which silently aborted this entire script on first load — before the
+// login form's submit handler further down ever got registered. That is why login appeared
+// to do nothing on a fresh browser / cleared storage. Using var here (hoisted, no TDZ) and
+// removing the duplicate let/const further down fixes it without changing any behavior.
+var cloudConfig = { autoSync: true, syncDelaySec: 15 };
+var _cloudPullInProgress = false;
+var _autoSyncTimer = null;
+var _lastCloudUpdatedAt = null;
+var _lastPushedHash = null;
+var _supabaseClient = null;
+var _realtimeChannel = null;
 
 // =================================================================
 // DEFAULT STATIONS
@@ -6577,7 +6606,7 @@ const _k = atob('ZXlKaGJHY2lPaUpJVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SnBjM01pT2l
 const DEFAULT_SUPABASE_URL = _u;
 const DEFAULT_SUPABASE_KEY = _k;
 
-let cloudConfig = { supabaseUrl: DEFAULT_SUPABASE_URL, supabaseKey: DEFAULT_SUPABASE_KEY, autoSync: true, syncDelaySec: 15 };
+cloudConfig = { supabaseUrl: DEFAULT_SUPABASE_URL, supabaseKey: DEFAULT_SUPABASE_KEY, autoSync: true, syncDelaySec: 15 };
 try {
   const c = JSON.parse(localStorage.getItem(CLOUD_KEY)||'{}');
   // migrasi dari format lama (apiKey/binId) ke format baru
@@ -6589,15 +6618,15 @@ try {
   };
 } catch(e){}
 
-let _supabaseClient = null;
-let _realtimeChannel = null;
+_supabaseClient = null;
+_realtimeChannel = null;
 
 // === SMART SYNC STATE ===
-let _lastCloudUpdatedAt = null;    // updated_at terakhir yang berhasil di-pull dari cloud
-let _lastPushedHash = null;        // hash payload terakhir yang berhasil di-push
+_lastCloudUpdatedAt = null;    // updated_at terakhir yang berhasil di-pull dari cloud
+_lastPushedHash = null;        // hash payload terakhir yang berhasil di-push
 // Deklarasi di sini agar tersedia untuk semua fungsi di bawah (fix hoisting bug)
-let _autoSyncTimer = null;
-let _cloudPullInProgress = false;
+_autoSyncTimer = null;
+_cloudPullInProgress = false;
 
 // Hash ringan untuk deteksi perubahan data (tanpa kirim ke mana-mana)
 function _hashPayload(payload){
@@ -6616,6 +6645,16 @@ function saveCloudConfig(){
 }
 
 function getSupabaseClient(){
+  // Guard: if the Supabase SDK script (from the CDN) hasn't loaded — e.g. no internet
+  // connection, the CDN is blocked, or the page is opened offline via file:// — `supabase`
+  // is undefined here. Calling supabase.createClient(...) used to throw a synchronous
+  // ReferenceError right at page load (via initCloudUI() -> startRealtimeSubscription()),
+  // which silently aborted the entire script BEFORE the login form's submit listener got
+  // registered further down. That is why clicking "Masuk" did nothing but reload the page.
+  if(typeof supabase === 'undefined'){
+    console.warn('[Cloud Sync] Supabase SDK belum termuat (cek koneksi internet) — sinkronisasi cloud dilewati.');
+    return null;
+  }
   const url = cloudConfig.supabaseUrl.trim();
   const key = cloudConfig.supabaseKey.trim();
   if(!url || !key) return null;
@@ -7980,7 +8019,7 @@ window.switchTab = function(tab){
     } else {
       // Fallback when dynamic perms not yet loaded: use safe defaults for User
       if(_cu.role === 'User'){
-        const userDefault = ['home','input','data','dashboard','soal','soal-peserta','stcr-dashboard','stcr-data','stcr-station','drygoods-data','drygoods-dashboard','drygoods-ifs'];
+        const userDefault = ['home','input','data','dashboard','soal','soal-peserta','stcr-dashboard','stcr-data','stcr-station','drygoods-data','drygoods-dashboard','drygoods-ifs','drygoods-bankitem'];
         if(!userDefault.includes(tab)) return;
       }
     }
@@ -9695,24 +9734,42 @@ function renderCertificate(p, prefix){
 });
 
 // === TRAINING MENU TOGGLE ===
-document.getElementById('toggleTrainingMenu')?.addEventListener('click', ()=>{
-  const c = document.getElementById('trainingMenuContent');
-  const icon = document.getElementById('iconTrainingMenu');
-  if(!c) return;
-  const open = !c.classList.contains('collapsed');
-  c.classList.toggle('collapsed', open);
-  if(icon) icon.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
-  try{ localStorage.setItem('sjnam_training_menu_open', open ? '0' : '1'); }catch(e){}
-});
-// Restore training menu state
 (function(){
-  const saved = localStorage.getItem('sjnam_training_menu_open');
-  if(saved === '0'){
-    const c = document.getElementById('trainingMenuContent');
+  // Per-user key
+  let _trUserSuffix = '';
+  try {
+    const _s = JSON.parse(localStorage.getItem('sjnam_session_v1') || 'null');
+    if(_s && _s.username) _trUserSuffix = '_' + _s.username;
+  } catch(e){}
+  const TR_MENU_KEY = 'sjnam_training_menu_open' + _trUserSuffix;
+
+  function setTrainingMenuState(open, save){
+    const c    = document.getElementById('trainingMenuContent');
     const icon = document.getElementById('iconTrainingMenu');
-    if(c){ c.classList.add('collapsed'); }
-    if(icon) icon.style.transform = 'rotate(-90deg)';
+    const btn  = document.getElementById('toggleTrainingMenu');
+    if(!c) return;
+    if(open){
+      c.classList.remove('collapsed');
+      c.setAttribute('aria-hidden', 'false');
+    } else {
+      c.classList.add('collapsed');
+      c.setAttribute('aria-hidden', 'true');
+    }
+    if(icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+    if(btn)  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if(save !== false) try{ localStorage.setItem(TR_MENU_KEY, open ? '1' : '0'); }catch(e){}
   }
+
+  // Restore saved state on load (default: open)
+  const saved = localStorage.getItem(TR_MENU_KEY);
+  setTrainingMenuState(saved !== '0', false);
+
+  document.getElementById('toggleTrainingMenu')?.addEventListener('click', ()=>{
+    const c = document.getElementById('trainingMenuContent');
+    if(!c) return;
+    const isCurrentlyOpen = !c.classList.contains('collapsed');
+    setTrainingMenuState(!isCurrentlyOpen);
+  });
 })();
 // NOTE: toggleStcrMenu sudah ditangani di sidebar DOMContentLoaded block di atas (dengan localStorage persistence). Tidak perlu listener duplikat di sini.
 })();
@@ -9882,6 +9939,7 @@ window.addEventListener('beforeunload', ()=>{
     { id:'tab-drygoods-data',      label:'📦 Drygoods – Data Stok',  def:{coAdmin:true, user:true,  peserta:false} },
     { id:'tab-drygoods-dashboard', label:'📊 Drygoods – Dashboard',  def:{coAdmin:true, user:true,  peserta:false} },
     { id:'tab-drygoods-ifs',       label:'🏢 Drygoods – IFS Station',def:{coAdmin:true, user:true,  peserta:false} },
+    { id:'tab-drygoods-bankitem',  label:'🗂️ Drygoods – Bank Item',  def:{coAdmin:true, user:false, peserta:false} },
     { id:'feat-import',    label:'⬆️ Fitur Import Data',    def:{coAdmin:true, user:false, peserta:false} },
     { id:'feat-delete',    label:'🗑️ Fitur Hapus Data',     def:{coAdmin:true, user:false, peserta:false} },
     { id:'feat-edit',      label:'✏️ Fitur Edit Data',      def:{coAdmin:true, user:false, peserta:false} },
@@ -10033,6 +10091,7 @@ window.addEventListener('beforeunload', ()=>{
       'tab-drygoods-data':      document.querySelector('[data-tab="drygoods-data"]'),
       'tab-drygoods-dashboard': document.querySelector('[data-tab="drygoods-dashboard"]'),
       'tab-drygoods-ifs':       document.querySelector('[data-tab="drygoods-ifs"]'),
+      'tab-drygoods-bankitem':  document.querySelector('[data-tab="drygoods-bankitem"]'),
     };
 
     Object.entries(tabMap).forEach(([featId, el])=>{
@@ -10051,7 +10110,7 @@ window.addEventListener('beforeunload', ()=>{
 
     // Drygoods menu group
     const drygoodsMenuGroup = document.getElementById('toggleDrygoodsMenu')?.closest('div');
-    if(drygoodsMenuGroup) drygoodsMenuGroup.style.display = (canSee('tab-drygoods-data')||canSee('tab-drygoods-dashboard')||canSee('tab-drygoods-ifs')) ? '' : 'none';
+    if(drygoodsMenuGroup) drygoodsMenuGroup.style.display = (canSee('tab-drygoods-data')||canSee('tab-drygoods-dashboard')||canSee('tab-drygoods-ifs')||canSee('tab-drygoods-bankitem')) ? '' : 'none';
 
     const btnPesertaSidebarStart = document.getElementById('btnPesertaSidebarStart');
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = canSee('feat-mulai') ? '' : 'none';
@@ -12443,7 +12502,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
       tbody.innerHTML='<tr><td colspan="8" class="text-center py-6 text-slate-400 text-sm">Belum ada data stok.</td></tr>';
       return;
     }
-    tbody.innerHTML = saldos.sort((a,b)=>a.nama.localeCompare(b.nama)).map(s=>{
+    tbody.innerHTML = saldos.sort((a,b)=>(a.nama||'').localeCompare(b.nama||'')).map(s=>{
       const statusClass = s.saldo < 0 ? 'bg-red-100 text-red-700' : s.saldo < 10 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
       const statusLabel = s.saldo < 0 ? '⚠️ Minus' : s.saldo < 10 ? '🔴 Rendah' : '✅ OK';
       return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -12775,22 +12834,42 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   });
 
   // ── SIDEBAR TOGGLE ───────────────────────────────────────────────
-  document.getElementById('toggleDrygoodsMenu')?.addEventListener('click', ()=>{
-    const c = document.getElementById('drygoodsMenuContent');
-    const icon = document.getElementById('iconDrygoodsMenu');
-    if(!c) return;
-    const open = !c.classList.contains('collapsed');
-    c.classList.toggle('collapsed', open);
-    if(icon) icon.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
-    try{ localStorage.setItem('sjnam_drygoods_menu_open', open?'0':'1'); }catch(e){}
-  });
   (function(){
-    const saved = localStorage.getItem('sjnam_drygoods_menu_open');
-    if(saved==='0'){
-      const c=document.getElementById('drygoodsMenuContent'),icon=document.getElementById('iconDrygoodsMenu');
-      if(c) c.classList.add('collapsed');
-      if(icon) icon.style.transform='rotate(-90deg)';
+    // Per-user key so each user's preference is stored independently
+    let _dgUserSuffix = '';
+    try {
+      const _s = JSON.parse(localStorage.getItem('sjnam_session_v1') || 'null');
+      if(_s && _s.username) _dgUserSuffix = '_' + _s.username;
+    } catch(e){}
+    const DG_MENU_KEY = 'sjnam_drygoods_menu_open' + _dgUserSuffix;
+
+    function setDgMenuState(open, save){
+      const c    = document.getElementById('drygoodsMenuContent');
+      const icon = document.getElementById('iconDrygoodsMenu');
+      const btn  = document.getElementById('toggleDrygoodsMenu');
+      if(!c) return;
+      if(open){
+        c.classList.remove('collapsed');
+        c.setAttribute('aria-hidden', 'false');
+      } else {
+        c.classList.add('collapsed');
+        c.setAttribute('aria-hidden', 'true');
+      }
+      if(icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+      if(btn)  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if(save !== false) try{ localStorage.setItem(DG_MENU_KEY, open ? '1' : '0'); }catch(e){}
     }
+
+    // Restore saved state on load (default: open)
+    const saved = localStorage.getItem(DG_MENU_KEY);
+    setDgMenuState(saved !== '0', false);
+
+    document.getElementById('toggleDrygoodsMenu')?.addEventListener('click', ()=>{
+      const c = document.getElementById('drygoodsMenuContent');
+      if(!c) return;
+      const isCurrentlyOpen = !c.classList.contains('collapsed');
+      setDgMenuState(!isCurrentlyOpen);
+    });
   })();
 
   // ── TAB SWITCHING HOOK ───────────────────────────────────────────
@@ -12798,7 +12877,8 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   window.switchTab = function(tab){
     if(typeof _origSwitch === 'function') _origSwitch(tab);
     if(tab === 'drygoods-bankitem')  { renderDgBankItem(); }
-    if(tab === 'drygoods-data')      { buildStationTabs(); renderDgTrx(); }    if(tab === 'drygoods-dashboard') { renderDgDashboard(); }
+    if(tab === 'drygoods-data')      { buildStationTabs(); renderDgTrx(); }
+    if(tab === 'drygoods-dashboard') { renderDgDashboard(); }
     if(tab === 'drygoods-ifs')       { buildStationTabs(); renderDgEmployees(); }
   };
 
@@ -12815,7 +12895,14 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   buildStationTabs();
   // Initial render only if tab is active
   const currentTab = localStorage.getItem('sjnam_current_tab')||'';
-  if(currentTab.startsWith('drygoods')){ renderDgTrx(); renderDgDashboard(); renderDgEmployees(); renderDgBankItem(); }
+  if(currentTab.startsWith('drygoods')){ renderDgTrx(); renderDgDashboard(); renderDgEmployees(); }
+  // NOTE: renderDgBankItem() for the initial tab-active render is intentionally called
+  // at the bottom of this IIFE (see "INIT BANK ITEM" section) because it depends on
+  // DG_BANK_ITEM_DEFAULTS / DG_BI_PAGE_SIZE, which are declared with const further down
+  // this file. Calling it here threw "Cannot access 'DG_BANK_ITEM_DEFAULTS' before
+  // initialization" (a temporal-dead-zone ReferenceError) and silently aborted the rest
+  // of this IIFE — which is why the Bank Item table got stuck on "Loading..." and the
+  // + Tambah Barang / Export Excel / search / filter controls never worked.
 
   // ── BANK ITEM MODULE ──────────────────────────────────────────────
   // Default bank item data sesuai permintaan
@@ -12972,10 +13059,11 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
 
   // Open transaction from bank item (link Bank Item → Data Stok)
   function openTrxFromBankItem(item){
-    // Switch to Data Stok tab first
-    if(typeof window.switchTabDirect === 'function') window.switchTabDirect('drygoods-data');
-    else {
-      // manually switch tab
+    // Switch to Data Stok tab first — use window.switchTab which respects permissions
+    if(typeof window.switchTab === 'function'){
+      window.switchTab('drygoods-data');
+    } else {
+      // Fallback: manually switch tab
       document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
       const tp = document.getElementById('tab-drygoods-data');
       if(tp) tp.classList.add('active');
@@ -13153,6 +13241,10 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   // ── INIT BANK ITEM ───────────────────────────────────────────────
   if(!dgData.bankItems) dgData.bankItems = [];
   ensureBankItemDefaults();
+  // This is the correct place to do the initial Bank Item render: everything this
+  // module needs (DG_BANK_ITEM_DEFAULTS, DG_BI_PAGE_SIZE, renderDgBankItem, etc.)
+  // is fully defined by this point in the file.
+  if(currentTab === 'drygoods-bankitem'){ renderDgBankItem(); }
 
   // Notification banner untuk karyawan yang akan habis kontrak (≤30 hari)
   function checkExpiringContracts(){
