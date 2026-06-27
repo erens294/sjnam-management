@@ -131,6 +131,16 @@ body.js-ready #drygoodsMenuContent.collapsed {
   max-height: 0;
   opacity: 0;
 }
+/* Saat sidebar mini (collapsed), paksa semua accordion tertutup agar tidak tumpang tindih */
+#sidebar.collapsed #serviceRecoveryMenuContent,
+#sidebar.collapsed #adminMenuContent,
+#sidebar.collapsed #trainingMenuContent,
+#sidebar.collapsed #stcrMenuContent,
+#sidebar.collapsed #drygoodsMenuContent {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+}
 /* Tooltip for mini sidebar */
 #sidebar.collapsed .sidebar-btn {
   position: relative;
@@ -8622,6 +8632,7 @@ function applyPermissions(){
   const homeMenuGroup = null; // Home is standalone, no group
   const stcrMenuGroup = document.getElementById('toggleStcrMenu')?.closest('div');
   const drygoodsMenuGroup = document.getElementById('toggleDrygoodsMenu')?.closest('div');
+  const serviceRecoveryMenuGroup = document.getElementById('toggleServiceRecoveryMenu')?.closest('div');
 
   if(isPeserta){
     // Peserta: HANYA bisa akses "Mulai Training Peserta" (tab-soal-peserta)
@@ -8631,6 +8642,7 @@ function applyPermissions(){
     if(adminMenuGroup) adminMenuGroup.style.display = 'none';
     if(stcrMenuGroup) stcrMenuGroup.style.display = 'none';
     if(drygoodsMenuGroup) drygoodsMenuGroup.style.display = 'none';
+    if(serviceRecoveryMenuGroup) serviceRecoveryMenuGroup.style.display = 'none';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
     if(trainingMenuGroup) trainingMenuGroup.style.display = '';
   } else if(isUser){
@@ -8647,6 +8659,8 @@ function applyPermissions(){
     // Tampilkan Training menu group & tombol Mulai Training Peserta
     if(trainingMenuGroup) trainingMenuGroup.style.display = '';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
+    // Tampilkan Service Recovery menu group (User boleh akses Input, Data, Dashboard)
+    if(serviceRecoveryMenuGroup) serviceRecoveryMenuGroup.style.display = '';
     // Tampilkan Stretchercase & POB menu group (User boleh akses Dashboard/Data/Station)
     if(stcrMenuGroup) stcrMenuGroup.style.display = '';
     // Tampilkan Drygoods menu group
@@ -8691,6 +8705,7 @@ function applyPermissions(){
     if(tabSertifikat) tabSertifikat.style.display = '';
     if(trainingMenuGroup) trainingMenuGroup.style.display = '';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
+    if(serviceRecoveryMenuGroup) serviceRecoveryMenuGroup.style.display = '';
     if(stcrMenuGroup) stcrMenuGroup.style.display = '';
     if(drygoodsMenuGroup) drygoodsMenuGroup.style.display = '';
     // Restore semua tombol yang mungkin tersembunyi
@@ -9283,12 +9298,39 @@ document.addEventListener('DOMContentLoaded', function(){
   function applyCollapse(collapsed){
     if(collapsed){
       sidebar.classList.add('collapsed');
-      mainContent.classList.add('ml-16');
-      mainContent.classList.remove('ml-64');
+      mainContent.classList.add('collapsed');
+      mainContent.classList.remove('ml-64', 'ml-16');
+      // Tutup semua accordion saat sidebar di-minimise agar tidak tumpang tindih
+      ['serviceRecoveryMenuContent','stcrMenuContent','trainingMenuContent','adminMenuContent','drygoodsMenuContent'].forEach(id=>{
+        const el = document.getElementById(id);
+        if(el){ el.classList.add('collapsed'); el.setAttribute('aria-hidden','true'); }
+      });
+      ['iconServiceRecoveryMenu','iconStcrMenu','iconTrainingMenu','iconAdminMenu','iconDrygoodsMenu'].forEach(id=>{
+        const ic = document.getElementById(id);
+        if(ic) ic.style.transform = 'rotate(-90deg)';
+      });
     } else {
       sidebar.classList.remove('collapsed');
+      mainContent.classList.remove('collapsed', 'ml-16');
       mainContent.classList.add('ml-64');
-      mainContent.classList.remove('ml-16');
+      // Restore accordion state dari localStorage setelah sidebar dibuka kembali
+      const _u = (function(){ try{ return JSON.parse(localStorage.getItem('sjnam_session_v1')||'null'); }catch(e){ return null; } })();
+      const _sfx = _u ? '_' + _u.username : '';
+      [
+        ['serviceRecoveryMenuContent','iconServiceRecoveryMenu','toggleServiceRecoveryMenu','sidenav_svcrecovery_open'+_sfx],
+        ['adminMenuContent','iconAdminMenu','toggleAdminMenu','sidenav_admin_open'+_sfx],
+        ['stcrMenuContent','iconStcrMenu','toggleStcrMenu','sidenav_stcr_open'+_sfx],
+        ['trainingMenuContent','iconTrainingMenu','toggleTrainingMenu','sjnam_training_menu_open'+_sfx],
+        ['drygoodsMenuContent','iconDrygoodsMenu','toggleDrygoodsMenu','sjnam_drygoods_menu_open'+_sfx],
+      ].forEach(([cId, iId, bId, key])=>{
+        const savedOpen = localStorage.getItem(key);
+        if(savedOpen === '1'){
+          const c = document.getElementById(cId); const ic = document.getElementById(iId); const bt = document.getElementById(bId);
+          if(c){ c.classList.remove('collapsed'); c.setAttribute('aria-hidden','false'); }
+          if(ic) ic.style.transform = 'rotate(0deg)';
+          if(bt) bt.setAttribute('aria-expanded','true');
+        }
+      });
     }
     try{localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');}catch(e){}
   }
