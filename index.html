@@ -1467,12 +1467,13 @@ table:not(.stcr-page table) tbody td {
             <th class="p-3 font-semibold">No Handphone</th>
             <th class="p-3 font-semibold">Email</th>
             <th class="p-3 font-semibold">Station</th>
-            <th class="p-3 font-semibold">User (Role)</th>
+            <th class="p-3 font-semibold">User (Login)</th>
+            <th class="p-3 font-semibold">Role</th>
             <th class="p-3 font-semibold text-right">Aksi</th>
           </tr>
         </thead>
         <tbody id="karyawanTableBody" class="divide-y divide-slate-200 dark:divide-slate-700">
-          <tr><td colspan="9" class="text-center py-8 text-slate-400 text-sm">Memuat...</td></tr>
+          <tr><td colspan="10" class="text-center py-8 text-slate-400 text-sm">Memuat...</td></tr>
         </tbody>
       </table>
     </div>
@@ -9520,7 +9521,7 @@ window.getRoleBadgeClass = getRoleBadgeClass;
     document.getElementById('karyawanCountInfo').textContent = `Total Karyawan: ${karyawan.length}`;
 
     if(!list.length){
-      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 text-sm">Belum ada data karyawan.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-slate-400 text-sm">Belum ada data karyawan.</td></tr>';
       return;
     }
 
@@ -9529,12 +9530,18 @@ window.getRoleBadgeClass = getRoleBadgeClass;
 
     tbody.innerHTML = list.map((k, i) => {
       const linkedUser = k.username ? allUsersMap.get(k.username) : null;
-      const userCell = linkedUser
-        ? `<span class="badge ${getRoleBadgeClass(linkedUser.role)}">${esc(linkedUser.role)}</span>
-           <div class="text-[11px] text-slate-400 font-mono mt-0.5">${esc(linkedUser.username)}</div>`
+      // Column: User (Login) — shows username for login
+      const userLoginCell = linkedUser
+        ? `<span class="font-mono text-xs text-slate-700 dark:text-slate-200">${esc(linkedUser.username)}</span>`
         : (k.username
-            ? `<span class="text-xs text-red-500" title="Akun ${esc(k.username)} sudah dihapus dari Manajemen User">⚠️ Akun tidak ditemukan</span>`
+            ? `<span class="text-xs text-red-500" title="Akun ${esc(k.username)} sudah dihapus dari Manajemen User">⚠️ ${esc(k.username)}</span>`
             : `<span class="text-xs text-slate-400">— Belum terhubung —</span>`);
+      // Column: Role — shows role badge
+      const roleCell = linkedUser
+        ? `<span class="badge ${getRoleBadgeClass(linkedUser.role)}">${esc(linkedUser.role)}</span>`
+        : (k.username
+            ? `<span class="text-xs text-red-400">Akun tidak ditemukan</span>`
+            : `<span class="text-xs text-slate-400">—</span>`);
       return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
         <td class="p-3 text-xs text-slate-400">${i+1}</td>
         <td class="p-3 font-medium">${esc(k.nama)}</td>
@@ -9543,7 +9550,8 @@ window.getRoleBadgeClass = getRoleBadgeClass;
         <td class="p-3 text-xs">${esc(k.hp || '-')}</td>
         <td class="p-3 text-xs">${esc(k.email || '-')}</td>
         <td class="p-3 text-xs">${esc(k.station || '-')}</td>
-        <td class="p-3">${userCell}</td>
+        <td class="p-3">${userLoginCell}</td>
+        <td class="p-3">${roleCell}</td>
         <td class="p-3 text-right whitespace-nowrap">
           ${canEdit ? `<button data-kar-edit="${k.id}" class="text-xs px-2 py-1 bg-amber-500 text-white rounded mr-1">Edit</button>` : ''}
           ${canDelete ? `<button data-kar-del="${k.id}" class="text-xs px-2 py-1 bg-red-500 text-white rounded">Hapus</button>` : ''}
