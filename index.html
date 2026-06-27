@@ -5172,6 +5172,13 @@ try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'); settings={
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
+// BUGFIX: esc() diperlukan oleh renderTable, renderStations, dan fungsi render
+// lainnya sebelum Training IIFE mendefinisikan window.esc lebih jauh di bawah.
+// Definisikan di sini (sebelum semua render functions) agar tidak ReferenceError.
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);}); }
+window.esc = esc;
+
+
 // saveData original removed - patched version below
 function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); if(typeof triggerAutoSync==='function') triggerAutoSync(); }
 // saveStations original removed - patched version below
@@ -9628,7 +9635,8 @@ document.addEventListener('DOMContentLoaded', function(){
   // sudah berisi versi final/benar. Panggil ulang di sini agar tab/menu yang seharusnya
   // disembunyikan oleh custom permission benar-benar tersembunyi, bukan diam-diam
   // dibiarkan terlihat (display:flex) sampai ada trigger manual lain.
-  if(typeof currentUser !== 'undefined' && currentUser && typeof window.applyPermissions === 'function'){
+  // BUGFIX: currentUser declared in a different <script> block — use window.currentUser
+  if(window.currentUser && typeof window.applyPermissions === 'function'){
     window.applyPermissions();
   }
 
@@ -10898,6 +10906,7 @@ function renderCertificate(p, prefix){
     console.error('[downloadCertificate]', err);
     return null;
   }
+} // BUGFIX: closing brace for downloadCertificate function (was missing — caused SyntaxError in training module)
   window.downloadCertificate = downloadCertificate;
 
   function sendCertificateEmail(p){
@@ -12297,7 +12306,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     });
 
     destroyChart('trendChart');
-    charts.if(trendChart && typeof trendChart.destroy === "function"){ trendChart.destroy(); } trendChart = new Chart(trendCanvas,{
+    trendChart = new Chart(trendCanvas,{
       type:'line',
       data:{labels:sortedKeys.map(k=>k.replace('-',' ')),datasets:[{
         label:'Jumlah Request',data:sortedKeys.map(k=>trendMap[k]),
@@ -12315,7 +12324,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const other = data.length-stcrCount-pobCount-bothCount;
 
     destroyChart('pieChart');
-    charts.if(pieChart && typeof pieChart.destroy === "function"){ pieChart.destroy(); } pieChart = new Chart(pieCanvas,{
+    pieChart = new Chart(pieCanvas,{
       type:'doughnut',
       data:{labels:['STCR','POB','STCR & POB','Lainnya'],
         datasets:[{data:[stcrCount,pobCount,bothCount,other],backgroundColor:['#7C3AED','#0D6E8A','#E8A427','#9CA3AF'],borderWidth:2}]},
@@ -12329,7 +12338,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const revKeys = sortedKeys.filter(k=>revMap[k]);
 
     destroyChart('revenueChart');
-    charts.if(revenueChart && typeof revenueChart.destroy === "function"){ revenueChart.destroy(); } revenueChart = new Chart(revCanvas,{
+    revenueChart = new Chart(revCanvas,{
       type:'bar',
       data:{labels:revKeys.map(k=>k.replace('-',' ')),datasets:[{
         label:'Revenue (juta Rp)',data:revKeys.map(k=>revMap[k]/1000000),
@@ -12345,7 +12354,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const topSt = Object.entries(stMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
 
     destroyChart('stationChart');
-    charts.if(stationChart && typeof stationChart.destroy === "function"){ stationChart.destroy(); } stationChart = new Chart(stCanvas,{
+    stationChart = new Chart(stCanvas,{
       type:'bar',
       data:{labels:topSt.map(s=>s[0]),datasets:[{label:'Request',data:topSt.map(s=>s[1]),backgroundColor:'#0B1E3A',borderRadius:4}]},
       options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false},
@@ -12381,7 +12390,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     });
 
     destroyChart('yoyChart');
-    charts.if(yoyChart && typeof yoyChart.destroy === "function"){ yoyChart.destroy(); } yoyChart = new Chart(yoyCanvas,{
+    yoyChart = new Chart(yoyCanvas,{
       type:'bar',
       data:{labels:years,datasets:[{label:'Jumlah Request per Tahun',data:yoyCounts,backgroundColor:'#7C3AED',borderRadius:6}]},
       options:{responsive:true,plugins:{
@@ -12420,7 +12429,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     });
 
     destroyChart('momChart');
-    charts.if(momChart && typeof momChart.destroy === "function"){ momChart.destroy(); } momChart = new Chart(momCanvas,{
+    momChart = new Chart(momCanvas,{
       type:'bar',
       data:{labels:momLabels,datasets:[{label:'Jumlah Request per Bulan',data:momCounts,backgroundColor:'#0EA5E9',borderRadius:6}]},
       options:{responsive:true,plugins:{
@@ -14370,7 +14379,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     destroyDgChart('monthly');
     const ctx1 = document.getElementById('dgChartMonthly');
     if(ctx1 && months.length){
-      dgCharts.if(monthly && typeof monthly.destroy === "function"){ monthly.destroy(); } monthly = new Chart(ctx1,{type:'bar',data:{labels:months,datasets:[
+      monthly = new Chart(ctx1,{type:'bar',data:{labels:months,datasets:[
         {label:'IN',data:months.map(m=>monthMap[m].in),backgroundColor:'#10b981',borderRadius:4,
           datalabels:{display:true,color:'#065f46',font:{size:9,weight:'bold'},anchor:'end',align:'top',formatter:v=>v>0?v.toLocaleString('id-ID'):''}},
         {label:'OUT',data:months.map(m=>monthMap[m].out),backgroundColor:'#ef4444',borderRadius:4,
@@ -14385,7 +14394,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     destroyDgChart('topItems');
     const ctx2 = document.getElementById('dgChartTopItems');
     if(ctx2 && topItems.length){
-      dgCharts.if(topItems && typeof topItems.destroy === "function"){ topItems.destroy(); } topItems = new Chart(ctx2,{type:'bar',data:{labels:topItems.map(x=>x[0]),datasets:[{label:'Total OUT',data:topItems.map(x=>x[1]),backgroundColor:'#6366f1',borderRadius:4,
+      topItems = new Chart(ctx2,{type:'bar',data:{labels:topItems.map(x=>x[0]),datasets:[{label:'Total OUT',data:topItems.map(x=>x[1]),backgroundColor:'#6366f1',borderRadius:4,
         datalabels:{display:true,color:'#312e81',font:{size:9,weight:'bold'},anchor:'end',align:'right',formatter:v=>v>0?v.toLocaleString('id-ID'):''}}]},
       options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false},datalabels:{display:true}},scales:{x:{ticks:{font:{size:9}}}}}});
     }
@@ -14397,7 +14406,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const ctx3 = document.getElementById('dgChartStation');
     if(ctx3 && Object.keys(stMap).length){
       const stTotal = Object.values(stMap).reduce((a,b)=>a+b,0);
-      dgCharts.if(station && typeof station.destroy === "function"){ station.destroy(); } station = new Chart(ctx3,{type:'pie',data:{labels:Object.keys(stMap),datasets:[{data:Object.values(stMap),backgroundColor:['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6'],
+      station = new Chart(ctx3,{type:'pie',data:{labels:Object.keys(stMap),datasets:[{data:Object.values(stMap),backgroundColor:['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6'],
         datalabels:{display:true,color:'#fff',font:{size:10,weight:'bold'},formatter:(v,ctx)=>{const pct=stTotal?Math.round(v/stTotal*100):0;return v>0?`${v.toLocaleString('id-ID')}\n${pct}%`:'';}}}]},options:{responsive:true,plugins:{legend:{display:true,position:'bottom'},datalabels:{display:true}}}});
     }
 
