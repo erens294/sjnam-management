@@ -1427,18 +1427,65 @@ table:not(.stcr-page table) tbody td {
 <!-- ============= TAB ADMIN (User Management) ============= -->
 <section id="tab-admin" class="tab-pane">
   <!-- TAB SWITCHER ADMIN -->
-  <div class="flex gap-2 mb-4 border-b border-slate-200 dark:border-slate-700">
-    <button data-admin-subtab="users" class="admin-subtab-btn active px-4 py-2 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 whitespace-nowrap">👥 Manajemen User</button>
+  <div class="flex gap-2 mb-4 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
+    <button data-admin-subtab="karyawan" class="admin-subtab-btn active px-4 py-2 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 whitespace-nowrap">🧑‍💼 Data Karyawan</button>
+    <button data-admin-subtab="users" class="admin-subtab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">👥 Manajemen User</button>
     <button data-admin-subtab="perms" class="admin-subtab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">🔐 Atur Akses Role</button>
   </div>
 
+  <!-- SUB-TAB: DATA KARYAWAN -->
+  <div id="adminSubKaryawan" class="admin-subtab-pane">
+  <div class="card p-5 md:p-6">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div>
+        <h2 class="text-lg font-bold">🧑‍💼 Data Karyawan</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Master data karyawan. Hubungkan karyawan ke akun login lewat kolom User — cukup pilih usernya di sini, tidak perlu buat user baru secara manual lagi.</p>
+        <p id="karyawanCountInfo" class="text-xs text-indigo-600 dark:text-indigo-300 font-semibold mt-1">Total Karyawan: 0</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button id="btnAddKaryawan" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl">+ Tambah Karyawan</button>
+        <button id="btnExportKaryawan" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl">⬇️ Export Excel</button>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-4">
+      <input id="karyawanSearch" type="text" placeholder="🔍 Cari nama / NIP / jabatan / station..." class="input text-sm flex-1 min-w-[200px]">
+      <select id="karyawanFilterStation" class="input text-sm">
+        <option value="">Semua Station</option>
+      </select>
+      <button id="btnKaryawanResetFilter" class="px-3 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-sm font-semibold rounded-xl">Reset</button>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800">
+          <tr class="text-left">
+            <th class="p-3 font-semibold">No</th>
+            <th class="p-3 font-semibold">Nama</th>
+            <th class="p-3 font-semibold">NIP</th>
+            <th class="p-3 font-semibold">Jabatan</th>
+            <th class="p-3 font-semibold">No Handphone</th>
+            <th class="p-3 font-semibold">Email</th>
+            <th class="p-3 font-semibold">Station</th>
+            <th class="p-3 font-semibold">User (Role)</th>
+            <th class="p-3 font-semibold text-right">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="karyawanTableBody" class="divide-y divide-slate-200 dark:divide-slate-700">
+          <tr><td colspan="9" class="text-center py-8 text-slate-400 text-sm">Memuat...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </div><!-- end adminSubKaryawan -->
+
   <!-- SUB-TAB: USER MANAGEMENT -->
-  <div id="adminSubUsers" class="admin-subtab-pane">
+  <div id="adminSubUsers" class="admin-subtab-pane hidden">
   <div class="card p-5 md:p-6">
     <div class="flex items-center justify-between mb-5">
       <div>
         <h2 class="text-lg font-bold">Manajemen User</h2>
-        <p class="text-xs text-slate-500 mt-0.5">Kelola akun Admin, Co-Admin, User, Peserta, dan role kustom (UserXXX/UserXX/UserX)</p>
+        <p class="text-xs text-slate-500 mt-0.5">Kelola akses login: Admin, Co-Admin, User, Peserta, dan role kustom (UserXXX/UserXX/UserX). Nama &amp; data pribadi karyawan kini dikelola di tab <strong>Data Karyawan</strong> — tinggal hubungkan lewat kolom User di sana.</p>
         <p id="userPesertaCountInfo" class="text-xs text-indigo-600 dark:text-indigo-300 font-semibold mt-1">Akun Peserta: 0 / 150</p>
       </div>
       <button id="btnAddUser" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl">+ Tambah User</button>
@@ -1448,8 +1495,6 @@ table:not(.stcr-page table) tbody td {
       <table class="w-full text-sm">
         <thead class="bg-slate-50 dark:bg-slate-800">
           <tr class="text-left">
-            <th class="p-3 font-semibold">Username</th>
-            <th class="p-3 font-semibold">Nama</th>
             <th class="p-3 font-semibold">Role</th>
             <th class="p-3 font-semibold">Status</th>
             <th class="p-3 font-semibold text-right">Aksi</th>
@@ -1491,6 +1536,59 @@ table:not(.stcr-page table) tbody td {
     </div>
   </div><!-- end adminSubPerms -->
 </section>
+
+<!-- MODAL DATA KARYAWAN -->
+<div id="karyawanModal" class="modal-overlay hidden">
+  <div class="modal-box max-w-xl">
+    <h3 id="karyawanModalTitle" class="text-lg font-bold mb-1">Tambah Karyawan</h3>
+    <p class="text-xs text-slate-500 mb-4">Lengkapi data karyawan. Kolom User menghubungkan karyawan ini ke akun login (Role) yang sudah ada di Manajemen User.</p>
+    <div class="space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Nama <span class="text-red-500">*</span></label>
+          <input type="text" id="karyawanNama" class="input" placeholder="Nama lengkap karyawan">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">NIP <span class="text-red-500">*</span></label>
+          <input type="text" id="karyawanNip" class="input" placeholder="Nomor Induk Pegawai">
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Jabatan <span class="text-red-500">*</span></label>
+          <input type="text" id="karyawanJabatan" class="input" placeholder="Contoh: Service Recovery Officer">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Station</label>
+          <select id="karyawanStation" class="input">
+            <option value="">Pilih station...</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">No Handphone</label>
+          <input type="tel" id="karyawanHp" class="input" placeholder="08xxxxxxxxxx">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Email</label>
+          <input type="email" id="karyawanEmail" class="input" placeholder="nama@email.com">
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">User <span class="text-xs text-slate-400 font-normal">(link ke akun login &amp; Role)</span></label>
+        <select id="karyawanUser" class="input">
+          <option value="">— Belum dihubungkan ke akun manapun —</option>
+        </select>
+        <p class="text-xs text-slate-400 mt-1">Tidak melihat username yang dicari? Buat dulu akunnya di tab <strong>Manajemen User</strong>, lalu hubungkan di sini.</p>
+      </div>
+    </div>
+    <div class="flex gap-3 justify-end mt-5">
+      <button id="karyawanModalCancel" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 font-medium rounded-lg">Batal</button>
+      <button id="karyawanModalSave" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">💾 Simpan</button>
+    </div>
+  </div>
+</div>
 
 <section id="tab-input" class="tab-pane">
   <div class="card p-5 md:p-7">
@@ -5380,6 +5478,15 @@ function switchTab(name){
   if(name==='dashboard') renderDashboard();
   if(name==='data') renderTable();
   if(name==='stations') renderStations();
+  if(name==='admin'){
+    // Sub-tab default Tab Admin adalah Data Karyawan — pastikan tabelnya (dan
+    // dropdown User-nya) sudah terisi data terbaru tiap kali tab ini dibuka.
+    // renderKaryawanTable di-expose ke window karena fungsi aslinya berada di
+    // dalam IIFE modul Data Karyawan (lihat NOTE Drygoods di bawah untuk alasan
+    // yang sama: tidak boleh panggil fungsi ber-scope tertutup langsung dari sini).
+    if(typeof window.renderKaryawanTable === 'function') window.renderKaryawanTable();
+    if(typeof window.renderKaryawanUserOptions === 'function') window.renderKaryawanUserOptions();
+  }
   if(name==='request'){refreshRequestSelect();$('#requestPreview').textContent='Pilih data terlebih dahulu...';}
   if(name==='settings'){$('#settingsTotalData').textContent=data.length+' record';}
   if(name==='stcr-dashboard' && window.STCR) window.STCR.onShowDashboard();
@@ -7900,6 +8007,9 @@ function getAllCloudData(){
   try { training = JSON.parse(localStorage.getItem('sjn_training_v1') || 'null'); } catch(e){}
   let users = null;
   try { users = JSON.parse(localStorage.getItem('sjnam_users_v1') || 'null'); } catch(e){}
+  // Data Karyawan (Tab Admin → sub-tab Data Karyawan)
+  let karyawan = null;
+  try { karyawan = JSON.parse(localStorage.getItem('sjnam_karyawan_v1') || 'null'); } catch(e){}
   let stcrData = null;
   try { stcrData = JSON.parse(localStorage.getItem('sjnam_stcr_data_v1') || 'null'); } catch(e){}
   // Drygoods data
@@ -7934,7 +8044,7 @@ function getAllCloudData(){
   const certParafShow = localStorage.getItem('sjn_cert_paraf_show_v1');
 
   return {
-    data, stations, dfsData, settings, training, users, stcrData, drygoodsData,
+    data, stations, dfsData, settings, training, users, karyawan, stcrData, drygoodsData,
     rolePerms, certTemplate1, certTemplate2, certTemplateActive, certPositions, certBarcode, certCustomTexts,
     certCustomTextsSJ, certCustomTextsNAM, certCustomTextsBoth,
     certParaf, certParafShow,
@@ -8028,6 +8138,11 @@ async function cloudPush(silent=false, dirtyHint=null){
         dfsData:  _mergeWithConflict(cloudPayload.dfsData,  localPayload.dfsData,  byIdOrKey),
         stcrData: _mergeWithConflict(cloudPayload.stcrData, localPayload.stcrData, byIdOrKey),
       };
+      // Merge Data Karyawan (key by id) — sama seperti drygoodsData.employees,
+      // supaya karyawan yang ditambah dari device lain tidak hilang saat push.
+      if(Array.isArray(localPayload.karyawan) && Array.isArray(cloudPayload.karyawan)){
+        mergedPayload.karyawan = _mergeWithConflict(cloudPayload.karyawan, localPayload.karyawan, dgTrxKeyFn);
+      }
       // Merge peserta training jika ada
       if(localPayload.training && cloudPayload.training){
         mergedPayload.training = {...localPayload.training};
@@ -8188,6 +8303,21 @@ async function cloudPull(silent = false){
       }
       localStorage.setItem('sjnam_users_v1', JSON.stringify(_mergedUsers));
       if(typeof renderUserTable === 'function') renderUserTable();
+    }
+    // Restore Data Karyawan — merge by id (local wins on conflict) supaya karyawan
+    // yang ditambahkan dari device lain tidak hilang, sama seperti pola users di atas.
+    if(Array.isArray(rec.karyawan)){
+      const _localKar = (function(){ try{ return JSON.parse(localStorage.getItem('sjnam_karyawan_v1')||'null'); }catch(e){ return null; } })();
+      let _mergedKar = rec.karyawan;
+      if(_localKar && Array.isArray(_localKar)){
+        const _karMap = new Map();
+        rec.karyawan.forEach(k=>{ if(k.id) _karMap.set(k.id, k); });
+        _localKar.forEach(k=>{ if(k.id) _karMap.set(k.id, k); });
+        _mergedKar = Array.from(_karMap.values());
+      }
+      localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(_mergedKar));
+      if(typeof window.setKaryawanData === 'function') window.setKaryawanData(_mergedKar);
+      if(typeof window.renderKaryawanUserOptions === 'function') window.renderKaryawanUserOptions();
     }
     // Restore data STCR
     if(Array.isArray(rec.stcrData) && rec.stcrData.length > 0){
@@ -8354,7 +8484,22 @@ function startRealtimeSubscription(){
               }
               localStorage.setItem('sjnam_users_v1', JSON.stringify(_rtMU));
               if(typeof renderUserTable === 'function') renderUserTable();
-          }          // Restore data STCR dari realtime
+          }
+          // Restore Data Karyawan dari realtime — merge by id, sama seperti cloudPull
+          if(Array.isArray(rec.karyawan)){
+              const _rtLK = (function(){ try{ return JSON.parse(localStorage.getItem('sjnam_karyawan_v1')||'null'); }catch(e){ return null; } })();
+              let _rtMK = rec.karyawan;
+              if(_rtLK && Array.isArray(_rtLK)){
+                const _mk = new Map();
+                rec.karyawan.forEach(k=>{ if(k.id) _mk.set(k.id, k); });
+                _rtLK.forEach(k=>{ if(k.id) _mk.set(k.id, k); });
+                _rtMK = Array.from(_mk.values());
+              }
+              localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(_rtMK));
+              if(typeof window.setKaryawanData === 'function') window.setKaryawanData(_rtMK);
+              if(typeof window.renderKaryawanUserOptions === 'function') window.renderKaryawanUserOptions();
+          }
+          // Restore data STCR dari realtime
           if(Array.isArray(rec.stcrData) && rec.stcrData.length > 0){
             localStorage.setItem('sjnam_stcr_data_v1', JSON.stringify(rec.stcrData));
             if(window.STCR && typeof window.STCR.loadData === 'function'){
@@ -9235,13 +9380,17 @@ function renderUserTable(){
   }
   // Peserta count always from FULL list so number is accurate
   const pesertaCount = allUsers.filter(u=>u.role==='Peserta').length;
-  
+
+  // Tabel disederhanakan jadi Role / Status / Aksi (Username & Nama dikelola via
+  // tab Data Karyawan). Username tetap ditampilkan kecil di bawah badge role agar
+  // Admin masih bisa membedakan akun mana yang sedang diedit/dihapus — kredensial
+  // login (username) tidak hilang dari sistem, hanya tidak diberi kolom sendiri.
   tbody.innerHTML = displayUsers.map(u => `
     <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-      <td class="p-3 font-mono text-xs">${esc(u.username)}</td>
-      <!-- BUGFIX: tambahkan esc() untuk mencegah XSS dari nama/username yang mengandung HTML -->
-      <td class="p-3">${esc(u.name)}</td>
-      <td class="p-3"><span class="badge ${getRoleBadgeClass(u.role)}">${u.role}</span></td>
+      <td class="p-3">
+        <span class="badge ${getRoleBadgeClass(u.role)}">${esc(u.role)}</span>
+        <div class="text-[11px] text-slate-400 font-mono mt-0.5">${esc(u.username)}</div>
+      </td>
       <td class="p-3"><span class="text-xs ${u.active?'text-emerald-600':'text-red-600'}">${u.active?'Aktif':'Nonaktif'}</span></td>
       <td class="p-3 text-right">
         ${canEdit ? `<button onclick="editUser(${u.id})" class="text-xs px-2 py-1 bg-amber-500 text-white rounded mr-1">Edit</button>` : ''}
@@ -9252,6 +9401,12 @@ function renderUserTable(){
 
   const pesertaInfo = document.getElementById('userPesertaCountInfo');
   if(pesertaInfo) pesertaInfo.textContent = `Akun Peserta: ${pesertaCount} / 150`;
+
+  // Refresh dropdown User & tabel Data Karyawan tiap kali tabel user berubah,
+  // supaya daftar username/role yang tersedia DAN badge role yang ditampilkan
+  // di tabel Data Karyawan selalu sinkron (mis. setelah editUser() ganti role).
+  if(typeof window.renderKaryawanUserOptions === 'function') window.renderKaryawanUserOptions();
+  if(typeof window.renderKaryawanTable === 'function') window.renderKaryawanTable();
 }
 
 // Helper: kelas warna badge untuk setiap role, termasuk role kustom (UserXXX/UserXX/UserX).
@@ -9266,6 +9421,302 @@ function getRoleBadgeClass(role){
   return 'bg-slate-100 text-slate-700';
 }
 window.getRoleBadgeClass = getRoleBadgeClass;
+
+
+// ===================================================================
+// MODUL DATA KARYAWAN (Tab Admin → sub-tab Data Karyawan)
+// ===================================================================
+// Karyawan adalah data pribadi (Nama, NIP, Jabatan, No HP, Email, Station).
+// Kolom "User" hanya menyimpan REFERENSI (username) ke akun login yang sudah
+// ada di Manajemen User — TIDAK menduplikasi username/password/role di sini.
+// Ini sengaja dipisah dari kredensial login (users) supaya:
+//  1. Username/password tetap satu sumber kebenaran untuk autentikasi.
+//  2. Menambah user baru ke depannya cukup: tambah karyawan + pilih usernya
+//     di dropdown kolom User (sesuai permintaan), tanpa mengubah field lain.
+(function(){
+  const KARYAWAN_KEY = 'sjnam_karyawan_v1';
+  let karyawan = [];
+  try { karyawan = JSON.parse(localStorage.getItem(KARYAWAN_KEY) || '[]'); } catch(e){ karyawan = []; }
+
+  function saveKaryawan(){
+    localStorage.setItem(KARYAWAN_KEY, JSON.stringify(karyawan));
+    if(typeof triggerAutoSync === 'function') triggerAutoSync('karyawan');
+  }
+  // Expose getter/setter untuk dipakai oleh cloud sync (push/pull/realtime)
+  window.getKaryawanData = () => karyawan;
+  window.setKaryawanData = (arr) => {
+    karyawan = Array.isArray(arr) ? arr : [];
+    if(document.getElementById('karyawanTableBody')) renderKaryawan();
+  };
+
+  // ── Helper: daftar station untuk dropdown filter & form ──
+  // BUGFIX-PROOF: `stations` (variabel global di STATIONS_KEY) bisa berubah
+  // sewaktu-waktu (tambah/hapus station di Tab Station) — selalu baca ulang
+  // dari localStorage di sini agar dropdown tidak basi (stale).
+  function getStationList(){
+    try { return JSON.parse(localStorage.getItem('sjn_stations_v2') || '[]'); } catch(e){ return []; }
+  }
+
+  function populateStationDropdowns(){
+    const list = getStationList();
+    const opts = list.map(s => `<option value="${esc(s.iata)}">${esc(s.iata)} — ${esc(s.name)}</option>`).join('');
+    const filterEl = document.getElementById('karyawanFilterStation');
+    const formEl = document.getElementById('karyawanStation');
+    if(filterEl){
+      const cur = filterEl.value;
+      filterEl.innerHTML = '<option value="">Semua Station</option>' + opts;
+      if(list.some(s=>s.iata===cur)) filterEl.value = cur;
+    }
+    if(formEl){
+      const cur = formEl.value;
+      formEl.innerHTML = '<option value="">Pilih station...</option>' + opts;
+      if(list.some(s=>s.iata===cur)) formEl.value = cur;
+    }
+  }
+
+  // ── Helper: daftar user (akun login) untuk dropdown kolom "User" ──
+  // Hanya tampilkan user yang BELUM dihubungkan ke karyawan lain, kecuali
+  // user yang sedang dihubungkan ke karyawan yang sedang diedit saat ini.
+  function getUsersList(){
+    try { return JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]'); } catch(e){ return []; }
+  }
+
+  window.renderKaryawanUserOptions = function(){
+    const sel = document.getElementById('karyawanUser');
+    if(!sel) return;
+    const allUsers = getUsersList();
+    const linkedUsernames = new Set(karyawan.map(k=>k.username).filter(Boolean));
+    const editingUsername = window._karyawanEditId
+      ? (karyawan.find(k=>k.id===window._karyawanEditId)||{}).username
+      : null;
+    const cur = sel.value;
+    const opts = allUsers
+      .filter(u => !linkedUsernames.has(u.username) || u.username === editingUsername)
+      .map(u => `<option value="${esc(u.username)}">${esc(u.username)} — ${esc(u.role)}</option>`)
+      .join('');
+    sel.innerHTML = '<option value="">— Belum dihubungkan ke akun manapun —</option>' + opts;
+    if(allUsers.some(u=>u.username===cur)) sel.value = cur;
+  };
+
+  // ── RENDER ──
+  function renderKaryawan(){
+    const tbody = document.getElementById('karyawanTableBody');
+    if(!tbody) return;
+    populateStationDropdowns();
+
+    const search = (document.getElementById('karyawanSearch')?.value || '').toLowerCase();
+    const stationFilter = document.getElementById('karyawanFilterStation')?.value || '';
+    const allUsersMap = new Map(getUsersList().map(u => [u.username, u]));
+
+    let list = karyawan.filter(k => {
+      if(stationFilter && k.station !== stationFilter) return false;
+      if(search){
+        const hay = [k.nama, k.nip, k.jabatan, k.station, k.hp, k.email].join(' ').toLowerCase();
+        if(!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    document.getElementById('karyawanCountInfo').textContent = `Total Karyawan: ${karyawan.length}`;
+
+    if(!list.length){
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 text-sm">Belum ada data karyawan.</td></tr>';
+      return;
+    }
+
+    const canEdit = window.currentUserCanAdd;
+    const canDelete = window.currentUserCanDelete;
+
+    tbody.innerHTML = list.map((k, i) => {
+      const linkedUser = k.username ? allUsersMap.get(k.username) : null;
+      const userCell = linkedUser
+        ? `<span class="badge ${getRoleBadgeClass(linkedUser.role)}">${esc(linkedUser.role)}</span>
+           <div class="text-[11px] text-slate-400 font-mono mt-0.5">${esc(linkedUser.username)}</div>`
+        : (k.username
+            ? `<span class="text-xs text-red-500" title="Akun ${esc(k.username)} sudah dihapus dari Manajemen User">⚠️ Akun tidak ditemukan</span>`
+            : `<span class="text-xs text-slate-400">— Belum terhubung —</span>`);
+      return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+        <td class="p-3 text-xs text-slate-400">${i+1}</td>
+        <td class="p-3 font-medium">${esc(k.nama)}</td>
+        <td class="p-3 font-mono text-xs">${esc(k.nip)}</td>
+        <td class="p-3 text-xs">${esc(k.jabatan)}</td>
+        <td class="p-3 text-xs">${esc(k.hp || '-')}</td>
+        <td class="p-3 text-xs">${esc(k.email || '-')}</td>
+        <td class="p-3 text-xs">${esc(k.station || '-')}</td>
+        <td class="p-3">${userCell}</td>
+        <td class="p-3 text-right whitespace-nowrap">
+          ${canEdit ? `<button data-kar-edit="${k.id}" class="text-xs px-2 py-1 bg-amber-500 text-white rounded mr-1">Edit</button>` : ''}
+          ${canDelete ? `<button data-kar-del="${k.id}" class="text-xs px-2 py-1 bg-red-500 text-white rounded">Hapus</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+  window.renderKaryawanTable = renderKaryawan;
+
+  // ── MODAL OPEN/CLOSE ──
+  function openKaryawanModal(item){
+    window._karyawanEditId = item ? item.id : null;
+    document.getElementById('karyawanModalTitle').textContent = item ? 'Edit Karyawan' : 'Tambah Karyawan';
+    populateStationDropdowns();
+    window.renderKaryawanUserOptions();
+    document.getElementById('karyawanNama').value = item?.nama || '';
+    document.getElementById('karyawanNip').value = item?.nip || '';
+    document.getElementById('karyawanJabatan').value = item?.jabatan || '';
+    document.getElementById('karyawanStation').value = item?.station || '';
+    document.getElementById('karyawanHp').value = item?.hp || '';
+    document.getElementById('karyawanEmail').value = item?.email || '';
+    document.getElementById('karyawanUser').value = item?.username || '';
+    document.getElementById('karyawanModal').classList.remove('hidden');
+  }
+  function closeKaryawanModal(){
+    document.getElementById('karyawanModal').classList.add('hidden');
+    window._karyawanEditId = null;
+  }
+
+  document.getElementById('btnAddKaryawan')?.addEventListener('click', () => {
+    if(!window.currentUserCanAdd){ showToast('Tidak ada izin untuk menambah karyawan', 'error'); return; }
+    openKaryawanModal(null);
+  });
+  document.getElementById('karyawanModalCancel')?.addEventListener('click', closeKaryawanModal);
+  document.getElementById('karyawanModal')?.addEventListener('click', e => {
+    if(e.target === document.getElementById('karyawanModal')) closeKaryawanModal();
+  });
+
+  // ── SAVE (create/update) ──
+  document.getElementById('karyawanModalSave')?.addEventListener('click', () => {
+    if(!window.currentUserCanAdd){ showToast('Tidak ada izin untuk menyimpan data karyawan', 'error'); return; }
+
+    const nama = document.getElementById('karyawanNama').value.trim();
+    const nip = document.getElementById('karyawanNip').value.trim();
+    const jabatan = document.getElementById('karyawanJabatan').value.trim();
+    const station = document.getElementById('karyawanStation').value;
+    const hp = document.getElementById('karyawanHp').value.trim();
+    const email = document.getElementById('karyawanEmail').value.trim();
+    const username = document.getElementById('karyawanUser').value;
+
+    if(!nama || !nip || !jabatan){
+      showToast('Lengkapi field wajib: Nama, NIP, dan Jabatan', 'error');
+      return;
+    }
+    // Validasi format email sederhana — mencegah typo umum tanpa terlalu ketat
+    if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      showToast('Format email tidak valid', 'error');
+      return;
+    }
+    // Validasi No HP: hanya digit, +, spasi, dan strip — minimal 8 digit
+    if(hp && !/^[0-9+\-\s]{8,20}$/.test(hp)){
+      showToast('Format No Handphone tidak valid', 'error');
+      return;
+    }
+    // NIP harus unik (kecuali sedang mengedit dirinya sendiri)
+    const dupNip = karyawan.find(k => k.id !== window._karyawanEditId && (k.nip||'').toLowerCase() === nip.toLowerCase());
+    if(dupNip){
+      showToast('NIP sudah digunakan oleh karyawan lain: ' + dupNip.nama, 'error');
+      return;
+    }
+    // User hanya boleh dihubungkan ke SATU karyawan — cegah double-link walau
+    // dropdown sudah memfilter, sebagai pengaman jika ada perubahan data di tab lain.
+    if(username){
+      const dupUser = karyawan.find(k => k.id !== window._karyawanEditId && k.username === username);
+      if(dupUser){
+        showToast('Akun ini sudah dihubungkan ke karyawan lain: ' + dupUser.nama, 'error');
+        return;
+      }
+    }
+
+    const entry = {
+      id: window._karyawanEditId || ('kar_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+      nama, nip, jabatan, station, hp, email, username,
+      updatedAt: new Date().toISOString()
+    };
+    const idx = karyawan.findIndex(k => k.id === window._karyawanEditId);
+    if(idx > -1) karyawan[idx] = entry; else karyawan.push(entry);
+    saveKaryawan();
+
+    // Sinkronkan nama tampilan di akun login (users) dengan nama karyawan, supaya
+    // nama yang muncul saat login selalu konsisten dengan Data Karyawan — sesuai
+    // tujuan awal: cukup edit di satu tempat (Data Karyawan).
+    if(username){
+      try {
+        const users = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
+        const u = users.find(x => x.username === username);
+        if(u && u.name !== nama){
+          u.name = nama;
+          saveUsers(users);
+          if(window.currentUser && window.currentUser.username === username){
+            window.currentUser.name = nama;
+            currentUser.name = nama;
+            localStorage.setItem('sjnam_session_v1', JSON.stringify(currentUser));
+            const nameEls = ['userNameDisplay','userNameDisplaySide'];
+            nameEls.forEach(id => { const el = document.getElementById(id); if(el) el.textContent = nama; });
+          }
+        }
+      } catch(e){ console.error('Gagal sinkron nama user dari Data Karyawan', e); }
+    }
+
+    if(typeof auditLog === 'function') auditLog(idx > -1 ? 'update' : 'create', 'karyawan', entry.id, nama);
+    closeKaryawanModal();
+    renderKaryawan();
+    if(typeof renderUserTable === 'function') renderUserTable();
+    showToast(idx > -1 ? 'Data karyawan diperbarui' : 'Karyawan ditambahkan', 'success');
+  });
+
+  // ── Table click delegation: edit / hapus ──
+  document.getElementById('karyawanTableBody')?.addEventListener('click', async e => {
+    const editId = e.target.closest('[data-kar-edit]')?.dataset.karEdit;
+    const delId = e.target.closest('[data-kar-del]')?.dataset.karDel;
+    if(editId){
+      if(!window.currentUserCanAdd){ showToast('Tidak ada izin untuk mengedit karyawan', 'error'); return; }
+      const item = karyawan.find(k => k.id === editId);
+      if(item) openKaryawanModal(item);
+    }
+    if(delId){
+      if(!window.currentUserCanDelete){ showToast('Tidak ada izin untuk menghapus karyawan', 'error'); return; }
+      const item = karyawan.find(k => k.id === delId);
+      const ok = await showConfirm('Hapus Karyawan', `Hapus data karyawan "${item?.nama || ''}"? Akun login terkait TIDAK akan terhapus, hanya tautannya yang diputus.`);
+      if(!ok) return;
+      karyawan = karyawan.filter(k => k.id !== delId);
+      saveKaryawan();
+      if(typeof auditLog === 'function') auditLog('delete', 'karyawan', delId, item?.nama || '');
+      renderKaryawan();
+      showToast('Karyawan dihapus', 'success');
+    }
+  });
+
+  // ── Search / filter wiring ──
+  ['karyawanSearch', 'karyawanFilterStation'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', renderKaryawan);
+    document.getElementById(id)?.addEventListener('change', renderKaryawan);
+  });
+  document.getElementById('btnKaryawanResetFilter')?.addEventListener('click', () => {
+    const s = document.getElementById('karyawanSearch'); if(s) s.value = '';
+    const f = document.getElementById('karyawanFilterStation'); if(f) f.value = '';
+    renderKaryawan();
+  });
+
+  // ── Export Excel ──
+  document.getElementById('btnExportKaryawan')?.addEventListener('click', () => {
+    if(!window.XLSX){ showToast('XLSX tidak tersedia', 'error'); return; }
+    if(!karyawan.length){ showToast('Tidak ada data karyawan', 'error'); return; }
+    const allUsersMap = new Map(getUsersList().map(u => [u.username, u]));
+    const rows = karyawan.map((k, i) => {
+      const u = k.username ? allUsersMap.get(k.username) : null;
+      return {
+        'No': i + 1, 'Nama': k.nama || '', 'NIP': k.nip || '', 'Jabatan': k.jabatan || '',
+        'No Handphone': k.hp || '', 'Email': k.email || '', 'Station': k.station || '',
+        'Username': k.username || '', 'Role': u ? u.role : ''
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data Karyawan');
+    XLSX.writeFile(wb, `Data_Karyawan_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showToast('Export Excel Data Karyawan berhasil');
+  });
+
+  // Render pertama kali jika tab Admin sudah aktif saat modul ini dimuat
+  if(document.getElementById('karyawanTableBody')) renderKaryawan();
+})();
 
 
 // Add user
@@ -11720,10 +12171,16 @@ _updateOfflineQueueBadge(); // cek langsung saat load
     btn.classList.add('active','border-blue-600','text-blue-600');
     btn.classList.remove('border-transparent','text-slate-500');
     document.querySelectorAll('.admin-subtab-pane').forEach(p=>p.classList.add('hidden'));
-    const pane = document.getElementById(target==='users'?'adminSubUsers':'adminSubPerms');
+    // BUGFIX: sebelumnya hanya 2 pane (users/perms) ditangani lewat ternary —
+    // target 'karyawan' (sub-tab baru) jatuh ke default 'adminSubPerms' yang salah.
+    // Sekarang dipetakan eksplisit untuk ketiga sub-tab.
+    const paneId = target === 'karyawan' ? 'adminSubKaryawan' : target === 'users' ? 'adminSubUsers' : 'adminSubPerms';
+    const pane = document.getElementById(paneId);
     if(pane){
       pane.classList.remove('hidden');
-      if(target==='perms') renderPermTable();
+      if(target === 'perms') renderPermTable();
+      if(target === 'karyawan' && typeof window.renderKaryawanTable === 'function') window.renderKaryawanTable();
+      if(target === 'users' && typeof renderUserTable === 'function') renderUserTable();
     }
   });
 
