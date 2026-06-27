@@ -7727,21 +7727,32 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
       if(btn)  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
     const isAdminOrCo = user.role === 'Admin' || user.role === 'Co-Admin';
-    _sm('serviceRecoveryMenuContent','iconServiceRecoveryMenu','toggleServiceRecoveryMenu','sidenav_svcrecovery_open'+sfx, true);
+    const isAdmin = user.role === 'Admin';
+    // BUGFIX: default open untuk semua group hanya untuk Admin/Co-Admin.
+    // Untuk role lain (User, Peserta, role kustom), default collapsed agar tidak
+    // flash saat applyPermissions menyembunyikan group yang tidak diizinkan.
+    _sm('serviceRecoveryMenuContent','iconServiceRecoveryMenu','toggleServiceRecoveryMenu','sidenav_svcrecovery_open'+sfx, isAdminOrCo);
     _sm('adminMenuContent',          'iconAdminMenu',           'toggleAdminMenu',          'sidenav_admin_open'+sfx,        isAdminOrCo);
-    _sm('stcrMenuContent',           'iconStcrMenu',            'toggleStcrMenu',           'sidenav_stcr_open'+sfx,         true);
-    _sm('trainingMenuContent',       'iconTrainingMenu',        'toggleTrainingMenu',       'sjnam_training_menu_open'+sfx,  true);
-    _sm('drygoodsMenuContent',       'iconDrygoodsMenu',        'toggleDrygoodsMenu',       'sjnam_drygoods_menu_open'+sfx,  true);
+    _sm('stcrMenuContent',           'iconStcrMenu',            'toggleStcrMenu',           'sidenav_stcr_open'+sfx,         isAdminOrCo);
+    _sm('trainingMenuContent',       'iconTrainingMenu',        'toggleTrainingMenu',       'sjnam_training_menu_open'+sfx,  isAdminOrCo);
+    _sm('drygoodsMenuContent',       'iconDrygoodsMenu',        'toggleDrygoodsMenu',       'sjnam_drygoods_menu_open'+sfx,  isAdminOrCo);
   })();
 
   // Apply permissions, restore tab, kemudian reveal
-  document.body.classList.add('js-ready');
+  // BUGFIX: urutan harus — (1) applyPermissions tanpa js-ready agar accordion
+  // TIDAK animate saat permission disembunyikan, (2) reveal sidebar+mainContent,
+  // (3) baru tambahkan js-ready agar transition accordion aktif hanya setelah
+  // semua sudah settled, (4) restoreSession di rAF terakhir agar switchTab
+  // terjadi pada DOM yang sudah stabil & visible.
   (window.applyPermissions || applyPermissions)();
-  restoreSession();
   const _loginSidebar = document.getElementById('sidebar');
   if(_loginSidebar) _loginSidebar.classList.add('perm-ready');
   const _loginMain = document.getElementById('mainContent');
   if(_loginMain) _loginMain.classList.add('perm-ready');
+  requestAnimationFrame(()=>{
+    document.body.classList.add('js-ready');
+    restoreSession();
+  });
   showToast('Selamat datang, ' + user.name + '!', 'success');
 });
 
@@ -8252,24 +8263,24 @@ function restoreSession(){
     return;
   }
   const savedTab = localStorage.getItem(CURRENT_TAB_KEY) || 'home';
-  // Permission sudah diapply sebelum restoreSession dipanggil — tidak perlu delay
-  // Cukup gunakan requestAnimationFrame agar DOM update selesai dulu
-  requestAnimationFrame(()=>{
-    const tabBtn = document.querySelector(`[data-tab="${savedTab}"]`);
-    if(tabBtn && tabBtn.style.display !== 'none'){
-      window.switchTab(savedTab);
+  // BUGFIX: sebelumnya memakai requestAnimationFrame di sini, tapi pemanggil
+  // (checkAuth & login handler) sudah memanggil restoreSession dari dalam rAF.
+  // Double-rAF tidak diperlukan dan bisa menyebabkan timing race.
+  // Langsung switch tab — DOM sudah settled dan perm-ready sudah terpasang.
+  const tabBtn = document.querySelector(`[data-tab="${savedTab}"]`);
+  if(tabBtn && tabBtn.style.display !== 'none'){
+    window.switchTab(savedTab);
+  } else {
+    const homeBtn = document.querySelector('[data-tab="home"]');
+    if(homeBtn && homeBtn.style.display !== 'none'){
+      window.switchTab('home');
     } else {
-      const homeBtn = document.querySelector('[data-tab="home"]');
-      if(homeBtn && homeBtn.style.display !== 'none'){
-        window.switchTab('home');
-      } else {
-        // Role kustom tanpa akses home: cari tab pertama yang visible
-        const firstVisible = document.querySelector('.sidebar-btn[data-tab]:not([style*="display: none"])')?.dataset?.tab;
-        if(firstVisible) window.switchTab(firstVisible);
-        else if(typeof showToast === 'function') showToast('Akun belum diberi akses. Hubungi Admin.','error');
-      }
+      // Role kustom tanpa akses home: cari tab pertama yang visible
+      const firstVisible = document.querySelector('.sidebar-btn[data-tab]:not([style*="display: none"])')?.dataset?.tab;
+      if(firstVisible) window.switchTab(firstVisible);
+      else if(typeof showToast === 'function') showToast('Akun belum diberi akses. Hubungi Admin.','error');
     }
-  });
+  }
 }
 
 // Check session on page load
@@ -8335,26 +8346,30 @@ function restoreSession(){
           if(btn)  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
         }
         const isAdminOrCo = currentUser.role === 'Admin' || currentUser.role === 'Co-Admin';
-        _sm('serviceRecoveryMenuContent','iconServiceRecoveryMenu','toggleServiceRecoveryMenu','sidenav_svcrecovery_open'+sfx, true);
+        // BUGFIX: default open untuk group menu hanya Admin/Co-Admin.
+        // Non-Admin mulai collapsed agar tidak flash saat applyPermissions hide group.
+        _sm('serviceRecoveryMenuContent','iconServiceRecoveryMenu','toggleServiceRecoveryMenu','sidenav_svcrecovery_open'+sfx, isAdminOrCo);
         _sm('adminMenuContent',          'iconAdminMenu',           'toggleAdminMenu',          'sidenav_admin_open'+sfx,        isAdminOrCo);
-        _sm('stcrMenuContent',           'iconStcrMenu',            'toggleStcrMenu',           'sidenav_stcr_open'+sfx,         true);
-        _sm('trainingMenuContent',       'iconTrainingMenu',        'toggleTrainingMenu',       'sjnam_training_menu_open'+sfx,  true);
-        _sm('drygoodsMenuContent',       'iconDrygoodsMenu',        'toggleDrygoodsMenu',       'sjnam_drygoods_menu_open'+sfx,  true);
+        _sm('stcrMenuContent',           'iconStcrMenu',            'toggleStcrMenu',           'sidenav_stcr_open'+sfx,         isAdminOrCo);
+        _sm('trainingMenuContent',       'iconTrainingMenu',        'toggleTrainingMenu',       'sjnam_training_menu_open'+sfx,  isAdminOrCo);
+        _sm('drygoodsMenuContent',       'iconDrygoodsMenu',        'toggleDrygoodsMenu',       'sjnam_drygoods_menu_open'+sfx,  isAdminOrCo);
       })();
 
       // 2. Apply permissions (sembunyikan/tampilkan menu group & tab sesuai role)
       //    window.applyPermissions sudah di-patch oleh modul perm yang diload lebih awal
+      //    BUGFIX: applyPermissions dipanggil TANPA js-ready agar accordion TIDAK animate
+      //    (accordion dalam keadaan collapsed → tidak ada flash dari group yang disembunyikan)
       (window.applyPermissions || applyPermissions)();
 
-      // 3. Restore tab terakhir
-      restoreSession();
-
-      // 4. Aktifkan CSS transition LALU reveal — satu requestAnimationFrame cukup (<16ms)
-      //    js-ready mengaktifkan accordion transition, perm-ready meng-opacity-1 sidebar+content
-      document.body.classList.add('js-ready');
+      // 3. Reveal sidebar & mainContent DULU (opacity 0 → 1), LALU tambah js-ready,
+      //    LALU restore tab — sehingga user tidak melihat accordion flash sama sekali.
+      document.getElementById('sidebar').classList.add('perm-ready');
+      document.getElementById('mainContent').classList.add('perm-ready');
       requestAnimationFrame(()=>{
-        document.getElementById('sidebar').classList.add('perm-ready');
-        document.getElementById('mainContent').classList.add('perm-ready');
+        // js-ready mengaktifkan transition accordion — baru aktif setelah sidebar/content visible
+        document.body.classList.add('js-ready');
+        // 4. Restore tab terakhir setelah semua settled
+        restoreSession();
       });
 
     } catch(e){
@@ -10451,8 +10466,11 @@ window.addEventListener('beforeunload', ()=>{
       setTimeout(()=>{ document.getElementById('btnStartPeserta')?.click(); }, 200);
     }
     // Reveal sidebar (perm-ready pattern)
+    // BUGFIX: sebelumnya hanya sidebar yang ditambah perm-ready, mainContent terlewat.
     const _patchedSb = document.getElementById('sidebar');
     if(_patchedSb && !_patchedSb.classList.contains('perm-ready')) _patchedSb.classList.add('perm-ready');
+    const _patchedMain = document.getElementById('mainContent');
+    if(_patchedMain && !_patchedMain.classList.contains('perm-ready')) _patchedMain.classList.add('perm-ready');
   };
 
 })();
