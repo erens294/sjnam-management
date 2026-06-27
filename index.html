@@ -97,21 +97,18 @@
   pointer-events: auto;
 }
 
-/* ============================================================
-   ACCORDION SIDEBAR — simplified, no body.js-ready dependency.
-   .collapsed = closed. Tanpa .collapsed = terbuka.
-   Transition diaktifkan setelah body.js-ready (cegah flash awal).
-   ============================================================ */
+/* Accordion sidebar — .collapsed = tutup, tanpa .collapsed = buka.
+   Tidak bergantung pada body.js-ready untuk visibility,
+   hanya untuk transition animation (cegah flash saat load). */
 #serviceRecoveryMenuContent,
 #adminMenuContent,
 #trainingMenuContent,
 #stcrMenuContent,
 #drygoodsMenuContent {
   overflow: hidden;
-  max-height: 1200px;   /* DEFAULT: terbuka */
+  max-height: 1200px;
   opacity: 1;
 }
-/* Collapsed state — ini yang MENUTUP accordion */
 #serviceRecoveryMenuContent.collapsed,
 #adminMenuContent.collapsed,
 #trainingMenuContent.collapsed,
@@ -120,7 +117,6 @@
   max-height: 0 !important;
   opacity: 0 !important;
 }
-/* Transition diaktifkan HANYA setelah js-ready agar tidak animasi saat render awal */
 body.js-ready #serviceRecoveryMenuContent,
 body.js-ready #adminMenuContent,
 body.js-ready #trainingMenuContent,
@@ -150,8 +146,6 @@ body.js-ready #drygoodsMenuContent {
   z-index: 100;
   pointer-events: none;
 }
-/* Pastikan mainContent.collapsed mengikuti lebar sidebar mini */
-#mainContent.collapsed { margin-left: 4rem !important; }
 
 
 /* === CLEAN PROFESSIONAL ENHANCEMENTS === */
@@ -8621,7 +8615,6 @@ function applyPermissions(){
   const homeMenuGroup = null; // Home is standalone, no group
   const stcrMenuGroup = document.getElementById('toggleStcrMenu')?.closest('div');
   const drygoodsMenuGroup = document.getElementById('toggleDrygoodsMenu')?.closest('div');
-  const serviceRecoveryMenuGroup = document.getElementById('toggleServiceRecoveryMenu')?.closest('div');
 
   if(isPeserta){
     // Peserta: HANYA bisa akses "Mulai Training Peserta" (tab-soal-peserta)
@@ -8631,7 +8624,6 @@ function applyPermissions(){
     if(adminMenuGroup) adminMenuGroup.style.display = 'none';
     if(stcrMenuGroup) stcrMenuGroup.style.display = 'none';
     if(drygoodsMenuGroup) drygoodsMenuGroup.style.display = 'none';
-    if(serviceRecoveryMenuGroup) serviceRecoveryMenuGroup.style.display = 'none';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
     if(trainingMenuGroup) trainingMenuGroup.style.display = '';
   } else if(isUser){
@@ -8648,8 +8640,6 @@ function applyPermissions(){
     // Tampilkan Training menu group & tombol Mulai Training Peserta
     if(trainingMenuGroup) trainingMenuGroup.style.display = '';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
-    // Tampilkan Service Recovery menu group (User boleh akses Input, Data, Dashboard)
-    if(serviceRecoveryMenuGroup) serviceRecoveryMenuGroup.style.display = '';
     // Tampilkan Stretchercase & POB menu group (User boleh akses Dashboard/Data/Station)
     if(stcrMenuGroup) stcrMenuGroup.style.display = '';
     // Tampilkan Drygoods menu group
@@ -8694,7 +8684,6 @@ function applyPermissions(){
     if(tabSertifikat) tabSertifikat.style.display = '';
     if(trainingMenuGroup) trainingMenuGroup.style.display = '';
     if(btnPesertaSidebarStart) btnPesertaSidebarStart.style.display = '';
-    if(serviceRecoveryMenuGroup) serviceRecoveryMenuGroup.style.display = '';
     if(stcrMenuGroup) stcrMenuGroup.style.display = '';
     if(drygoodsMenuGroup) drygoodsMenuGroup.style.display = '';
     // Restore semua tombol yang mungkin tersembunyi
@@ -9226,30 +9215,30 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('toggleServiceRecoveryMenu')?.addEventListener('click', ()=>{
     const c = document.getElementById('serviceRecoveryMenuContent');
     if(!c) return;
-    setMenuState(SVC_RECOVERY_KEY, 'serviceRecoveryMenuContent', 'iconServiceRecoveryMenu', 'toggleServiceRecoveryMenu', !c.classList.contains('collapsed'));
+    setMenuState(SVC_RECOVERY_KEY, 'serviceRecoveryMenuContent', 'iconServiceRecoveryMenu', 'toggleServiceRecoveryMenu', c.classList.contains('collapsed'));
   });
   document.getElementById('toggleAdminMenu')?.addEventListener('click', ()=>{
     const c = document.getElementById('adminMenuContent');
     if(!c) return;
-    setMenuState(ADMIN_KEY, 'adminMenuContent', 'iconAdminMenu', 'toggleAdminMenu', !c.classList.contains('collapsed'));
+    setMenuState(ADMIN_KEY, 'adminMenuContent', 'iconAdminMenu', 'toggleAdminMenu', c.classList.contains('collapsed'));
   });
   document.getElementById('toggleStcrMenu')?.addEventListener('click', ()=>{
     const c = document.getElementById('stcrMenuContent');
     if(!c) return;
-    setMenuState(STCR_MENU_KEY, 'stcrMenuContent', 'iconStcrMenu', 'toggleStcrMenu', !c.classList.contains('collapsed'));
+    setMenuState(STCR_MENU_KEY, 'stcrMenuContent', 'iconStcrMenu', 'toggleStcrMenu', c.classList.contains('collapsed'));
   });
   // BUG FIX: Training toggle sebelumnya hanya ada di IIFE terpisah (baris ~10784) yang
   // konflik & tidak sinkron dengan restoreMenuStates(). Dipindah ke sini agar konsisten.
   document.getElementById('toggleTrainingMenu')?.addEventListener('click', ()=>{
     const c = document.getElementById('trainingMenuContent');
     if(!c) return;
-    setMenuState(TRAINING_MENU_KEY, 'trainingMenuContent', 'iconTrainingMenu', 'toggleTrainingMenu', !c.classList.contains('collapsed'));
+    setMenuState(TRAINING_MENU_KEY, 'trainingMenuContent', 'iconTrainingMenu', 'toggleTrainingMenu', c.classList.contains('collapsed'));
   });
   // BUG FIX: Drygoods toggle tidak punya listener sama sekali sebelumnya.
   document.getElementById('toggleDrygoodsMenu')?.addEventListener('click', ()=>{
     const c = document.getElementById('drygoodsMenuContent');
     if(!c) return;
-    setMenuState(DRYGOODS_MENU_KEY, 'drygoodsMenuContent', 'iconDrygoodsMenu', 'toggleDrygoodsMenu', !c.classList.contains('collapsed'));
+    setMenuState(DRYGOODS_MENU_KEY, 'drygoodsMenuContent', 'iconDrygoodsMenu', 'toggleDrygoodsMenu', c.classList.contains('collapsed'));
   });
 
   
@@ -9287,57 +9276,12 @@ document.addEventListener('DOMContentLoaded', function(){
   function applyCollapse(collapsed){
     if(collapsed){
       sidebar.classList.add('collapsed');
-      mainContent.classList.add('collapsed');
+      mainContent.classList.add('ml-16');
       mainContent.classList.remove('ml-64');
-      // Tutup semua accordion saat sidebar mini — konten hidden tapi masih makan ruang
-      ['serviceRecoveryMenuContent','stcrMenuContent','trainingMenuContent','adminMenuContent','drygoodsMenuContent'].forEach(id=>{
-        const el = document.getElementById(id);
-        if(el && !el.classList.contains('collapsed')){
-          el.classList.add('collapsed');
-          el.setAttribute('aria-hidden','true');
-          el._wasOpen = true; // tandai agar bisa di-restore saat expand
-        }
-      });
-      ['iconServiceRecoveryMenu','iconStcrMenu','iconTrainingMenu','iconAdminMenu','iconDrygoodsMenu'].forEach(id=>{
-        const ic = document.getElementById(id);
-        if(ic) ic.style.transform = 'rotate(-90deg)';
-      });
-      ['toggleServiceRecoveryMenu','toggleStcrMenu','toggleTrainingMenu','toggleAdminMenu','toggleDrygoodsMenu'].forEach(id=>{
-        const bt = document.getElementById(id);
-        if(bt) bt.setAttribute('aria-expanded','false');
-      });
     } else {
       sidebar.classList.remove('collapsed');
-      mainContent.classList.remove('collapsed');
       mainContent.classList.add('ml-64');
-      // Restore accordion yang sebelumnya terbuka sebelum di-minimize
-      ['serviceRecoveryMenuContent','stcrMenuContent','trainingMenuContent','adminMenuContent','drygoodsMenuContent'].forEach(id=>{
-        const el = document.getElementById(id);
-        if(el && el._wasOpen){
-          el.classList.remove('collapsed');
-          el.setAttribute('aria-hidden','false');
-          el._wasOpen = false;
-          // Restore icon & button aria
-          const iconMap = {
-            'serviceRecoveryMenuContent':'iconServiceRecoveryMenu',
-            'stcrMenuContent':'iconStcrMenu',
-            'trainingMenuContent':'iconTrainingMenu',
-            'adminMenuContent':'iconAdminMenu',
-            'drygoodsMenuContent':'iconDrygoodsMenu'
-          };
-          const btnMap = {
-            'serviceRecoveryMenuContent':'toggleServiceRecoveryMenu',
-            'stcrMenuContent':'toggleStcrMenu',
-            'trainingMenuContent':'toggleTrainingMenu',
-            'adminMenuContent':'toggleAdminMenu',
-            'drygoodsMenuContent':'toggleDrygoodsMenu'
-          };
-          const ic = document.getElementById(iconMap[id]);
-          const bt = document.getElementById(btnMap[id]);
-          if(ic) ic.style.transform = 'rotate(0deg)';
-          if(bt) bt.setAttribute('aria-expanded','true');
-        }
-      });
+      mainContent.classList.remove('ml-16');
     }
     try{localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');}catch(e){}
   }
@@ -14455,10 +14399,9 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     showToast('Export Excel karyawan berhasil');
   });
 
-  // ── SIDEBAR TOGGLE ─────────────────────────────────────────────
-  // Dikelola sepenuhnya oleh DOMContentLoaded block di atas (setMenuState + DRYGOODS_MENU_KEY).
-  // IIFE lama dihapus untuk mencegah: (1) listener duplikat, (2) restore state yang override
-  // restoreMenuStates() di checkAuth, (3) icon animation ganda saat klik.
+  // ── SIDEBAR TOGGLE ───────────────────────────────────────────────
+  // Drygoods accordion dikelola oleh DOMContentLoaded block di atas.
+  // IIFE ini dihapus untuk menghilangkan listener duplikat pada toggleDrygoodsMenu.
 
   // ── TAB SWITCHING HOOK ───────────────────────────────────────────
   const _origSwitch = window.switchTab;
