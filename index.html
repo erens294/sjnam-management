@@ -5614,7 +5614,7 @@ function updatePreviews(){
           // Flight bukan hari ini → tidak relevan
           el.textContent = '-';
         } else {
-          const s = parseUTC(`${flightDate}T${stdVal}`);
+          const s = parseUTC(stdVal); // BUGFIX: stdVal sudah berisi full ISO string, jangan tambahkan tanggal lagi
           if(s && !isNaN(s.getTime())){
             const diffNow = Math.round((Date.now() - s.getTime())/60000);
             if(diffNow <= 0) el.textContent = '00:00';
@@ -5732,7 +5732,9 @@ $('#btnSimpan').addEventListener('click',()=>{
     keterangan: $('#keterangan').value.trim(),
     delayMenit: diff,
     oclDiff,
-    createdAt: new Date().toISOString()
+    // BUGFIX: pertahankan createdAt asli saat edit — jangan timpa dengan waktu sekarang
+    createdAt: (editingId ? (data.find(d=>d.id===editingId)||{}).createdAt || new Date().toISOString() : new Date().toISOString()),
+    updatedAt: new Date().toISOString()
   };
 
   if(editingId){
@@ -5752,7 +5754,9 @@ $('#btnSimpan').addEventListener('click',()=>{
 function resetForm(){
   // Reset fields manually (no form.reset() since it's a div structure)
   ['flightNumber','route','stdUtc','etdUtc','atdUtc','oclTime','about','keterangan'].forEach(id=>{const el=$('#'+id);if(el)el.value='';});
-  $('#tanggal').valueAsDate=new Date();
+  // BUGFIX: valueAsDate menggunakan UTC yang di Indonesia (UTC+7) bisa menampilkan
+  // kemarin. Gunakan tanggal lokal device agar selalu menampilkan hari ini.
+  $('#tanggal').value=todayLocalStr();
   $('#kategori').value='';
   $('#flightStatus').value='Delay Flight';
   $('#approval').value='Not-Approved';
@@ -7762,6 +7766,9 @@ function _auditSave(moduleName, items, action='update'){
 }
 
 
+// BUGFIX: function header cloudLog hilang — body fungsi ini orphan sehingga semua
+// panggilan cloudLog() melempar "cloudLog is not defined" ReferenceError.
+function cloudLog(msg, type='info'){
   const logEl = $('#cloudLog');
   if(!logEl) return;
   logEl.classList.remove('hidden');
@@ -8665,16 +8672,19 @@ function initUsers(){
 function quickLogin(u,p){
   document.getElementById('loginUser').value = u;
   document.getElementById('loginPass').value = p;
-  document.getElementById('loginForm').dispatchEvent(new Event('submit'));
+  // BUGFIX: Event harus bubbles:true dan cancelable:true agar listener addEventListener bisa mencegat
+  document.getElementById('loginForm').dispatchEvent(new Event('submit', {bubbles:true, cancelable:true}));
 }
 
 // ===== MIGRASI SHA-256: Hash semua plain-text password =====
-(async function migratePasswordsToSHA256(){
+// BUGFIX: Simpan Promise migrasi agar login handler bisa await sampai selesai
+// sebelum membaca password dari localStorage (mencegah race condition).
+window._pwMigrationDone = (async function migratePasswordsToSHA256(){
   const MIGRATED_KEY = 'sjnam_pw_migrated_v1';
   if(localStorage.getItem(MIGRATED_KEY)) return; // Sudah migrasi
   
   const users = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
-  if(!users.length) return;
+  if(!users.length){ localStorage.setItem(MIGRATED_KEY, '1'); return; }
   
   let changed = 0;
   for(const u of users){
@@ -8695,7 +8705,7 @@ function quickLogin(u,p){
 // Login handler
 // Brute-force protection
 const BF_KEY = 'sjnam_bf_v1';
-function getBFState(username){
+function getBFState(){
   try{ return JSON.parse(localStorage.getItem(BF_KEY)||'{}'); }catch(e){ return {}; }
 }
 function setBFState(state){ localStorage.setItem(BF_KEY, JSON.stringify(state)); }
@@ -8743,6 +8753,9 @@ function updateLoginLockMsg(username, lockedUntil){
 
 document.getElementById('loginForm')?.addEventListener('submit', async function(e){
   e.preventDefault();
+  // BUGFIX: Tunggu migrasi SHA-256 selesai sebelum membaca password dari localStorage.
+  // Tanpa ini, login bisa gagal karena migrasi async belum selesai saat form disubmit.
+  if(window._pwMigrationDone) await window._pwMigrationDone;
   const username = document.getElementById('loginUser').value.trim().toLowerCase();
   const password = document.getElementById('loginPass').value;
 
@@ -8760,11 +8773,13 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
   const user = passwordOk ? userCandidate : null;
 
   if(!user){
+    // BUGFIX: baca fails SEBELUM recordBFFail agar angka yang ditampilkan akurat
+    // (setelah recordBFFail, fails bisa di-reset ke 0 jika langsung kunci)
+    const _stateBefore = getBFState();
+    const _failsBefore = (_stateBefore[username]||{}).fails || 0;
     recordBFFail(username);
-    const state = getBFState();
-    const entry = state[username] || {};
-    const fails = entry.fails || 0;
     const newLock = checkBFLocked(username);
+    const fails = _failsBefore + 1;
     if(newLock){
       updateLoginLockMsg(username, newLock);
       showToast('⛔ Terlalu banyak percobaan! Akun dikunci 5 menit.', 'error');
@@ -8891,6 +8906,8 @@ document.getElementById('btnLogout')?.addEventListener('click', function(){
     if(!currentUser) return;
     clearTimeout(idleTimer);
     clearTimeout(warnTimer);
+    // BUGFIX: bersihkan juga countdown interval agar tidak jalan terus setelah user aktif kembali
+    if(window._idleCountdownInterval){ clearInterval(window._idleCountdownInterval); window._idleCountdownInterval = null; }
     warnShown = false;
     // Sembunyikan warning banner jika ada
     const wb = document.getElementById('idleWarnBanner');
@@ -8912,11 +8929,15 @@ document.getElementById('btnLogout')?.addEventListener('click', function(){
       
       let secs = 60;
       const countEl = document.getElementById('idleCountdown');
+      // BUGFIX: simpan interval ke variabel outer agar bisa dibersihkan saat
+      // user klik "Tetap Login" (resetIdle dipanggil) — mencegah multiple concurrent countdowns
+      if(window._idleCountdownInterval) clearInterval(window._idleCountdownInterval);
       const cdInterval = setInterval(()=>{
         secs--;
         if(countEl) countEl.textContent = secs;
-        if(secs <= 0) clearInterval(cdInterval);
+        if(secs <= 0){ clearInterval(cdInterval); window._idleCountdownInterval = null; }
       }, 1000);
+      window._idleCountdownInterval = cdInterval;
     }, IDLE_TIMEOUT - WARN_BEFORE);
 
     idleTimer = setTimeout(()=>{
@@ -9105,6 +9126,11 @@ function applyPermissions(){
 }
 
 // Render user table
+// BUGFIX: esc() diperlukan oleh renderUserTable sebelum Training IIFE berjalan.
+// Definisikan versi fallback di sini agar tidak ReferenceError saat checkAuth memanggil renderUserTable.
+if(typeof window.esc !== 'function'){
+  window.esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);}); };
+}
 function renderUserTable(){
   const tbody = document.getElementById('userTableBody');
   if(!tbody || !currentUser) return;
@@ -9116,7 +9142,9 @@ function renderUserTable(){
   // Filter berdasarkan role
   if(currentUser.role === 'Co-Admin'){
     // Co-Admin tidak bisa melihat akun Admin atau Co-Admin lain
-    displayUsers = allUsers.filter(u => u.role !== 'Admin' && !(u.role === 'Co-Admin' && u.id !== currentUser.id));
+    // BUGFIX: currentUser tidak punya .id (session hanya simpan username/role/name).
+    // Ganti perbandingan id dengan username agar Co-Admin bisa melihat akunnya sendiri.
+    displayUsers = allUsers.filter(u => u.role !== 'Admin' && !(u.role === 'Co-Admin' && u.username !== currentUser.username));
   } else if(currentUser.role === 'User' || currentUser.role === 'Peserta'){
     // User dan Peserta tidak boleh lihat siapapun
     displayUsers = [];
@@ -9126,8 +9154,9 @@ function renderUserTable(){
   
   tbody.innerHTML = displayUsers.map(u => `
     <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-      <td class="p-3 font-mono text-xs">${u.username}</td>
-      <td class="p-3">${u.name}</td>
+      <td class="p-3 font-mono text-xs">${esc(u.username)}</td>
+      <!-- BUGFIX: tambahkan esc() untuk mencegah XSS dari nama/username yang mengandung HTML -->
+      <td class="p-3">${esc(u.name)}</td>
       <td class="p-3"><span class="badge ${getRoleBadgeClass(u.role)}">${u.role}</span></td>
       <td class="p-3"><span class="text-xs ${u.active?'text-emerald-600':'text-red-600'}">${u.active?'Aktif':'Nonaktif'}</span></td>
       <td class="p-3 text-right">
@@ -9210,7 +9239,8 @@ document.getElementById('btnAddUser')?.addEventListener('click', function(){
   }
   
   // Hash password sebelum simpan (SHA-256)
-  sha256(password || '123456').then(hashedPass => {
+  // BUGFIX: jika user klik Cancel saat prompt password, password = null — fallback ke '123456'
+  sha256((password != null ? password : '') || '123456').then(hashedPass => {
     users.push({
       id: Date.now(),
       username: username.toLowerCase(),
@@ -9242,7 +9272,8 @@ function editUser(id){
     return;
   }
   // Co-Admin tidak bisa mengedit akun sesama Co-Admin (hanya Admin yang bisa)
-  if(currentUser && currentUser.role === 'Co-Admin' && user.role === 'Co-Admin' && user.id !== currentUser.id){
+  // BUGFIX: currentUser tidak punya .id — bandingkan dengan username.
+  if(currentUser && currentUser.role === 'Co-Admin' && user.role === 'Co-Admin' && user.username !== currentUser.username){
     showToast('Co-Admin tidak dapat mengubah akun Co-Admin lain. Hubungi Admin.', 'error');
     return;
   }
@@ -11009,6 +11040,7 @@ function renderCertificate(p, prefix){
 
   function renderPesertaQuiz(){
     const c = document.getElementById('pesertaQuizContainer');
+    if(!c) return; // BUGFIX: null check sebelum akses .innerHTML
     const questions = pesertaSelectedBank ? pesertaSelectedBank.questions : [];
     c.innerHTML = questions.map((s,i)=>`
       <div class="p-4 border border-slate-200 dark:border-slate-700 rounded-xl">
