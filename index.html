@@ -3927,6 +3927,59 @@ table:not(.stcr-page table) tbody td {
 
       <div id="cloudLog" class="hidden mt-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-xs font-mono text-slate-600 dark:text-slate-300 max-h-28 overflow-y-auto space-y-1"></div>
 
+      <!-- AUDIT LOG PANEL -->
+      <div class="mt-4">
+        <button onclick="toggleAuditPanel()" class="w-full flex items-center justify-between px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+          <span>📋 Audit Log — Riwayat Perubahan</span>
+          <span id="auditPanelChevron">▼</span>
+        </button>
+        <div id="auditPanel" class="hidden mt-2">
+          <div class="flex gap-2 mb-2">
+            <button onclick="loadAuditLog()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg">🔄 Muat Log</button>
+            <select id="auditModuleFilter" class="input text-xs py-1 px-2 w-auto">
+              <option value="">Semua modul</option>
+              <option value="data">Delay Data</option>
+              <option value="stcrData">STCR</option>
+              <option value="training">Training</option>
+              <option value="drygoodsData">Dry Goods</option>
+              <option value="users">Users</option>
+              <option value="rolePerms">Role Perms</option>
+              <option value="all">Push/Pull</option>
+            </select>
+          </div>
+          <div id="auditLogTable" class="bg-slate-50 dark:bg-slate-800 rounded-xl overflow-hidden text-xs max-h-52 overflow-y-auto">
+            <p class="text-slate-400 p-3 italic">Klik "Muat Log" untuk melihat riwayat perubahan</p>
+          </div>
+          <!-- SQL untuk buat tabel audit -->
+          <details class="mt-2">
+            <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 select-none">📄 SQL: Buat tabel audit_log di Supabase (klik untuk lihat)</summary>
+            <pre class="mt-1 p-3 bg-slate-900 text-green-400 text-xs rounded-xl overflow-x-auto select-all leading-relaxed">-- Jalankan di Supabase SQL Editor (Settings → SQL Editor)
+CREATE TABLE IF NOT EXISTS sjnam_audit_log (
+  id          bigserial PRIMARY KEY,
+  action      text NOT NULL,
+  module      text,
+  record_id   text,
+  changed_by  text,
+  detail      text,
+  device_id   text,
+  created_at  timestamptz DEFAULT now()
+);
+-- Index agar query cepat
+CREATE INDEX IF NOT EXISTS idx_audit_created ON sjnam_audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_module  ON sjnam_audit_log(module);
+-- RLS: izinkan insert & select untuk anon key
+ALTER TABLE sjnam_audit_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "allow_all_audit" ON sjnam_audit_log FOR ALL USING (true) WITH CHECK (true);</pre>
+          </details>
+        </div>
+      </div>
+
+      <!-- OFFLINE QUEUE STATUS -->
+      <div id="offlineQueueStatus" class="hidden mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-700 dark:text-amber-300">
+        <span id="offlineQueueCount">📴 0 perubahan dalam antrian offline</span>
+        <button onclick="_flushOfflineQueue()" class="ml-2 underline font-semibold">Kirim sekarang</button>
+      </div>
+
       <div class="mt-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs text-emerald-700 dark:text-emerald-300">
         <strong>✅ Supabase Free Tier:</strong> 500MB database • 2GB transfer/bulan • Realtime aktif otomatis. 
         URL & Key tersimpan lokal di browser Anda. Data disinkronkan otomatis saat ada perubahan.
@@ -5336,6 +5389,14 @@ document.addEventListener('visibilitychange', function(){
   if(document.visibilityState === 'visible'){
     updateClock();
     updateStationClocks();
+    // Flush offline queue jika ada antrian dan sedang online
+    if(navigator.onLine && typeof _flushOfflineQueue === 'function'){
+      setTimeout(_flushOfflineQueue, 800);
+    }
+    // Smart pull saat tab kembali aktif — cek apakah ada perubahan dari device lain
+    if(navigator.onLine && typeof cloudPull === 'function' && cloudConfig?.supabaseUrl){
+      setTimeout(()=>{ cloudPull(true); }, 1500);
+    }
   }
 });
 window.addEventListener('pageshow', function(){
@@ -7462,6 +7523,63 @@ _lastPushedHash = null;        // hash payload terakhir yang berhasil di-push
 _autoSyncTimer = null;
 _cloudPullInProgress = false;
 
+// === PER-RECORD METADATA: updated_by + updated_at ===
+// Dipakai untuk conflict detection dan audit trail
+function stampRecord(record, action='update'){
+  const user = window.currentUser;
+  const by   = user ? (user.name || user.username || 'unknown') : 'system';
+  const now  = new Date().toISOString();
+  return {
+    ...record,
+    _updatedBy:  by,
+    _updatedAt:  now,
+    _updatedAct: action   // 'create' | 'update' | 'delete'
+  };
+}
+
+// Tempelkan stampRecord ke item array sebelum disimpan.
+// Dipanggil dari saveData(), saveStcrData(), dst. — lihat patch di bawah.
+function stampArray(arr, action='update'){
+  if(!Array.isArray(arr)) return arr;
+  // Hanya stamp item yang belum punya _updatedAt (baru) atau yang lebih baru dari cloud
+  return arr.map(item => item._updatedAt ? item : stampRecord(item, action));
+}
+
+// Deteksi konflik antar dua versi record dengan id sama:
+// kembalikan { winner, loser, conflict } — conflict=true jika beda user edit beda field
+function detectConflict(local, remote){
+  if(!local || !remote) return { winner: local||remote, loser: null, conflict: false };
+  const lt = new Date(local._updatedAt||0).getTime();
+  const rt = new Date(remote._updatedAt||0).getTime();
+  const sameUser = local._updatedBy === remote._updatedBy;
+  const conflict = !sameUser && Math.abs(lt - rt) < 5000; // beda user dalam 5 detik = konflik
+  return {
+    winner: lt >= rt ? local : remote,
+    loser:  lt >= rt ? remote : local,
+    conflict
+  };
+}
+
+// === MODULE KEYS: daftar semua localStorage key per modul ===
+// Dipakai untuk dirty-flag tracking dan per-module push
+const MODULE_KEYS = {
+  data:       'sjn_delay_pro_v4',
+  stations:   'sjn_stations_v2',
+  dfsData:    'sjn_dfs_bank_v1',
+  settings:   'sjn_settings_v4',
+  training:   'sjn_training_v1',
+  users:      'sjnam_users_v1',
+  stcrData:   'sjnam_stcr_data_v1',
+  drygoodsData: 'sjnam_drygoods_v1',
+  rolePerms:  'sjnam_role_perms_v1',
+};
+
+// Dirty-flag per modul — set true saat modul berubah, reset setelah push berhasil
+const _dirtyModules = new Set();
+function markDirty(moduleName){ _dirtyModules.add(moduleName); }
+function clearDirty(moduleName){ if(moduleName) _dirtyModules.delete(moduleName); else _dirtyModules.clear(); }
+function isDirty(moduleName){ return moduleName ? _dirtyModules.has(moduleName) : _dirtyModules.size > 0; }
+
 // Hash ringan untuk deteksi perubahan data (tanpa kirim ke mana-mana)
 function _hashPayload(payload){
   try {
@@ -7474,9 +7592,121 @@ function _hashPayload(payload){
   } catch(e){ return null; }
 }
 
-function saveCloudConfig(){
-  localStorage.setItem(CLOUD_KEY, JSON.stringify(cloudConfig));
+// === OFFLINE QUEUE — IndexedDB ===
+// Menyimpan payload yang gagal dikirim saat offline,
+// lalu flush otomatis saat koneksi kembali.
+const _offlineQueue = (function(){
+  const DB_NAME = 'sjnam_offline_q';
+  const STORE   = 'queue';
+  let _db = null;
+
+  function openDB(){
+    return new Promise((resolve, reject)=>{
+      if(_db){ resolve(_db); return; }
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if(!db.objectStoreNames.contains(STORE)){
+          const store = db.createObjectStore(STORE, { keyPath:'id', autoIncrement:true });
+          store.createIndex('ts','ts',{unique:false});
+        }
+      };
+      req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+      req.onerror   = e => reject(e.target.error);
+    });
+  }
+
+  async function enqueue(payload){
+    try {
+      const db = await openDB();
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(STORE,'readwrite');
+        tx.objectStore(STORE).add({ payload, ts: Date.now(), attempts: 0 });
+        tx.oncomplete = ()=>{ console.log('[OfflineQueue] Payload antri —', new Date().toLocaleTimeString('id-ID')); res(); };
+        tx.onerror    = e => rej(e.target.error);
+      });
+    } catch(e){ console.warn('[OfflineQueue] enqueue gagal:', e.message); }
+  }
+
+  async function getAll(){
+    try {
+      const db = await openDB();
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(STORE,'readonly');
+        const req = tx.objectStore(STORE).index('ts').getAll();
+        req.onsuccess = e => res(e.target.result||[]);
+        req.onerror   = e => rej(e.target.error);
+      });
+    } catch(e){ return []; }
+  }
+
+  async function remove(id){
+    try {
+      const db = await openDB();
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(STORE,'readwrite');
+        tx.objectStore(STORE).delete(id);
+        tx.oncomplete = ()=>res();
+        tx.onerror    = e => rej(e.target.error);
+      });
+    } catch(e){}
+  }
+
+  async function clear(){
+    try {
+      const db = await openDB();
+      return new Promise((res,rej)=>{
+        const tx = db.transaction(STORE,'readwrite');
+        tx.objectStore(STORE).clear();
+        tx.oncomplete = ()=>res();
+        tx.onerror    = e => rej(e.target.error);
+      });
+    } catch(e){}
+  }
+
+  return { enqueue, getAll, remove, clear };
+})();
+
+// Flush offline queue: kirim semua payload yang antri saat online kembali
+async function _flushOfflineQueue(){
+  if(!navigator.onLine) return;
+  if(!cloudConfig.supabaseUrl || !cloudConfig.supabaseKey) return;
+  const items = await _offlineQueue.getAll();
+  if(!items.length) return;
+  console.log('[OfflineQueue] Flush', items.length, 'item antrian...');
+  cloudLog('📶 Koneksi kembali — mengirim '+items.length+' perubahan yang tertunda...', 'info');
+  for(const item of items){
+    try {
+      const sb = getSupabaseClient();
+      if(!sb) break;
+      const { error } = await sb
+        .from('sjnam_sync')
+        .upsert({ id:'sjnam_main', payload: item.payload, updated_at: new Date().toISOString() }, { onConflict:'id' });
+      if(!error){
+        await _offlineQueue.remove(item.id);
+        console.log('[OfflineQueue] Item', item.id, 'berhasil dikirim');
+      } else {
+        console.warn('[OfflineQueue] Gagal kirim item', item.id, ':', error.message);
+        break; // berhenti di error, coba lagi nanti
+      }
+    } catch(e){
+      console.warn('[OfflineQueue] Exception:', e.message);
+      break;
+    }
+  }
+  const remaining = await _offlineQueue.getAll();
+  if(!remaining.length){
+    cloudLog('✅ Semua perubahan offline berhasil dikirim', 'success');
+    showToast('📶 Sync offline berhasil — semua perubahan telah dikirim', 'success');
+  }
 }
+
+// Daftarkan listener online/offline untuk queue
+window.addEventListener('online', ()=>{
+  setTimeout(_flushOfflineQueue, 1500); // delay kecil agar koneksi stabil dulu
+});
+
+
 
 function getSupabaseClient(){
   // Guard: if the Supabase SDK script (from the CDN) hasn't loaded — e.g. no internet
@@ -7499,7 +7729,39 @@ function getSupabaseClient(){
   return _supabaseClient;
 }
 
-function cloudLog(msg, type='info'){
+// === AUDIT LOG ===
+// Menulis satu baris ke tabel sjnam_audit_log di Supabase (best-effort, tidak block UI)
+async function auditLog(action, moduleName, recordId, detail=''){
+  try {
+    const sb = getSupabaseClient();
+    if(!sb) return;
+    const user = window.currentUser;
+    const by   = user ? (user.name || user.username || 'system') : 'system';
+    await sb.from('sjnam_audit_log').insert({
+      action,                         // 'create' | 'update' | 'delete' | 'pull' | 'push' | 'merge'
+      module:     moduleName,         // 'data' | 'stcrData' | 'training' | ...
+      record_id:  String(recordId||''), // id record yang berubah (jika ada)
+      changed_by: by,
+      detail:     detail.slice(0,500),// ringkasan perubahan (max 500 char)
+      device_id:  getDeviceId(),
+      created_at: new Date().toISOString()
+    });
+  } catch(e){
+    // Audit log bersifat best-effort — jangan sampai menghentikan operasi utama
+    console.warn('[AuditLog] Gagal tulis:', e.message);
+  }
+}
+
+// Shorthand untuk audit log yang dipanggil dari save functions
+function _auditSave(moduleName, items, action='update'){
+  if(!cloudConfig.supabaseUrl) return; // skip jika cloud belum dikonfigurasi
+  try {
+    const count = Array.isArray(items) ? items.length : 1;
+    auditLog(action, moduleName, '', count+' record(s)');
+  } catch(e){}
+}
+
+
   const logEl = $('#cloudLog');
   if(!logEl) return;
   logEl.classList.remove('hidden');
@@ -7642,7 +7904,8 @@ function _mergeArrays(base, incoming, keyFn){
 // UPLOAD ke Supabase (upsert dengan record_id = 'sjnam_main')
 // Smart Push: hanya upload jika data benar-benar berubah dari push terakhir
 // Conflict-safe: jika cloud lebih baru dari pull terakhir kita, merge array data dulu
-async function cloudPush(silent=false){
+// Offline-safe: jika tidak ada koneksi, antri ke IndexedDB dan flush saat online
+async function cloudPush(silent=false, dirtyHint=null){
   const sb = getSupabaseClient();
   if(!sb){ if(!silent) showToast('Masukkan URL & Key Supabase dulu','error'); return false; }
 
@@ -7653,6 +7916,16 @@ async function cloudPush(silent=false){
   if(silent && currentHash && currentHash === _lastPushedHash){
     cloudLog('⏭️ Smart Push: tidak ada perubahan data, skip upload', 'info');
     return true;
+  }
+
+  // Jika offline — antri ke IndexedDB dan keluar
+  if(!navigator.onLine){
+    await _offlineQueue.enqueue(localPayload);
+    cloudLog('📴 Offline — perubahan disimpan ke antrian lokal (akan dikirim saat online)', 'info');
+    if(!silent) showToast('📴 Offline — perubahan akan dikirim saat koneksi kembali', 'info');
+    // Tetap update hash agar tidak push ulang hal yang sama saat online
+    _lastPushedHash = currentHash;
+    return true; // return true agar caller tidak error
   }
 
   updateSyncStatus('syncing');
@@ -7670,45 +7943,67 @@ async function cloudPush(silent=false){
       const byIdOrKey = r => (r.id || r['App Service & Tehnik'] || JSON.stringify(r));
       const pesertaKeyFn = r => (r.id || r.username || JSON.stringify(r));
       const dgTrxKeyFn = r => r.id || JSON.stringify(r);
+
+      // Per-record conflict detection untuk modul data utama
+      const _mergeWithConflict = (cloudArr=[], localArr=[], keyFn)=>{
+        const map = new Map();
+        cloudArr.forEach(item=>{ const k=keyFn(item); if(k) map.set(k,item); });
+        localArr.forEach(item=>{
+          const k = keyFn(item);
+          if(!k){ map.set(JSON.stringify(item),item); return; }
+          const existing = map.get(k);
+          if(!existing){ map.set(k,item); return; }
+          const { winner, conflict } = detectConflict(item, existing);
+          if(conflict){
+            cloudLog('⚠️ Konflik record '+k+': '+item._updatedBy+' vs '+existing._updatedBy+' — '+winner._updatedBy+' menang', 'info');
+          }
+          map.set(k, winner);
+        });
+        return Array.from(map.values());
+      };
+
       mergedPayload = {
         ...localPayload,
-        data:     _mergeArrays(cloudPayload.data,     localPayload.data,     byIdOrKey),
-        dfsData:  _mergeArrays(cloudPayload.dfsData,  localPayload.dfsData,  byIdOrKey),
-        stcrData: _mergeArrays(cloudPayload.stcrData, localPayload.stcrData, byIdOrKey),
+        data:     _mergeWithConflict(cloudPayload.data,     localPayload.data,     byIdOrKey),
+        dfsData:  _mergeWithConflict(cloudPayload.dfsData,  localPayload.dfsData,  byIdOrKey),
+        stcrData: _mergeWithConflict(cloudPayload.stcrData, localPayload.stcrData, byIdOrKey),
       };
       // Merge peserta training jika ada
       if(localPayload.training && cloudPayload.training){
         mergedPayload.training = {...localPayload.training};
         if(Array.isArray(localPayload.training.peserta) && Array.isArray(cloudPayload.training.peserta)){
-          mergedPayload.training.peserta = _mergeArrays(cloudPayload.training.peserta, localPayload.training.peserta, pesertaKeyFn);
+          mergedPayload.training.peserta = _mergeWithConflict(cloudPayload.training.peserta, localPayload.training.peserta, pesertaKeyFn);
         }
       }
       // Merge drygoods transactions (yang paling sering berubah per-device)
       if(localPayload.drygoodsData && cloudPayload.drygoodsData){
         mergedPayload.drygoodsData = {...localPayload.drygoodsData};
         if(Array.isArray(localPayload.drygoodsData.transactions) && Array.isArray(cloudPayload.drygoodsData.transactions)){
-          mergedPayload.drygoodsData.transactions = _mergeArrays(
+          mergedPayload.drygoodsData.transactions = _mergeWithConflict(
             cloudPayload.drygoodsData.transactions, localPayload.drygoodsData.transactions, dgTrxKeyFn
           );
         }
         if(Array.isArray(localPayload.drygoodsData.employees) && Array.isArray(cloudPayload.drygoodsData.employees)){
-          mergedPayload.drygoodsData.employees = _mergeArrays(
+          mergedPayload.drygoodsData.employees = _mergeWithConflict(
             cloudPayload.drygoodsData.employees, localPayload.drygoodsData.employees, dgTrxKeyFn
           );
         }
         if(Array.isArray(localPayload.drygoodsData.bankItems) && Array.isArray(cloudPayload.drygoodsData.bankItems)){
-          mergedPayload.drygoodsData.bankItems = _mergeArrays(
+          mergedPayload.drygoodsData.bankItems = _mergeWithConflict(
             cloudPayload.drygoodsData.bankItems, localPayload.drygoodsData.bankItems, dgTrxKeyFn
           );
         }
       }
       cloudLog('🔀 Konflik terdeteksi — data digabung otomatis (merge). Cloud: '+cloudRow.updated_at, 'info');
+      await auditLog('merge', dirtyHint||'all', '', 'Merge dari cloud: '+cloudRow.updated_at);
       if(!silent) showToast('🔀 Merge: data dari 2 device digabung otomatis', 'info');
     }
 
     // Tambahkan device id ke payload untuk tracing
     mergedPayload._pushedBy = getDeviceId();
     mergedPayload._pushedAt = new Date().toISOString();
+    // Tandai modul yang di-push untuk audit
+    if(dirtyHint) mergedPayload._dirtyModule = dirtyHint;
 
     const { data: upsertResult, error } = await sb
       .from('sjnam_sync')
@@ -7723,6 +8018,13 @@ async function cloudPush(silent=false){
     _lastPushedHash = _hashPayload(mergedPayload);
     _lastCloudUpdatedAt = serverUpdatedAt;
     try{ localStorage.setItem(_LAST_PULL_TS_KEY, _lastCloudUpdatedAt); }catch(e){}
+
+    // Reset dirty flag untuk modul yang baru di-push
+    if(dirtyHint) clearDirty(dirtyHint); else clearDirty();
+
+    // Audit log push berhasil
+    await auditLog('push', dirtyHint||'all', '', 'Push berhasil. Server ts: '+serverUpdatedAt);
+
     // Push berhasil → rolePerms sudah aman di cloud, hapus flag dirty
     window._rolePermsLocalDirty = false;
     updateSyncStatus('connected');
@@ -7881,6 +8183,10 @@ async function cloudPull(silent = false){
     updateSyncStatus('connected');
     cloudLog('✅ Data berhasil diambil dari Supabase ('+data.length+' delay, '+dfsData.length+' DFS)', 'success');
     blinkBlueLight(); // selalu blink saat data berhasil ditarik
+    // Audit log pull berhasil
+    await auditLog('pull', 'all', '', 'Pull dari cloud. '+data.length+' delay, '+dfsData.length+' DFS');
+    // Flush offline queue jika ada — mungkin ada perubahan yang tertunda saat offline
+    setTimeout(_flushOfflineQueue, 2000);
   } catch(err){
     _cloudPullInProgress = false; // also reset on outer catch
     updateSyncStatus('error');
@@ -8115,7 +8421,8 @@ function startRealtimeSubscription(){
 
 // ⚡ SMART-SYNC: push segera jika ada perubahan data, tanpa delay, tanpa toggle
 // Dipanggil setiap kali ada save (data, user, drygoods, stcr, training, dll)
-function triggerAutoSync(){
+// dirtyHint: nama modul yang berubah (opsional, untuk audit log)
+function triggerAutoSync(dirtyHint=null){
   // JANGAN push jika sedang pull dari cloud — akan overwrite data cloud yang baru datang
   if(_cloudPullInProgress) return;
   if(!cloudConfig.supabaseUrl || !cloudConfig.supabaseKey) return;
@@ -8131,8 +8438,8 @@ function triggerAutoSync(){
       // Hash sama = tidak ada perubahan nyata → skip, tidak kirim ke cloud
       return;
     }
-    // Ada perubahan → push sekarang (silent)
-    const ok = await cloudPush(true);
+    // Ada perubahan → push sekarang (silent), sertakan hint modul
+    const ok = await cloudPush(true, dirtyHint);
     if(ok){
       const el = document.getElementById('smartSyncLastPush');
       if(el) el.textContent = 'Terakhir sync: ' + new Date().toLocaleTimeString('id-ID');
@@ -8140,10 +8447,28 @@ function triggerAutoSync(){
   }, 800);
 }
 
-// Patch save functions to trigger auto-sync
-function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); triggerAutoSync(); }
-function saveStations(){ localStorage.setItem(STATIONS_KEY, JSON.stringify(stations)); triggerAutoSync(); }
-function saveDfsData(){ localStorage.setItem(DFS_KEY, JSON.stringify(dfsData)); triggerAutoSync(); }
+// Patch save functions to trigger auto-sync + dirty tracking + stamp
+function saveData(){
+  data = stampArray(data, 'update');
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  markDirty('data');
+  _auditSave('data', data);
+  triggerAutoSync('data');
+}
+function saveStations(){
+  stations = stampArray(stations, 'update');
+  localStorage.setItem(STATIONS_KEY, JSON.stringify(stations));
+  markDirty('stations');
+  _auditSave('stations', stations);
+  triggerAutoSync('stations');
+}
+function saveDfsData(){
+  dfsData = stampArray(dfsData, 'update');
+  localStorage.setItem(DFS_KEY, JSON.stringify(dfsData));
+  markDirty('dfsData');
+  _auditSave('dfsData', dfsData);
+  triggerAutoSync('dfsData');
+}
 
 // Init UI dari config tersimpan
 function initCloudUI(){
@@ -10898,6 +11223,73 @@ window.addEventListener('beforeunload', ()=>{
     if(typeof cloudPush === 'function') cloudPush(true);
   }
 });
+
+// === AUDIT LOG UI ===
+function toggleAuditPanel(){
+  const panel   = document.getElementById('auditPanel');
+  const chevron = document.getElementById('auditPanelChevron');
+  if(!panel) return;
+  const isHidden = panel.classList.toggle('hidden');
+  if(chevron) chevron.textContent = isHidden ? '▼' : '▲';
+}
+
+async function loadAuditLog(){
+  const container = document.getElementById('auditLogTable');
+  if(!container) return;
+  const sb = typeof getSupabaseClient === 'function' ? getSupabaseClient() : null;
+  if(!sb){ container.innerHTML = '<p class="text-red-400 p-3 italic">Cloud belum terhubung</p>'; return; }
+  container.innerHTML = '<p class="text-slate-400 p-3 italic">Memuat...</p>';
+  try {
+    const moduleFilter = document.getElementById('auditModuleFilter')?.value || '';
+    let query = sb.from('sjnam_audit_log').select('*').order('created_at',{ascending:false}).limit(50);
+    if(moduleFilter) query = query.eq('module', moduleFilter);
+    const { data: logs, error } = await query;
+    if(error) throw new Error(error.message);
+    if(!logs || !logs.length){ container.innerHTML = '<p class="text-slate-400 p-3 italic">Belum ada log. Pastikan tabel sjnam_audit_log sudah dibuat di Supabase.</p>'; return; }
+    const actionColor = { push:'text-blue-500', pull:'text-green-500', merge:'text-amber-500', create:'text-emerald-500', update:'text-slate-400', delete:'text-red-400' };
+    container.innerHTML = `
+      <table class="w-full text-xs">
+        <thead><tr class="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+          <th class="text-left px-2 py-1.5">Waktu</th>
+          <th class="text-left px-2 py-1.5">Aksi</th>
+          <th class="text-left px-2 py-1.5">Modul</th>
+          <th class="text-left px-2 py-1.5">Oleh</th>
+          <th class="text-left px-2 py-1.5">Detail</th>
+        </tr></thead>
+        <tbody>
+          ${logs.map(l=>`<tr class="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700">
+            <td class="px-2 py-1.5 text-slate-400 whitespace-nowrap">${new Date(l.created_at).toLocaleString('id-ID',{hour12:false,dateStyle:'short',timeStyle:'short'})}</td>
+            <td class="px-2 py-1.5 font-semibold ${actionColor[l.action]||'text-slate-400'} whitespace-nowrap">${l.action||'-'}</td>
+            <td class="px-2 py-1.5 text-slate-500">${l.module||'-'}</td>
+            <td class="px-2 py-1.5 font-medium">${l.changed_by||'-'}</td>
+            <td class="px-2 py-1.5 text-slate-400 truncate max-w-32">${l.detail||'-'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e){
+    container.innerHTML = '<p class="text-red-400 p-3 italic">Gagal memuat: '+e.message+'. Pastikan tabel sjnam_audit_log sudah dibuat.</p>';
+  }
+}
+
+// Cek offline queue count secara berkala dan tampilkan badge jika ada antrian
+async function _updateOfflineQueueBadge(){
+  try {
+    const items = await _offlineQueue.getAll();
+    const badge = document.getElementById('offlineQueueStatus');
+    const count = document.getElementById('offlineQueueCount');
+    if(!badge) return;
+    if(items.length > 0){
+      badge.classList.remove('hidden');
+      if(count) count.textContent = '📴 '+items.length+' perubahan dalam antrian offline (belum terkirim)';
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch(e){}
+}
+setInterval(_updateOfflineQueueBadge, 10000); // cek setiap 10 detik
+_updateOfflineQueueBadge(); // cek langsung saat load
+
+
 
 
 // === Bank Station (derived from Bank Data Peserta) & Service Training Sync ===
