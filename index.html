@@ -1550,13 +1550,13 @@ table:not(.stcr-page table) tbody td {
         <option value="Master">Master</option>
         <option value="Admin">Admin</option>
         <option value="Co-Admin">Co-Admin</option>
+        <option value="User">User</option>
+        <option value="Peserta">Peserta</option>
         <option value="User-All">User-All</option>
         <option value="User-SR">User-SR</option>
         <option value="User-STCR">User-STCR</option>
         <option value="User-ST">User-ST</option>
         <option value="User-DRG">User-DRG</option>
-        <option value="User">User</option>
-        <option value="Peserta">Peserta</option>
       </select>
       <select id="userFilterStatus" class="input text-sm" style="min-width:120px">
         <option value="">Semua Status</option>
@@ -5718,7 +5718,7 @@ function applyDarkMode(){
   const icL = $('#iconLight'); if(icL) icL.classList.toggle('hidden',!settings.darkMode);
 }
 const dmToggle = $('#darkModeToggle'); if(dmToggle) dmToggle.addEventListener('change',e=>{settings.darkMode=e.target.checked;saveSettings();applyDarkMode();});
-const btnDark = $('#btnDarkToggle'); if(btnDark) btnDark.addEventListener('click',()=>{settings.darkMode=!settings.darkMode;saveSettings();applyDarkMode();});;
+const btnDark = $('#btnDarkToggle'); if(btnDark) btnDark.addEventListener('click',()=>{settings.darkMode=!settings.darkMode;saveSettings();applyDarkMode();});
 
 // =================================================================
 // WIZARD NAVIGATION
@@ -9267,8 +9267,8 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
   document.getElementById('userNameDisplay').textContent = _displayName;
   const _roleDisplayEl = document.getElementById('userRoleDisplay');
   if(_roleDisplayEl){
-    // Hanya tampilkan badge role untuk Admin dan Co-Admin — role lain tidak perlu ditampilkan
-    const _showRole = (user.role === 'Admin' || user.role === 'Co-Admin');
+    // Hanya tampilkan badge role untuk Admin, Co-Admin, dan Master
+    const _showRole = (user.role === 'Admin' || user.role === 'Co-Admin' || user.role === 'Master');
     _roleDisplayEl.textContent = _showRole ? user.role : '';
     _roleDisplayEl.style.display = _showRole ? '' : 'none';
   }
@@ -10380,7 +10380,7 @@ function _doAddUser(preselectedRole){
     <div class="modal-box max-w-md">
       <h3 class="text-lg font-bold mb-1">Tetapkan Role <span class="badge ${bClass}">${esc(role)}</span></h3>
       <p class="text-xs text-slate-500 mb-4">Pilih user yang akan ditetapkan sebagai <strong>${esc(role)}</strong>. Role user tersebut akan diubah.</p>
-      <input id="_assignRoleSearch" type="text" placeholder="🔍 Cari username / nama..." class="input text-sm mb-3">
+      <input id="_assignRoleSearch" type="text" placeholder="🔍 Cari username..." class="input text-sm mb-3">
       <div id="_assignRoleList" class="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl divide-y divide-slate-100 dark:divide-slate-700 mb-4"></div>
       <div class="flex justify-end gap-2">
         <button id="_assignRoleCancel" class="px-4 py-2 text-sm font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300">Batal</button>
@@ -10393,7 +10393,7 @@ function _doAddUser(preselectedRole){
     const list = document.getElementById('_assignRoleList');
     if(!list) return;
     const filtered = assignableUsers.filter(u =>
-      !filter || u.username.toLowerCase().includes(filter) || (u.name||'').toLowerCase().includes(filter)
+      !filter || u.username.toLowerCase().includes(filter)
     );
     if(!filtered.length){
       list.innerHTML = '<div class="px-4 py-3 text-sm text-slate-400">Tidak ada user ditemukan.</div>';
@@ -10401,10 +10401,7 @@ function _doAddUser(preselectedRole){
     }
     list.innerHTML = filtered.map(u => `
       <button class="_assign-role-user-btn w-full text-left px-4 py-2.5 hover:bg-blue-50 dark:hover:bg-slate-800 transition flex items-center justify-between gap-2" data-uid="${u.id}">
-        <span>
-          <span class="font-medium text-sm">${esc(u.name||u.username)}</span>
-          <span class="text-xs text-slate-400 ml-1">(${esc(u.username)})</span>
-        </span>
+        <span class="font-mono font-medium text-sm">${esc(u.username)}</span>
         <span class="badge ${roleBadgeColor[u.role]||'bg-slate-100 text-slate-600'} text-xs shrink-0">${esc(u.role)}</span>
       </button>
     `).join('');
@@ -10422,7 +10419,7 @@ function _doAddUser(preselectedRole){
         saveUsers(users);
         renderUserTable();
         modal.remove();
-        showToast(`Role ${esc(target.name||target.username)} diubah: ${prevRole} → ${role}`, 'success');
+        showToast(`Role ${esc(target.username)} diubah: ${prevRole} → ${role}`, 'success');
       });
     });
   }
@@ -12882,7 +12879,7 @@ _updateOfflineQueueBadge(); // cek langsung saat load
         window._userSelectedIds = window._userSelectedIds || new Set();
         // Re-populate role filter dropdown dengan semua role dari ALL_ROLES
         const rfSel = document.getElementById('userFilterRole');
-        if(rfSel && window.ALL_ROLES && rfSel.options.length <= 2){
+        if(rfSel && window.ALL_ROLES){
           rfSel.innerHTML = '<option value="">Semua Role</option>' +
             (window.ALL_ROLES||[]).map(r=>`<option value="${r}">${r}</option>`).join('');
         }
@@ -12999,7 +12996,7 @@ _updateOfflineQueueBadge(); // cek langsung saat load
     }
 
     window.currentUserCanDelete = canSee('feat-delete');
-    window.currentUserCanAdd = isCoAdmin ? canSee('tab-admin') : false;
+    window.currentUserCanAdd = canSee('tab-admin') || isCoAdmin;
     if(typeof renderUserTable === 'function') renderUserTable();
 
     // Peserta auto redirect
