@@ -9636,46 +9636,31 @@ function applyPermissions(){
         if(userStation && window.currentUser){
           window.currentUser.station = userStation;
         }
-        // Restrict station tabs: disable all except user's station
+        // BUG4 FIX: Pisah logic ALL vs station spesifik + delay 800ms
         setTimeout(function(){
-          const tabs = document.querySelectorAll('[data-dg-station]');
-          tabs.forEach(function(tab){
-            const st = tab.dataset.dgStation;
-            if(!st) return;
-            if(st === 'ALL'){
-              // 'All' tab: accessible only if user's station is 'ALL'
-              if(userStation !== 'ALL'){
-                tab.style.opacity = '0.35';
-                tab.style.pointerEvents = 'none';
-                tab.title = 'Akses terbatas';
-              } else {
-                tab.style.opacity = '';
-                tab.style.pointerEvents = '';
-                tab.title = '';
-              }
-            } else if(st !== userStation){
-              tab.style.opacity = '0.35';
-              tab.style.pointerEvents = 'none';
-              tab.title = 'Akses terbatas ke station ' + (userStation || 'Anda');
-            } else {
-              tab.style.opacity = '';
-              tab.style.pointerEvents = '';
-              tab.title = '';
-            }
-          });
-          // BUGFIX #3: Jika userStation='ALL', unlock semua tab dulu
           if(userStation === 'ALL'){
+            // User ALL: unlock semua tab, click tab ALL
             document.querySelectorAll('[data-dg-station]').forEach(function(t){
               t.style.opacity=''; t.style.pointerEvents=''; t.title='';
             });
+            var allT=document.querySelector('[data-dg-station="ALL"]');
+            if(allT) allT.click();
+            return;
           }
-          // Auto-select tab milik user
-          if(userStation){
-            const myTab = document.querySelector('[data-dg-station="'+userStation+'"');
-            if(myTab) myTab.click();
-          }
-        }, 800); // BUGFIX #3: delay 800ms agar buildStationTabs selesai
-      } catch(e){ console.warn('[DRG Station Lock]', e); }
+          // User station spesifik: hanya station mereka yang aktif
+          document.querySelectorAll('[data-dg-station]').forEach(function(tab){
+            var st=tab.dataset.dgStation; if(!st) return;
+            if(st===userStation){
+              tab.style.opacity=''; tab.style.pointerEvents=''; tab.title='';
+            } else {
+              tab.style.opacity='0.35'; tab.style.pointerEvents='none';
+              tab.title=(st==='ALL'?'Akses terbatas':'Akses terbatas ke station '+(userStation||'Anda'));
+            }
+          });
+          var myT=document.querySelector('[data-dg-station="'+userStation+'"');
+          if(myT) myT.click();
+        }, 800);
+     } catch(e){ console.warn('[DRG Station Lock]', e); }
     })();
   } else {
     // Non-DRG: ensure all station tabs are enabled
@@ -10058,11 +10043,9 @@ window.getRoleBadgeClass = getRoleBadgeClass;
     }
     if(formEl){
       const cur = formEl.value;
-      // BUGFIX ROOT CAUSE: Tambah opsi ALL agar Admin bisa assign station=ALL ke User-DRG.
-      // Tanpa opsi ini karyawan.station tidak pernah bernilai 'ALL' sehingga
-      // logika userStation==='ALL' tidak pernah terpicu dan kartu stok tidak tampil.
-      formEl.innerHTML = '<option value="">Pilih station...</option>' +
-        '<option value="ALL">\xf0\x9f\x8c\x90 ALL — Semua Station (supervisor/manager)</option>' + opts;
+      formEl.innerHTML = '<option value="">Pilih station...</option>'
+        + '<option value="ALL">🌐 ALL — Semua Station (akses semua)</option>'
+        + opts;
       if(cur === 'ALL') formEl.value = 'ALL';
       else if(list.some(s=>s.iata===cur)) formEl.value = cur;
     }
@@ -12866,9 +12849,9 @@ _updateOfflineQueueBadge(); // cek langsung saat load
     { id:'tab-stcr-dashboard', label:'🏥 STCR – Dashboard',    def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:false} },
     { id:'tab-stcr-data',      label:'📋 STCR – Data Request', def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:false} },
     { id:'tab-stcr-station',   label:'📍 STCR – Station',      def:{coAdmin:true, user:false, peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:false} },
-    { id:'tab-drygoods-data',      label:'📦 Drygoods – Data Stok',  def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:true} }, // BUGFIX #7
-    { id:'tab-drygoods-dashboard', label:'📊 Drygoods – Dashboard',  def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:true} }, // BUGFIX #7
-    { id:'tab-drygoods-ifs',       label:'🏢 Drygoods – IFS Station',def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:true} }, // BUGFIX #7
+    { id:'tab-drygoods-data',      label:'📦 Drygoods – Data Stok',  def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:true} },
+    { id:'tab-drygoods-dashboard', label:'📊 Drygoods – Dashboard',  def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:true} },
+    { id:'tab-drygoods-ifs',       label:'🏢 Drygoods – IFS Station',def:{coAdmin:true, user:true,  peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:true} },
     { id:'tab-drygoods-bankitem',  label:'🗂️ Drygoods – Bank Item',  def:{coAdmin:true, user:false, peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:false} },
     { id:'feat-import',    label:'⬆️ Fitur Import Data',    def:{coAdmin:true, user:false, peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:false} },
     { id:'feat-delete',    label:'🗑️ Fitur Hapus Data',     def:{coAdmin:true, user:false, peserta:false, userall:false, usersr:false, userstcr:false, userst:false, userdrg:false} },
@@ -12933,15 +12916,10 @@ _updateOfflineQueueBadge(); // cek langsung saat load
     return p;
   }
   function getPerms(){
-    const saved = loadPerms();
+    var saved=loadPerms();
     if(!saved) return getDefaultPerms();
-    // BUGFIX #8: Merge saved dengan defaults agar userdrg:true tidak di-override
-    // oleh saved perms lama yang menyimpan userdrg:false.
-    const defaults = getDefaultPerms();
-    const merged = {};
-    Object.keys(defaults).forEach(function(featId){
-      merged[featId] = Object.assign({}, defaults[featId], saved[featId] || {});
-    });
+    var defs=getDefaultPerms(), merged={};
+    Object.keys(defs).forEach(function(id){ merged[id]=Object.assign({},defs[id],saved[id]||{}); });
     return merged;
   }
   window.getRolePerms = getPerms;
@@ -15469,8 +15447,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   // pilih sendiri lewat "+ Station").
   function deriveActiveStations(){
     const fromTrx = dgData.transactions.map(t=>t.station).filter(Boolean);
-    // BUGFIX #2: filter 'ALL' dari station karyawan - ALL bukan kode IATA valid
-    const fromKar = getKaryawanList().map(k=>k.station).filter(s=>s && s !== 'ALL');
+    const fromKar = getKaryawanList().map(k=>k.station).filter(function(s){return s && s!=='ALL';});
     const combined = Array.from(new Set([...fromTrx, ...fromKar]));
     const validCodes = new Set(getBankStationCodes());
     return combined.filter(s=>validCodes.has(s)).sort();
@@ -15493,7 +15470,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
           // Validasi station tersimpan terhadap Bank Data Station; buang
           // kode yang sudah tidak ada di bank (dihapus admin) atau invalid.
           const validCodes = new Set(getBankStationCodes());
-          let savedStations = Array.isArray(parsed.stations) ? parsed.stations.filter(s=>validCodes.has(s)) : [];
+          let savedStations = Array.isArray(parsed.stations) ? parsed.stations.filter(function(s){return validCodes.has(s) && s!=='ALL';}) : [];
           dgData.stations = savedStations.length ? savedStations : deriveActiveStations();
           return true;
         }
@@ -15569,27 +15546,20 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const _cu = window.currentUser;
     if(_cu && _cu.role === 'User-DRG'){
       const _drgSt = window._userDrgStation;
-      // BUGFIX #4: Pisahkan logic untuk _drgSt='ALL' vs spesifik
       if(_drgSt === 'ALL'){
-        // User ALL: unlock SEMUA tab
         container.querySelectorAll('[data-dg-station]').forEach(function(tab){
-          tab.style.opacity = ''; tab.style.pointerEvents = ''; tab.title = '';
+          tab.style.opacity=''; tab.style.pointerEvents=''; tab.title='';
         });
       } else {
-        // User station spesifik: lock semua tab selain miliknya
         container.querySelectorAll('[data-dg-station]').forEach(function(tab){
-          const st = tab.dataset.dgStation;
-          if(!st) return;
-          if(st !== 'ALL' && st !== _drgSt){
-            tab.style.opacity = '0.3'; tab.style.pointerEvents = 'none';
-            tab.title = 'Akses terbatas — hanya station ' + (_drgSt || 'Anda');
+          var st=tab.dataset.dgStation; if(!st) return;
+          if(st===_drgSt){
+            tab.style.opacity=''; tab.style.pointerEvents=''; tab.title='';
           } else {
-            tab.style.opacity = ''; tab.style.pointerEvents = ''; tab.title = '';
+            tab.style.opacity='0.3'; tab.style.pointerEvents='none';
+            tab.title=(st==='ALL'?'Akses terbatas':'Akses terbatas — hanya station '+(_drgSt||'Anda'));
           }
         });
-        // Disable tab ALL untuk user station spesifik
-        const allTab = container.querySelector('[data-dg-station="ALL"]');
-        if(allTab){ allTab.style.opacity='0.3'; allTab.style.pointerEvents='none'; allTab.title='Akses terbatas'; }
       }
     }
     // Wire station filter select (tampilkan kode + nama dari Bank Data Station)
@@ -16251,7 +16221,6 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     if(cu && cu.role === 'User-DRG'){
       const targetSt = e.target.closest('[data-dg-station]')?.dataset.dgStation;
       if(targetSt){
-        // BUGFIX #5: Jangan fallback ke 'ALL' - null berarti user tidak terdaftar di karyawan
         const allowedSt = window._userDrgStation;
         if(allowedSt !== 'ALL' && targetSt !== allowedSt && targetSt !== cu.station){
           showToast('Akses terbatas: Anda hanya dapat melihat station ' + (allowedSt || 'yang ditugaskan'), 'error');
@@ -16617,11 +16586,29 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   // ── SIDEBAR TOGGLE — dikontrol sepenuhnya oleh DOMContentLoaded block ────────
 
   // ── TAB SWITCHING HOOK ───────────────────────────────────────────
+  function _applyDrgLock(){
+    var cu=window.currentUser; if(!cu||cu.role!=='User-DRG') return;
+    var st=window._userDrgStation;
+    if(st===undefined||st===null) return;
+    if(st==='ALL'){
+      document.querySelectorAll('[data-dg-station]').forEach(function(t){
+        t.style.opacity=''; t.style.pointerEvents=''; t.title='';
+      });
+      if(typeof activeDgStation!=='undefined') activeDgStation='ALL';
+    } else {
+      document.querySelectorAll('[data-dg-station]').forEach(function(t){
+        var ts=t.dataset.dgStation; if(!ts) return;
+        if(ts===st){t.style.opacity='';t.style.pointerEvents='';t.title='';}
+        else{t.style.opacity='0.3';t.style.pointerEvents='none';t.title=(ts==='ALL'?'Akses terbatas':'Akses terbatas ke station '+st);}
+      });
+      if(typeof activeDgStation!=='undefined'&&activeDgStation==='ALL') activeDgStation=st;
+    }
+  }
   const _origSwitch = window.switchTab;
   window.switchTab = function(tab){
     if(typeof _origSwitch === 'function') _origSwitch(tab);
     if(tab === 'drygoods-bankitem')  { renderDgBankItem(); }
-    if(tab === 'drygoods-data')      { buildStationTabs(); renderDgTrx(); }
+    if(tab === 'drygoods-data')      { _applyDrgLock(); buildStationTabs(); renderDgTrx(); }
     if(tab === 'drygoods-dashboard') {
       renderDgDashboard();
       // BUGFIX: force-resize after tab becomes visible
