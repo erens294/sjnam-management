@@ -1725,6 +1725,23 @@ table:not(.stcr-page table) tbody td {
           <input type="email" id="karyawanEmail" class="input" placeholder="nama@email.com">
         </div>
       </div>
+      <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-800/50 space-y-3">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">📦 Info Tambahan (Drygoods IFS) <span class="font-normal text-slate-400">— opsional</span></p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium mb-1">Tgl Masuk</label>
+            <input type="date" id="karyawanJoinDate" class="input">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Expired Kontrak</label>
+            <input type="date" id="karyawanExpiredKontrak" class="input">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Catatan</label>
+          <input type="text" id="karyawanNote" class="input" placeholder="Catatan tambahan (opsional)">
+        </div>
+      </div>
       <div>
         <label class="block text-sm font-medium mb-1">Akun Login <span class="text-xs text-slate-400 font-normal">(link ke role akses)</span></label>
         <select id="karyawanUser" class="input">
@@ -5075,15 +5092,9 @@ CREATE POLICY "allow_all_audit" ON sjnam_audit_log FOR ALL USING (true) WITH CHE
       </div>
     </div>
 
-    <!-- Station Sub-tabs -->
+    <!-- Station Sub-tabs (dibangun otomatis oleh buildStationTabs() dari Bank Data Station) -->
     <div class="flex gap-1 flex-wrap border-b border-slate-200 dark:border-slate-700 mb-4 overflow-x-auto" id="dgStationTabs">
       <button data-dg-station="ALL" class="dg-station-tab px-3 py-2 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 whitespace-nowrap">🌐 All</button>
-      <button data-dg-station="CGK" class="dg-station-tab px-3 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">✈ CGK</button>
-      <button data-dg-station="UPG" class="dg-station-tab px-3 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">✈ UPG</button>
-      <button data-dg-station="SUB" class="dg-station-tab px-3 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">✈ SUB</button>
-      <button data-dg-station="DPS" class="dg-station-tab px-3 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">✈ DPS</button>
-      <button data-dg-station="SRG" class="dg-station-tab px-3 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">✈ SRG</button>
-      <button data-dg-station="DJJ" class="dg-station-tab px-3 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">✈ DJJ</button>
       <button id="btnDgAddStation" class="px-3 py-2 text-sm font-semibold text-slate-400 hover:text-blue-600 whitespace-nowrap">＋ Station</button>
     </div>
 
@@ -5228,12 +5239,6 @@ CREATE POLICY "allow_all_audit" ON sjnam_audit_log FOR ALL USING (true) WITH CHE
     <div class="flex flex-wrap gap-2 mb-4">
       <select id="dgIfsFilterStation" class="input text-sm">
         <option value="">— Semua Station —</option>
-        <option value="CGK">CGK</option>
-        <option value="UPG">UPG</option>
-        <option value="SUB">SUB</option>
-        <option value="DPS">DPS</option>
-        <option value="SRG">SRG</option>
-        <option value="DJJ">DJJ</option>
       </select>
       <input id="dgIfsSearch" type="text" placeholder="🔍 Cari nama / NIP..." class="input text-sm flex-1 min-w-[200px]">
       <select id="dgIfsFilterStatus" class="input text-sm">
@@ -5304,12 +5309,6 @@ CREATE POLICY "allow_all_audit" ON sjnam_audit_log FOR ALL USING (true) WITH CHE
           <label class="block text-sm font-medium mb-1">Station <span class="text-red-500">*</span></label>
           <select id="dgTrxStation" class="input">
             <option value="">-- Pilih --</option>
-            <option value="CGK">CGK</option>
-            <option value="UPG">UPG</option>
-            <option value="SUB">SUB</option>
-            <option value="DPS">DPS</option>
-            <option value="SRG">SRG</option>
-            <option value="DJJ">DJJ</option>
           </select>
         </div>
       </div>
@@ -5373,12 +5372,6 @@ CREATE POLICY "allow_all_audit" ON sjnam_audit_log FOR ALL USING (true) WITH CHE
           <label class="block text-sm font-medium mb-1">Station <span class="text-red-500">*</span></label>
           <select id="dgEmpStation" class="input">
             <option value="">-- Pilih --</option>
-            <option value="CGK">CGK</option>
-            <option value="UPG">UPG</option>
-            <option value="SUB">SUB</option>
-            <option value="DPS">DPS</option>
-            <option value="SRG">SRG</option>
-            <option value="DJJ">DJJ</option>
           </select>
         </div>
         <div>
@@ -5404,6 +5397,24 @@ CREATE POLICY "allow_all_audit" ON sjnam_audit_log FOR ALL USING (true) WITH CHE
     <div class="flex gap-3 justify-end mt-5">
       <button id="dgEmpModalCancel" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 font-medium rounded-lg">Batal</button>
       <button id="dgEmpModalSave" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">💾 Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PILIH STATION AKTIF (Drygoods) — pilihan dibatasi ke Bank Data Station -->
+<div id="dgAddStationModal" class="modal-overlay hidden">
+  <div class="modal-box max-w-md">
+    <h3 class="text-lg font-bold mb-1">＋ Tambah Station Aktif</h3>
+    <p class="text-xs text-slate-500 mb-4">Pilih station dari <strong>Bank Data Station</strong> untuk diaktifkan sebagai tab Kartu Stok Drygoods. Belum ada station yang dicari? Tambahkan dulu di Tab <strong>Station</strong>.</p>
+    <div>
+      <label class="block text-sm font-medium mb-1">Station</label>
+      <select id="dgAddStationSelect" class="input">
+        <option value="">-- Pilih station --</option>
+      </select>
+    </div>
+    <div class="flex gap-3 justify-end mt-5">
+      <button id="dgAddStationCancel" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 font-medium rounded-lg">Batal</button>
+      <button id="dgAddStationConfirm" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">Aktifkan</button>
     </div>
   </div>
 </div>
@@ -8331,11 +8342,10 @@ async function cloudPush(silent=false, dirtyHint=null){
             cloudPayload.drygoodsData.transactions, localPayload.drygoodsData.transactions, dgTrxKeyFn
           );
         }
-        if(Array.isArray(localPayload.drygoodsData.employees) && Array.isArray(cloudPayload.drygoodsData.employees)){
-          mergedPayload.drygoodsData.employees = _mergeWithConflict(
-            cloudPayload.drygoodsData.employees, localPayload.drygoodsData.employees, dgTrxKeyFn
-          );
-        }
+        // Catatan: drygoodsData.employees (karyawan IFS Drygoods) sudah TIDAK
+        // dipakai lagi — data karyawan kini disimpan & di-merge lewat
+        // `karyawan` (lihat merge Data Karyawan di atas), satu sumber untuk
+        // semua modul (Data Karyawan utama + IFS Station Drygoods).
         if(Array.isArray(localPayload.drygoodsData.bankItems) && Array.isArray(cloudPayload.drygoodsData.bankItems)){
           mergedPayload.drygoodsData.bankItems = _mergeWithConflict(
             cloudPayload.drygoodsData.bankItems, localPayload.drygoodsData.bankItems, dgTrxKeyFn
@@ -8872,6 +8882,9 @@ function saveStations(){
   markDirty('stations');
   _auditSave('stations', stations);
   triggerAutoSync('stations');
+  // Beritahu modul lain (mis. Drygoods) bahwa Bank Data Station berubah,
+  // agar daftar/tab station yang bergantung padanya ikut disinkronkan.
+  document.dispatchEvent(new CustomEvent('sjn:stations-updated'));
 }
 function saveDfsData(){
   dfsData = stampArray(dfsData, 'update');
@@ -10007,12 +10020,16 @@ window.getRoleBadgeClass = getRoleBadgeClass;
   function saveKaryawan(){
     localStorage.setItem(KARYAWAN_KEY, JSON.stringify(karyawan));
     if(typeof triggerAutoSync === 'function') triggerAutoSync('karyawan');
+    // Beritahu modul lain (mis. Drygoods IFS Station) bahwa data karyawan
+    // berubah, karena keduanya kini memakai sumber data yang sama.
+    document.dispatchEvent(new CustomEvent('sjn:karyawan-updated'));
   }
   // Expose getter/setter untuk dipakai oleh cloud sync (push/pull/realtime)
   window.getKaryawanData = () => karyawan;
   window.setKaryawanData = (arr) => {
     karyawan = Array.isArray(arr) ? arr : [];
     if(document.getElementById('karyawanTableBody')) renderKaryawan();
+    document.dispatchEvent(new CustomEvent('sjn:karyawan-updated'));
   };
 
   // ── Helper: daftar station untuk dropdown filter & form ──
@@ -10146,6 +10163,9 @@ window.getRoleBadgeClass = getRoleBadgeClass;
     document.getElementById('karyawanHp').value      = item?.hp      || '';
     document.getElementById('karyawanEmail').value   = item?.email   || '';
     document.getElementById('karyawanUser').value    = item?.username || '';
+    document.getElementById('karyawanJoinDate').value         = item?.joinDate       || '';
+    document.getElementById('karyawanExpiredKontrak').value   = item?.expiredKontrak || '';
+    document.getElementById('karyawanNote').value              = item?.note           || '';
 
     // Populate account section if linked
     const accountSection = document.getElementById('karyawanAccountSection');
@@ -10232,6 +10252,9 @@ window.getRoleBadgeClass = getRoleBadgeClass;
     const hp       = document.getElementById('karyawanHp').value.trim();
     const email    = document.getElementById('karyawanEmail').value.trim();
     const username = document.getElementById('karyawanUser').value;
+    const joinDate         = document.getElementById('karyawanJoinDate').value;
+    const expiredKontrak    = document.getElementById('karyawanExpiredKontrak').value;
+    const note              = document.getElementById('karyawanNote').value.trim();
 
     // Account fields (only when account section visible)
     const accountSection  = document.getElementById('karyawanAccountSection');
@@ -10274,6 +10297,7 @@ window.getRoleBadgeClass = getRoleBadgeClass;
       const entry = {
         id: window._karyawanEditId || ('kar_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
         nama, nip, jabatan, station, hp, email,
+        joinDate, expiredKontrak, note,
         username: finalUsername || username,
         updatedAt: new Date().toISOString()
       };
@@ -15377,14 +15401,56 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
 (function(){
   'use strict';
   const DG_KEY  = 'sjnam_drygoods_v1';
-  const DG_STATIONS_DEFAULT = ['CGK','UPG','SUB','DPS','SRG','DJJ'];
 
-  let dgData = { transactions:[], employees:[], stations: DG_STATIONS_DEFAULT.slice(), bankItems:[] };
+  // ── BANK DATA STATION (single source of truth) ────────────────────
+  // Semua station di modul Drygoods (Kartu Stok, IFS Station) WAJIB
+  // berasal dari Bank Data Station (Tab Station / sjn_stations_v2),
+  // sama seperti yang dipakai dropdown Station di Data Karyawan.
+  function getBankStationList(){
+    try { return JSON.parse(localStorage.getItem('sjn_stations_v2') || '[]'); } catch(e){ return []; }
+  }
+  function getBankStationCodes(){
+    return getBankStationList().map(s=>s.iata).filter(Boolean);
+  }
+  function isValidBankStation(code){
+    return getBankStationCodes().includes((code||'').toUpperCase());
+  }
+  // ── KARYAWAN (single source of truth) ─────────────────────────────
+  // Data karyawan Drygoods TIDAK lagi disimpan terpisah (dgData.employees).
+  // Semua baca/tulis karyawan memakai tabel utama Data Karyawan
+  // (localStorage 'sjnam_karyawan_v1'), field tambahan: joinDate,
+  // expiredKontrak, note — ditambahkan ke skema karyawan utama.
+  function getKaryawanList(){
+    try { return JSON.parse(localStorage.getItem('sjnam_karyawan_v1') || '[]'); } catch(e){ return []; }
+  }
+  function saveKaryawanList(list){
+    try { localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(list)); } catch(e){}
+    if(typeof triggerAutoSync === 'function') triggerAutoSync('karyawan');
+    if(typeof window.renderKaryawanTable === 'function') window.renderKaryawanTable();
+    document.dispatchEvent(new CustomEvent('sjn:karyawan-updated'));
+  }
+
+  // dgData.stations sekarang berarti: "station yang AKTIF/dipilih untuk
+  // ditampilkan sebagai tab" — bukan daftar station independen. Isinya
+  // selalu disaring agar hanya berisi kode yang valid di Bank Data Station.
+  let dgData = { transactions:[], stations: [], bankItems:[] };
 
   // ── STORAGE ──────────────────────────────────────────────────────
   function saveDrygoodsData(){
     try { localStorage.setItem(DG_KEY, JSON.stringify(dgData)); } catch(e){}
     if(typeof triggerAutoSync === 'function') triggerAutoSync();
+  }
+  // Tentukan daftar station aktif default: semua station yang sudah
+  // dipakai di transaksi ATAU sudah ditugaskan ke karyawan User-DRG;
+  // jika tidak ada sama sekali, fallback ke station yang ditugaskan ke
+  // karyawan (apa pun rolenya), lalu fallback terakhir: kosong (user
+  // pilih sendiri lewat "+ Station").
+  function deriveActiveStations(){
+    const fromTrx = dgData.transactions.map(t=>t.station).filter(Boolean);
+    const fromKar = getKaryawanList().map(k=>k.station).filter(Boolean);
+    const combined = Array.from(new Set([...fromTrx, ...fromKar]));
+    const validCodes = new Set(getBankStationCodes());
+    return combined.filter(s=>validCodes.has(s)).sort();
   }
   function loadDrygoodsData(){
     try {
@@ -15393,14 +15459,53 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         const parsed = JSON.parse(raw);
         if(parsed && typeof parsed === 'object'){
           dgData.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
-          dgData.employees    = Array.isArray(parsed.employees)    ? parsed.employees    : [];
-          dgData.stations     = Array.isArray(parsed.stations)     ? parsed.stations     : DG_STATIONS_DEFAULT.slice();
           dgData.bankItems    = Array.isArray(parsed.bankItems)    ? parsed.bankItems    : [];
+          // Migrasi: buang dgData.employees lama (jika ada dari versi
+          // sebelumnya) — data karyawan sekarang ikut tabel utama.
+          // Migrasi karyawan lama (jika ada & belum pernah dipindah) ke
+          // tabel Data Karyawan utama supaya tidak hilang.
+          if(Array.isArray(parsed.employees) && parsed.employees.length && !parsed._dgEmpMigrated){
+            migrateLegacyDgEmployees(parsed.employees);
+          }
+          // Validasi station tersimpan terhadap Bank Data Station; buang
+          // kode yang sudah tidak ada di bank (dihapus admin) atau invalid.
+          const validCodes = new Set(getBankStationCodes());
+          let savedStations = Array.isArray(parsed.stations) ? parsed.stations.filter(s=>validCodes.has(s)) : [];
+          dgData.stations = savedStations.length ? savedStations : deriveActiveStations();
           return true;
         }
       }
     } catch(e){}
+    dgData.stations = deriveActiveStations();
     return false;
+  }
+  // Migrasi satu kali: pindahkan karyawan dari dgData.employees (versi
+  // lama, terpisah) ke tabel Data Karyawan utama agar tidak perlu input
+  // dua kali lagi. NIP dipakai sebagai kunci pencocokan untuk hindari
+  // duplikasi jika karyawan tersebut sudah ada di Data Karyawan.
+  function migrateLegacyDgEmployees(legacyEmployees){
+    try {
+      const karyawanList = getKaryawanList();
+      const existingNips = new Set(karyawanList.map(k=>(k.nip||'').toLowerCase()));
+      let added = 0;
+      legacyEmployees.forEach(e=>{
+        const nip = (e.nip||'').trim();
+        if(!nip || existingNips.has(nip.toLowerCase())) return;
+        karyawanList.push({
+          id: 'kar_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+          nama: e.name||'', nip, jabatan: e.position||'', station: e.station||'',
+          hp:'', email:'', username:'',
+          joinDate: e.joinDate||'', expiredKontrak: e.expired||'', note: e.note||'',
+          updatedAt: new Date().toISOString()
+        });
+        existingNips.add(nip.toLowerCase());
+        added++;
+      });
+      if(added){
+        saveKaryawanList(karyawanList);
+        showToast?.(`${added} data karyawan Drygoods (IFS) dipindahkan ke Data Karyawan`, 'success');
+      }
+    } catch(e){ console.warn('[DG migrate employees]', e); }
   }
   loadDrygoodsData();
 
@@ -15466,20 +15571,47 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         allTab.title = '';
       }
     }
-    // Wire station filter select
+    // Wire station filter select (tampilkan kode + nama dari Bank Data Station)
+    const bankList = getBankStationList();
+    const labelOf = (code) => {
+      const s = bankList.find(b=>b.iata===code);
+      return s ? `${code} — ${s.name}` : code;
+    };
     const sel = document.getElementById('dgActiveStation');
     if(sel){
+      const curSel = sel.value;
       sel.innerHTML = '<option value="ALL">— Semua Station —</option>';
-      dgData.stations.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
-      // Also update IFS filter selects
-      ['dgIfsFilterStation','dgTrxStation','dgEmpStation'].forEach(id=>{
-        const el=document.getElementById(id); if(!el) return;
-        const cur=el.value;
-        const isFilter = id.includes('Filter');
-        el.innerHTML = isFilter ? '<option value="">— Semua Station —</option>' : '<option value="">-- Pilih --</option>';
-        dgData.stations.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; el.appendChild(o); });
-        if(dgData.stations.includes(cur)) el.value=cur;
-      });
+      dgData.stations.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=labelOf(s); sel.appendChild(o); });
+      if(dgData.stations.includes(curSel) || curSel==='ALL') sel.value = curSel;
+    }
+    // Filter IFS: hanya station yang sudah aktif (tab) — konsisten dengan tab di atas
+    const ifsFilterEl = document.getElementById('dgIfsFilterStation');
+    if(ifsFilterEl){
+      const cur = ifsFilterEl.value;
+      ifsFilterEl.innerHTML = '<option value="">— Semua Station —</option>' +
+        dgData.stations.map(s=>`<option value="${esc(s)}">${esc(labelOf(s))}</option>`).join('');
+      if(dgData.stations.includes(cur)) ifsFilterEl.value = cur;
+    }
+    // Form Transaksi & Form Karyawan: tawarkan SEMUA station di Bank Data
+    // Station (bukan hanya yang sudah aktif) — supaya transaksi/karyawan
+    // pertama di station baru tetap bisa diinput; station tersebut akan
+    // otomatis ditambahkan ke daftar aktif begitu data pertamanya disimpan.
+    ['dgTrxStation','dgEmpStation'].forEach(id=>{
+      const el=document.getElementById(id); if(!el) return;
+      const cur=el.value;
+      el.innerHTML = '<option value="">-- Pilih --</option>' +
+        bankList.map(s=>`<option value="${esc(s.iata)}">${esc(s.iata)} — ${esc(s.name)}</option>`).join('');
+      if(bankList.some(s=>s.iata===cur)) el.value=cur;
+    });
+  }
+  // Pastikan station baru otomatis muncul sebagai tab aktif begitu dipakai
+  // di transaksi atau karyawan — tanpa harus lewat tombol "+ Station" dulu.
+  function ensureStationActive(code){
+    if(!code || !isValidBankStation(code)) return;
+    if(!dgData.stations.includes(code)){
+      dgData.stations.push(code);
+      dgData.stations.sort();
+      saveDrygoodsData();
     }
   }
 
@@ -15713,11 +15845,14 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const filterSt = document.getElementById('dgIfsFilterStation')?.value||'';
     const filterStatus = document.getElementById('dgIfsFilterStatus')?.value||'';
     const today = todayStr();
-    let list = dgData.employees.filter(e=>{
+    // Sumber data: tabel Data Karyawan utama (bukan lagi dgData.employees).
+    // Hanya karyawan yang punya station terisi relevan untuk IFS Station.
+    const allEmp = getKaryawanList().filter(k=>k.station);
+    let list = allEmp.filter(e=>{
       if(filterSt && e.station !== filterSt) return false;
-      if(search && ![(e.name||'').toLowerCase(),(e.nip||'').toLowerCase()].join(' ').includes(search)) return false;
+      if(search && ![(e.nama||'').toLowerCase(),(e.nip||'').toLowerCase()].join(' ').includes(search)) return false;
       if(filterStatus){
-        const daysLeft = e.expired ? Math.ceil((new Date(e.expired)-new Date(today))/(1000*60*60*24)) : 9999;
+        const daysLeft = e.expiredKontrak ? Math.ceil((new Date(e.expiredKontrak)-new Date(today))/(1000*60*60*24)) : 9999;
         if(filterStatus==='active' && daysLeft <= 0) return false;
         if(filterStatus==='expiring' && (daysLeft > 30 || daysLeft <= 0)) return false;
         if(filterStatus==='expired' && daysLeft > 0) return false;
@@ -15726,10 +15861,10 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     });
 
     // KPI
-    const kpiAll  = dgData.employees.length;
+    const kpiAll  = allEmp.length;
     let kpiActive=0, kpiExpiring=0, kpiExpired=0;
-    dgData.employees.forEach(e=>{
-      const dl = e.expired ? Math.ceil((new Date(e.expired)-new Date(today))/(1000*60*60*24)) : 9999;
+    allEmp.forEach(e=>{
+      const dl = e.expiredKontrak ? Math.ceil((new Date(e.expiredKontrak)-new Date(today))/(1000*60*60*24)) : 9999;
       if(dl > 30) kpiActive++;
       else if(dl > 0) kpiExpiring++;
       else kpiExpired++;
@@ -15741,22 +15876,23 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     document.getElementById('dgEmpInfo').textContent = `${list.length} karyawan`;
 
     if(!list.length){
-      tbody.innerHTML='<tr><td colspan="9" class="text-center py-8 text-slate-400 text-sm">Tidak ada data karyawan.</td></tr>';
+      tbody.innerHTML='<tr><td colspan="9" class="text-center py-8 text-slate-400 text-sm">Tidak ada data karyawan. Tambahkan via Data Karyawan atau tombol di atas.</td></tr>';
       return;
     }
     tbody.innerHTML = list.map((e,i)=>{
-      const daysLeft = e.expired ? Math.ceil((new Date(e.expired)-new Date(today))/(1000*60*60*24)) : 9999;
+      const daysLeft = e.expiredKontrak ? Math.ceil((new Date(e.expiredKontrak)-new Date(today))/(1000*60*60*24)) : 9999;
       let statusClass = 'bg-emerald-100 text-emerald-700', statusLabel = '✅ Aktif';
-      if(daysLeft <= 0){ statusClass='bg-red-100 text-red-700'; statusLabel='❌ Expired'; }
+      if(!e.expiredKontrak){ statusClass='bg-slate-100 text-slate-500'; statusLabel='— Belum diisi'; }
+      else if(daysLeft <= 0){ statusClass='bg-red-100 text-red-700'; statusLabel='❌ Expired'; }
       else if(daysLeft <= 30){ statusClass='bg-amber-100 text-amber-700'; statusLabel=`⚠️ ${daysLeft}hr`; }
       return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
         <td class="px-3 py-2 text-xs text-slate-400">${i+1}</td>
-        <td class="px-3 py-2 font-semibold text-sm">${esc(e.name||'-')}</td>
+        <td class="px-3 py-2 font-semibold text-sm">${esc(e.nama||'-')}</td>
         <td class="px-3 py-2 font-mono text-xs">${esc(e.nip||'-')}</td>
         <td class="px-3 py-2 text-center"><span class="badge bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">${esc(e.station||'-')}</span></td>
-        <td class="px-3 py-2 text-xs">${esc(e.position||'-')}</td>
+        <td class="px-3 py-2 text-xs">${esc(e.jabatan||'-')}</td>
         <td class="px-3 py-2 text-xs whitespace-nowrap">${fmtDate(e.joinDate)}</td>
-        <td class="px-3 py-2 text-xs font-medium whitespace-nowrap ${daysLeft<=0?'text-red-600':daysLeft<=30?'text-amber-600':''}">${fmtDate(e.expired)}</td>
+        <td class="px-3 py-2 text-xs font-medium whitespace-nowrap ${daysLeft<=0?'text-red-600':daysLeft<=30?'text-amber-600':''}">${fmtDate(e.expiredKontrak)}</td>
         <td class="px-3 py-2 text-center"><span class="badge ${statusClass}">${statusLabel}</span></td>
         <td class="px-3 py-2 text-center whitespace-nowrap">
           <button data-dg-edit-emp="${e.id}" class="text-blue-600 hover:underline text-xs mr-2">Edit</button>
@@ -15873,12 +16009,15 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const unit    = document.getElementById('dgTrxUnit').value.trim();
     const remark  = document.getElementById('dgTrxRemark').value.trim();
     if(!date||!station||!item||!qty){ showToast('Lengkapi: Tanggal, Station, Nama Barang, Qty','error'); return; }
+    if(!isValidBankStation(station)){ showToast('Station tidak terdaftar di Bank Data Station','error'); return; }
     const currentUser = window.currentUser;
     const entry = { id: dgEditTrxId||genId(), date, station, item, kode, type, qty, unit, remark, inputBy: currentUser?.name||currentUser?.username||'', updatedAt: new Date().toISOString() };
     const idx = dgData.transactions.findIndex(t=>t.id===dgEditTrxId);
     if(idx>-1) dgData.transactions[idx]=entry; else dgData.transactions.unshift(entry);
+    ensureStationActive(station);
     saveDrygoodsData();
     closeTrxModal();
+    buildStationTabs();
     renderDgTrx();
     showToast(dgEditTrxId?'Transaksi diperbarui':'Transaksi ditambahkan','success');
   });
@@ -16018,12 +16157,12 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   function openEmpModal(emp){
     dgEditEmpId = emp ? emp.id : null;
     document.getElementById('dgEmpModalTitle').textContent = emp ? 'Edit Karyawan' : 'Tambah Karyawan';
-    document.getElementById('dgEmpName').value     = emp?.name     || '';
+    document.getElementById('dgEmpName').value     = emp?.nama     || '';
     document.getElementById('dgEmpNip').value      = emp?.nip      || '';
     document.getElementById('dgEmpStation').value  = emp?.station  || '';
-    document.getElementById('dgEmpPosition').value = emp?.position || '';
+    document.getElementById('dgEmpPosition').value = emp?.jabatan  || '';
     document.getElementById('dgEmpJoinDate').value = emp?.joinDate || '';
-    document.getElementById('dgEmpExpired').value  = emp?.expired  || '';
+    document.getElementById('dgEmpExpired').value  = emp?.expiredKontrak || '';
     document.getElementById('dgEmpNote').value     = emp?.note     || '';
     document.getElementById('dgEmpModal').classList.remove('hidden');
   }
@@ -16033,19 +16172,34 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   // Click outside modal to close
   document.getElementById('dgEmpModal')?.addEventListener('click', e=>{ if(e.target === document.getElementById('dgEmpModal')) closeEmpModal(); });
   document.getElementById('dgEmpModalSave')?.addEventListener('click', ()=>{
-    const name     = document.getElementById('dgEmpName').value.trim();
+    const nama     = document.getElementById('dgEmpName').value.trim();
     const nip      = document.getElementById('dgEmpNip').value.trim();
     const station  = document.getElementById('dgEmpStation').value;
-    const position = document.getElementById('dgEmpPosition').value.trim();
+    const jabatan  = document.getElementById('dgEmpPosition').value.trim();
     const joinDate = document.getElementById('dgEmpJoinDate').value;
-    const expired  = document.getElementById('dgEmpExpired').value;
+    const expiredKontrak = document.getElementById('dgEmpExpired').value;
     const note     = document.getElementById('dgEmpNote').value.trim();
-    if(!name||!nip||!station||!expired){ showToast('Lengkapi: Nama, NIP, Station, Expired Kontrak','error'); return; }
-    const entry = { id: dgEditEmpId||genId(), name, nip, station, position, joinDate, expired, note, updatedAt: new Date().toISOString() };
-    const idx = dgData.employees.findIndex(e=>e.id===dgEditEmpId);
-    if(idx>-1) dgData.employees[idx]=entry; else dgData.employees.push(entry);
-    saveDrygoodsData();
+    if(!nama||!nip||!station||!expiredKontrak){ showToast('Lengkapi: Nama, NIP, Station, Expired Kontrak','error'); return; }
+    if(!isValidBankStation(station)){ showToast('Station tidak terdaftar di Bank Data Station','error'); return; }
+    // Data karyawan disimpan ke tabel Data Karyawan utama (sumber tunggal).
+    const karyawanList = getKaryawanList();
+    // NIP harus unik di tabel karyawan utama (kecuali sedang mengedit dirinya sendiri)
+    const dup = karyawanList.find(k => k.id !== dgEditEmpId && (k.nip||'').toLowerCase() === nip.toLowerCase());
+    if(dup){ showToast('NIP sudah digunakan oleh: ' + dup.nama, 'error'); return; }
+    const idx = karyawanList.findIndex(k=>k.id===dgEditEmpId);
+    if(idx>-1){
+      // Pertahankan field yang tidak ditampilkan di modal ini (hp, email, username, dst)
+      karyawanList[idx] = { ...karyawanList[idx], nama, nip, station, jabatan, joinDate, expiredKontrak, note, updatedAt: new Date().toISOString() };
+    } else {
+      karyawanList.push({
+        id: genId(), nama, nip, station, jabatan, hp:'', email:'', username:'',
+        joinDate, expiredKontrak, note, updatedAt: new Date().toISOString()
+      });
+    }
+    saveKaryawanList(karyawanList);
     closeEmpModal();
+    ensureStationActive(station); // station baru otomatis muncul sebagai tab aktif
+    buildStationTabs();
     renderDgEmployees();
     showToast(dgEditEmpId?'Data karyawan diperbarui':'Karyawan ditambahkan','success');
   });
@@ -16053,12 +16207,13 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   document.getElementById('dgEmployeeTableBody')?.addEventListener('click', async e=>{
     const editId = e.target.closest('[data-dg-edit-emp]')?.dataset.dgEditEmp;
     const delId  = e.target.closest('[data-dg-del-emp]')?.dataset.dgDelEmp;
-    if(editId){ const emp=dgData.employees.find(x=>x.id===editId); if(emp) openEmpModal(emp); }
+    if(editId){ const emp=getKaryawanList().find(x=>x.id===editId); if(emp) openEmpModal(emp); }
     if(delId){
-      const ok = await showConfirm('Hapus Karyawan','Hapus data karyawan ini?');
+      const ok = await showConfirm('Hapus Karyawan','Hapus data karyawan ini? Data ini juga akan terhapus dari Data Karyawan utama.');
       if(!ok) return;
-      dgData.employees = dgData.employees.filter(e=>e.id!==delId);
-      saveDrygoodsData(); renderDgEmployees(); showToast('Data karyawan dihapus');
+      const karyawanList = getKaryawanList().filter(k=>k.id!==delId);
+      saveKaryawanList(karyawanList);
+      renderDgEmployees(); showToast('Data karyawan dihapus');
     }
   });
 
@@ -16117,19 +16272,38 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     document.getElementById(id)?.addEventListener('change', renderDgEmployees);
   });
 
-  // Add station
-  document.addEventListener('click', e=>{
-    if(e.target && e.target.id === 'btnDgAddStation'){
-      const st = prompt('Kode Station baru (3 huruf, contoh: MKS):');
-      if(!st) return;
-      const code = st.trim().toUpperCase().slice(0,3);
-      if(!code || code.length < 2){ showToast('Kode station tidak valid','error'); return; }
-      if(dgData.stations.includes(code)){ showToast('Station sudah ada','error'); return; }
-      dgData.stations.push(code);
-      saveDrygoodsData();
-      buildStationTabs();
-      showToast('Station '+code+' ditambahkan','success');
+  // Add station — pilih dari Bank Data Station (bukan ketik bebas lagi)
+  function openAddStationModal(){
+    const sel = document.getElementById('dgAddStationSelect');
+    if(!sel) return;
+    const bankList = getBankStationList();
+    const already = new Set(dgData.stations);
+    const available = bankList.filter(s=>!already.has(s.iata));
+    if(!available.length){
+      showToast('Semua station di Bank Data Station sudah aktif di sini','info');
+      return;
     }
+    sel.innerHTML = '<option value="">-- Pilih station --</option>' +
+      available.map(s=>`<option value="${esc(s.iata)}">${esc(s.iata)} — ${esc(s.name)}</option>`).join('');
+    document.getElementById('dgAddStationModal').classList.remove('hidden');
+  }
+  function closeAddStationModal(){ document.getElementById('dgAddStationModal').classList.add('hidden'); }
+  document.addEventListener('click', e=>{
+    if(e.target && e.target.id === 'btnDgAddStation'){ openAddStationModal(); }
+  });
+  document.getElementById('dgAddStationCancel')?.addEventListener('click', closeAddStationModal);
+  document.getElementById('dgAddStationModal')?.addEventListener('click', e=>{ if(e.target === document.getElementById('dgAddStationModal')) closeAddStationModal(); });
+  document.getElementById('dgAddStationConfirm')?.addEventListener('click', ()=>{
+    const code = document.getElementById('dgAddStationSelect')?.value || '';
+    if(!code){ showToast('Pilih station terlebih dahulu','error'); return; }
+    if(!isValidBankStation(code)){ showToast('Station tidak terdaftar di Bank Data Station','error'); return; }
+    if(dgData.stations.includes(code)){ showToast('Station sudah ada','error'); return; }
+    dgData.stations.push(code);
+    dgData.stations.sort();
+    saveDrygoodsData();
+    buildStationTabs();
+    closeAddStationModal();
+    showToast('Station '+code+' diaktifkan','success');
   });
 
   // Export Excel Transactions
@@ -16405,10 +16579,10 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   document.getElementById('btnDgExportEmployee')?.addEventListener('click', ()=>{
     if(!window.XLSX){ showToast('XLSX tidak tersedia','error'); return; }
     const today = todayStr();
-    const rows = dgData.employees.map((e,i)=>({
-      'No':i+1,'Nama':e.name,'NIP':e.nip,'Station':e.station,'Jabatan':e.position||'',
-      'Tgl Masuk':e.joinDate||'','Expired Kontrak':e.expired,
-      'Sisa Hari': e.expired ? Math.ceil((new Date(e.expired)-new Date(today))/(1000*60*60*24)) : '',
+    const rows = getKaryawanList().filter(e=>e.station).map((e,i)=>({
+      'No':i+1,'Nama':e.nama,'NIP':e.nip,'Station':e.station,'Jabatan':e.jabatan||'',
+      'Tgl Masuk':e.joinDate||'','Expired Kontrak':e.expiredKontrak||'',
+      'Sisa Hari': e.expiredKontrak ? Math.ceil((new Date(e.expiredKontrak)-new Date(today))/(1000*60*60*24)) : '',
       'Catatan':e.note||''
     }));
     if(!rows.length){ showToast('Tidak ada data karyawan','error'); return; }
@@ -16807,8 +16981,9 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   function checkExpiringContracts(){
     if(!window.currentUser) return;
     const today = todayStr();
-    const expiring = dgData.employees.filter(e=>{
-      const dl = e.expired ? Math.ceil((new Date(e.expired)-new Date(today))/(1000*60*60*24)) : 9999;
+    const expiring = getKaryawanList().filter(e=>{
+      if(!e.station) return false;
+      const dl = e.expiredKontrak ? Math.ceil((new Date(e.expiredKontrak)-new Date(today))/(1000*60*60*24)) : 9999;
       return dl > 0 && dl <= 30;
     });
     if(expiring.length > 0){
@@ -16820,6 +16995,24 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
       if(window.currentUser){ clearInterval(pollLogin); setTimeout(checkExpiringContracts, 3000); }
     }, 1000);
   }, 500);
+
+  // Sinkronkan ulang daftar station Drygoods setiap kali Bank Data Station
+  // (Tab Station) berubah — buang station yang sudah dihapus dari bank,
+  // dan refresh semua dropdown/tab yang terkait.
+  document.addEventListener('sjn:stations-updated', ()=>{
+    const validCodes = new Set(getBankStationCodes());
+    dgData.stations = dgData.stations.filter(s=>validCodes.has(s));
+    saveDrygoodsData();
+    buildStationTabs();
+    renderDgEmployees();
+  });
+
+  // Sinkronkan ulang tampilan IFS Station setiap kali Data Karyawan
+  // berubah (tambah/edit/hapus karyawan, ubah station) dari Tab Data
+  // Karyawan utama — karena keduanya kini satu sumber data yang sama.
+  document.addEventListener('sjn:karyawan-updated', ()=>{
+    renderDgEmployees();
+  });
 
 })();
 
