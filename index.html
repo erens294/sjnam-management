@@ -1439,7 +1439,7 @@ table:not(.stcr-page table) tbody td {
   <!-- TAB SWITCHER ADMIN -->
   <div class="flex gap-2 mb-4 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
     <button data-admin-subtab="karyawan" class="admin-subtab-btn active px-4 py-2 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 whitespace-nowrap">🧑‍💼 Data Karyawan</button>
-    <button data-admin-subtab="users" class="admin-subtab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">👥 Manajemen User</button>
+    <button data-admin-subtab="users" class="admin-subtab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">🔐 Manajemen Role</button>
     <button data-admin-subtab="perms" class="admin-subtab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 whitespace-nowrap">🔐 Atur Akses Role</button>
   </div>
 
@@ -1449,7 +1449,7 @@ table:not(.stcr-page table) tbody td {
     <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
       <div>
         <h2 class="text-lg font-bold">🧑‍💼 Data Karyawan</h2>
-        <p class="text-xs text-slate-500 mt-0.5">Master data karyawan. Gunakan <strong>Add Role</strong> di Manajemen User untuk membuat akun login baru — username otomatis dari NIP. Kolom <strong>Password</strong> memungkinkan Admin me-reset password akun terhubung langsung dari sini.</p>
+        <p class="text-xs text-slate-500 mt-0.5">Master data karyawan. Gunakan <strong>Add Role</strong> di Manajemen Role untuk membuat akun login — username otomatis dari NIP. Edit username, password &amp; status akun via tombol <strong>Edit</strong> di sini.</p>
         <p id="karyawanCountInfo" class="text-xs text-indigo-600 dark:text-indigo-300 font-semibold mt-1">Total Karyawan: 0</p>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -1478,7 +1478,7 @@ table:not(.stcr-page table) tbody td {
             <th class="p-3 font-semibold">Email</th>
             <th class="p-3 font-semibold">Station</th>
             <th class="p-3 font-semibold">User (Login)</th>
-            <th class="p-3 font-semibold">Password</th>
+            <th class="p-3 font-semibold">Status Akun</th>
             <th class="p-3 font-semibold">Role</th>
             <th class="p-3 font-semibold text-right">Aksi</th>
           </tr>
@@ -1497,8 +1497,8 @@ table:not(.stcr-page table) tbody td {
     <!-- Header -->
     <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
       <div>
-        <h2 class="text-lg font-bold">Manajemen User</h2>
-        <p class="text-xs text-slate-500 mt-0.5">Kelola akun login. Role Master melekat ke sistem (password khusus). Gunakan <strong>Add Role</strong> untuk membuat akun baru dari data karyawan — username otomatis dari NIP. Username &amp; password dikelola di tab <strong>Data Karyawan</strong>.</p>
+        <h2 class="text-lg font-bold">Manajemen Role</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Kelola role akses per akun. Gunakan <strong>Add Role</strong> untuk membuat akun baru dari data karyawan (username otomatis dari NIP). Edit username &amp; password dilakukan di tab <strong>Data Karyawan</strong>.</p>
         <p id="userPesertaCountInfo" class="text-xs text-indigo-600 dark:text-indigo-300 font-semibold mt-1">Total Akun: 0 | Akun Peserta: 0 / 150</p>
       </div>
       <div class="flex flex-wrap gap-2 items-center">
@@ -1597,22 +1597,18 @@ table:not(.stcr-page table) tbody td {
     <p class="text-xs text-slate-400 mt-2" id="userTableFooter"></p>
   </div>
 
-  <!-- MODAL EDIT USER -->
+  <!-- MODAL EDIT ROLE -->
   <div id="editUserModal" class="modal-overlay hidden">
-    <div class="modal-box max-w-md">
-      <h3 class="text-lg font-bold mb-4">✏️ Edit User</h3>
+    <div class="modal-box max-w-sm">
+      <h3 class="text-lg font-bold mb-4">🔐 Edit Role</h3>
       <input type="hidden" id="editUserId">
       <div class="space-y-3">
         <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Username</label>
-          <input type="text" id="editUserUsername" class="input bg-slate-100 dark:bg-slate-700" readonly>
+          <input type="text" id="editUserUsername" class="input bg-slate-100 dark:bg-slate-700 font-mono" readonly>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Nama Lengkap</label>
-          <input type="text" id="editUserName" class="input" placeholder="Nama lengkap">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Role</label>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Role Akses</label>
           <select id="editUserRole" class="input">
             <option value="Master">Master</option>
             <option value="Admin">Admin</option>
@@ -1626,16 +1622,15 @@ table:not(.stcr-page table) tbody td {
             <option value="Peserta">Peserta</option>
           </select>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Password Baru <span class="text-slate-400 font-normal normal-case">(kosongkan jika tidak diubah)</span></label>
-          <input type="password" id="editUserPassword" class="input" placeholder="••••••••" autocomplete="new-password">
-        </div>
         <div id="editUserStatusWrap">
           <label class="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" id="editUserActive" class="accent-emerald-600 w-4 h-4">
             <span class="text-sm font-medium">Akun Aktif</span>
           </label>
         </div>
+        <p class="text-xs text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-700">
+          💡 Untuk mengubah username atau password, buka tab <strong>Data Karyawan</strong> → Edit.
+        </p>
       </div>
       <div class="flex gap-3 justify-end mt-5">
         <button id="editUserModalCancel" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 font-semibold rounded-xl text-sm">Batal</button>
@@ -1696,7 +1691,7 @@ table:not(.stcr-page table) tbody td {
 <div id="karyawanModal" class="modal-overlay hidden">
   <div class="modal-box max-w-xl">
     <h3 id="karyawanModalTitle" class="text-lg font-bold mb-1">Tambah Karyawan</h3>
-    <p class="text-xs text-slate-500 mb-4">Lengkapi data karyawan. Kolom User menghubungkan ke akun login. <strong>Tips:</strong> Gunakan NIP sebagai username di Manajemen User agar karyawan bisa login dengan NIP mereka.</p>
+    <p class="text-xs text-slate-500 mb-4">Lengkapi data karyawan. Gunakan <strong>Add Role</strong> di Manajemen Role untuk membuat akun login — username otomatis dari NIP karyawan.</p>
     <div class="space-y-3">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
@@ -1731,11 +1726,31 @@ table:not(.stcr-page table) tbody td {
         </div>
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">User <span class="text-xs text-slate-400 font-normal">(link ke akun login &amp; Role)</span></label>
+        <label class="block text-sm font-medium mb-1">Akun Login <span class="text-xs text-slate-400 font-normal">(link ke role akses)</span></label>
         <select id="karyawanUser" class="input">
           <option value="">— Belum dihubungkan ke akun manapun —</option>
         </select>
-        <p class="text-xs text-slate-400 mt-1">Akun login dibuat otomatis via tombol <strong>Add Role</strong> di Manajemen User. Username = NIP karyawan. Setelah akun dibuat, akun akan otomatis terhubung di sini.</p>
+        <p class="text-xs text-slate-400 mt-1">Akun dibuat via <strong>Add Role</strong> di Manajemen Role. Username = NIP karyawan.</p>
+      </div>
+      <!-- Bagian edit akun login — hanya muncul jika ada akun terhubung -->
+      <div id="karyawanAccountSection" class="hidden rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-800/50 space-y-3">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚙️ Pengaturan Akun Login</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium mb-1">Username</label>
+            <input type="text" id="karyawanUsername" class="input font-mono" placeholder="username akun login">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Password Baru <span class="text-slate-400 text-xs font-normal">(kosongkan jika tidak diubah)</span></label>
+            <input type="password" id="karyawanPassword" class="input" placeholder="••••••••" autocomplete="new-password">
+          </div>
+        </div>
+        <div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="karyawanAktif" class="accent-emerald-600 w-4 h-4">
+            <span class="text-sm font-medium">Akun Aktif</span>
+          </label>
+        </div>
       </div>
     </div>
     <div class="flex gap-3 justify-end mt-5">
@@ -5112,7 +5127,7 @@ CREATE POLICY "allow_all_audit" ON sjnam_audit_log FOR ALL USING (true) WITH CHE
           </tr>
         </thead>
         <tbody id="dgTrxTableBody" class="divide-y divide-slate-200 dark:divide-slate-700">
-          <tr><td colspan="12" class="text-center py-8 text-slate-400 text-sm">Belum ada data transaksi.</td></tr>
+          <tr><td colspan="13" class="text-center py-8 text-slate-400 text-sm">Belum ada data transaksi.</td></tr>
         </tbody>
       </table>
     </div>
@@ -9734,7 +9749,6 @@ function renderUserTable(){
             <span class="badge ${getRoleBadgeClass(u.role)}">${esc(u.role)}</span>${systemBadge}${selfBadge}
           </div>
           <div class="text-[11px] text-slate-400 font-mono mt-0.5">${esc(u.username)}</div>
-          <div class="text-[11px] text-slate-500 mt-0.5">${esc(u.name || '')}</div>
         </td>
         <td class="p-3">
           <span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${u.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}">
@@ -9866,8 +9880,7 @@ document.getElementById('btnUserDeleteSelected')?.addEventListener('click', func
   if(list) list.innerHTML   = toDelete.map(u =>
     `<div class="flex items-center gap-2">
       <span class="badge ${getRoleBadgeClass(u.role)} text-[10px]">${esc(u.role)}</span>
-      <span>${esc(u.username)}</span>
-      ${u.name ? `<span class="text-slate-400">— ${esc(u.name)}</span>` : ''}
+      <span class="font-mono text-sm">${esc(u.username)}</span>
     </div>`
   ).join('');
   window._pendingBulkDeleteIds = toDelete.map(u => u.id);
@@ -9963,7 +9976,7 @@ window.getRoleBadgeClass = getRoleBadgeClass;
 // ===================================================================
 // Karyawan adalah data pribadi (Nama, NIP, Jabatan, No HP, Email, Station).
 // Kolom "User" hanya menyimpan REFERENSI (username) ke akun login yang sudah
-// ada di Manajemen User — TIDAK menduplikasi username/password/role di sini.
+// ada di Manajemen Role — TIDAK menduplikasi username/password/role di sini.
 // Ini sengaja dipisah dari kredensial login (users) supaya:
 //  1. Username/password tetap satu sumber kebenaran untuk autentikasi.
 //  2. Menambah user baru ke depannya cukup: tambah karyawan + pilih usernya
@@ -10068,11 +10081,11 @@ window.getRoleBadgeClass = getRoleBadgeClass;
       const userLoginCell = linkedUser
         ? `<span class="font-mono text-xs text-slate-700 dark:text-slate-200">${esc(k.nip || linkedUser.username)}</span>`
         : (k.username
-            ? `<span class="text-xs text-red-500" title="Akun ${esc(k.username)} sudah dihapus dari Manajemen User">⚠️ ${esc(k.nip || k.username)}</span>`
+            ? `<span class="text-xs text-red-500" title="Akun ${esc(k.username)} sudah dihapus dari Manajemen Role">⚠️ ${esc(k.nip || k.username)}</span>`
             : `<span class="text-xs text-slate-400">— Belum terhubung —</span>`);
-      // Column: Role — shows role badge, links to Manajemen User tab
+      // Column: Role — shows role badge, links to Manajemen Role tab
       const roleCell = linkedUser
-        ? `<button onclick="document.querySelector('[data-admin-subtab=\"users\"]').click()" title="Lihat di Manajemen User" class="badge ${getRoleBadgeClass(linkedUser.role)} cursor-pointer hover:opacity-80 transition">${esc(linkedUser.role)}</button>`
+        ? `<button onclick="document.querySelector('[data-admin-subtab=\"users\"]').click()" title="Lihat di Manajemen Role" class="badge ${getRoleBadgeClass(linkedUser.role)} cursor-pointer hover:opacity-80 transition">${esc(linkedUser.role)}</button>`
         : (k.username
             ? `<button onclick="document.querySelector('[data-admin-subtab=\"users\"]').click()" class="text-xs text-red-400 hover:underline cursor-pointer">Akun tidak ditemukan</button>`
             : `<span class="text-xs text-slate-400">—</span>`);
@@ -10087,10 +10100,10 @@ window.getRoleBadgeClass = getRoleBadgeClass;
         <td class="p-3">${userLoginCell}</td>
         <td class="p-3 text-xs">
           ${linkedUser
-            ? (canEdit
-                ? `<button data-kar-pw="${k.id}" class="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-blue-900 text-slate-600 dark:text-slate-300 rounded font-mono" title="Reset password akun ini">🔑 Reset</button>`
-                : '<span class="text-xs text-slate-300 italic">—</span>')
-            : '<span class="text-xs text-slate-300">—</span>'}
+            ? (linkedUser.active
+                ? '<span class="text-emerald-600 font-semibold text-xs">● Aktif</span>'
+                : '<span class="text-red-400 font-semibold text-xs">○ Nonaktif</span>')
+            : '<span class="text-slate-300 text-xs">—</span>'}
         </td>
         <td class="p-3">${roleCell}</td>
         <td class="p-3 text-right whitespace-nowrap">
@@ -10108,18 +10121,74 @@ window.getRoleBadgeClass = getRoleBadgeClass;
     document.getElementById('karyawanModalTitle').textContent = item ? 'Edit Karyawan' : 'Tambah Karyawan';
     populateStationDropdowns();
     window.renderKaryawanUserOptions();
-    document.getElementById('karyawanNama').value = item?.nama || '';
-    document.getElementById('karyawanNip').value = item?.nip || '';
+    document.getElementById('karyawanNama').value    = item?.nama    || '';
+    document.getElementById('karyawanNip').value     = item?.nip     || '';
     document.getElementById('karyawanJabatan').value = item?.jabatan || '';
     document.getElementById('karyawanStation').value = item?.station || '';
-    document.getElementById('karyawanHp').value = item?.hp || '';
-    document.getElementById('karyawanEmail').value = item?.email || '';
-    document.getElementById('karyawanUser').value = item?.username || '';
+    document.getElementById('karyawanHp').value      = item?.hp      || '';
+    document.getElementById('karyawanEmail').value   = item?.email   || '';
+    document.getElementById('karyawanUser').value    = item?.username || '';
+
+    // Populate account section if linked
+    const accountSection = document.getElementById('karyawanAccountSection');
+    const karyawanUsernameEl = document.getElementById('karyawanUsername');
+    const karyawanPasswordEl = document.getElementById('karyawanPassword');
+    const karyawanAktifEl   = document.getElementById('karyawanAktif');
+    if(item?.username){
+      const allUsers = (function(){ try{ return JSON.parse(localStorage.getItem('sjnam_users_v1')||'[]'); }catch(e){ return []; } })();
+      const linkedU = allUsers.find(u => u.username === item.username);
+      if(linkedU){
+        if(accountSection) accountSection.classList.remove('hidden');
+        if(karyawanUsernameEl) karyawanUsernameEl.value = linkedU.username;
+        if(karyawanPasswordEl) karyawanPasswordEl.value = '';
+        if(karyawanAktifEl)   karyawanAktifEl.checked  = !!linkedU.active;
+        // Disable username edit for Master
+        if(karyawanUsernameEl) karyawanUsernameEl.readOnly = (linkedU.role === 'Master');
+      } else {
+        if(accountSection) accountSection.classList.add('hidden');
+      }
+    } else {
+      if(accountSection) accountSection.classList.add('hidden');
+      if(karyawanUsernameEl) karyawanUsernameEl.value = '';
+      if(karyawanPasswordEl) karyawanPasswordEl.value = '';
+      if(karyawanAktifEl)   karyawanAktifEl.checked  = true;
+    }
+
+    // Show/hide account section when user dropdown changes
+    document.getElementById('karyawanUser').onchange = function(){
+      const selectedUsername = this.value;
+      if(!selectedUsername){ if(accountSection) accountSection.classList.add('hidden'); return; }
+      const allUsers = (function(){ try{ return JSON.parse(localStorage.getItem('sjnam_users_v1')||'[]'); }catch(e){ return []; } })();
+      const linkedU = allUsers.find(u => u.username === selectedUsername);
+      if(linkedU){
+        if(accountSection) accountSection.classList.remove('hidden');
+        if(karyawanUsernameEl){ karyawanUsernameEl.value = linkedU.username; karyawanUsernameEl.readOnly = (linkedU.role === 'Master'); }
+        if(karyawanPasswordEl) karyawanPasswordEl.value = '';
+        if(karyawanAktifEl)   karyawanAktifEl.checked  = !!linkedU.active;
+      } else {
+        if(accountSection) accountSection.classList.add('hidden');
+      }
+    };
+
     document.getElementById('karyawanModal').classList.remove('hidden');
   }
   function closeKaryawanModal(){
     document.getElementById('karyawanModal').classList.add('hidden');
     window._karyawanEditId = null;
+    // Reset account section
+    const accountSection = document.getElementById('karyawanAccountSection');
+    if(accountSection) accountSection.classList.add('hidden');
+    const pwEl = document.getElementById('karyawanPassword');
+    if(pwEl) pwEl.value = '';
+    const unEl = document.getElementById('karyawanUsername');
+    if(unEl){ unEl.value = ''; unEl.readOnly = false; }
+    const aktifEl = document.getElementById('karyawanAktif');
+    if(aktifEl) aktifEl.checked = true;
+    const userEl = document.getElementById('karyawanUser');
+    if(userEl) userEl.onchange = null; // remove inline handler
+    // Re-enable save button
+    const saveBtn = document.getElementById('karyawanModalSave');
+    if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan'; }
   }
 
   document.getElementById('btnAddKaryawan')?.addEventListener('click', () => {
@@ -10134,87 +10203,115 @@ window.getRoleBadgeClass = getRoleBadgeClass;
   // ── SAVE (create/update) ──
   document.getElementById('karyawanModalSave')?.addEventListener('click', () => {
     if(!window.currentUserCanAdd){ showToast('Tidak ada izin untuk menyimpan data karyawan', 'error'); return; }
+    const saveBtn = document.getElementById('karyawanModalSave');
+    if(saveBtn && saveBtn.disabled) return; // prevent double-submit
+    if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = '⏳ Menyimpan...'; }
 
-    const nama = document.getElementById('karyawanNama').value.trim();
-    const nip = document.getElementById('karyawanNip').value.trim();
-    const jabatan = document.getElementById('karyawanJabatan').value.trim();
-    const station = document.getElementById('karyawanStation').value;
-    const hp = document.getElementById('karyawanHp').value.trim();
-    const email = document.getElementById('karyawanEmail').value.trim();
+    const nama     = document.getElementById('karyawanNama').value.trim();
+    const nip      = document.getElementById('karyawanNip').value.trim();
+    const jabatan  = document.getElementById('karyawanJabatan').value.trim();
+    const station  = document.getElementById('karyawanStation').value;
+    const hp       = document.getElementById('karyawanHp').value.trim();
+    const email    = document.getElementById('karyawanEmail').value.trim();
     const username = document.getElementById('karyawanUser').value;
+
+    // Account fields (only when account section visible)
+    const accountSection  = document.getElementById('karyawanAccountSection');
+    const accountVisible  = accountSection && !accountSection.classList.contains('hidden');
+    const newUsername     = accountVisible ? (document.getElementById('karyawanUsername')?.value || '').trim().toLowerCase() : null;
+    const newPassword     = accountVisible ? (document.getElementById('karyawanPassword')?.value || '').trim() : null;
+    const newAktif        = accountVisible ? (document.getElementById('karyawanAktif')?.checked ?? true) : null;
+
+    const _resetSaveBtn = () => { if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan'; } };
 
     if(!nama || !nip || !jabatan){
       showToast('Lengkapi field wajib: Nama, NIP, dan Jabatan', 'error');
-      return;
+      _resetSaveBtn(); return;
     }
-    // Validasi format email sederhana — mencegah typo umum tanpa terlalu ketat
     if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
-      showToast('Format email tidak valid', 'error');
-      return;
+      showToast('Format email tidak valid', 'error'); _resetSaveBtn(); return;
     }
-    // Validasi No HP: hanya digit, +, spasi, dan strip — minimal 8 digit
     if(hp && !/^[0-9+\-\s]{8,20}$/.test(hp)){
-      showToast('Format No Handphone tidak valid', 'error');
-      return;
+      showToast('Format No Handphone tidak valid', 'error'); _resetSaveBtn(); return;
     }
-    // NIP harus unik (kecuali sedang mengedit dirinya sendiri)
+    // NIP harus unik
     const dupNip = karyawan.find(k => k.id !== window._karyawanEditId && (k.nip||'').toLowerCase() === nip.toLowerCase());
-    if(dupNip){
-      showToast('NIP sudah digunakan oleh karyawan lain: ' + dupNip.nama, 'error');
-      return;
-    }
-    // User hanya boleh dihubungkan ke SATU karyawan — cegah double-link walau
-    // dropdown sudah memfilter, sebagai pengaman jika ada perubahan data di tab lain.
-    if(username){
-      const dupUser = karyawan.find(k => k.id !== window._karyawanEditId && k.username === username);
-      if(dupUser){
-        showToast('Akun ini sudah dihubungkan ke karyawan lain: ' + dupUser.nama, 'error');
-        return;
+    if(dupNip){ showToast('NIP sudah digunakan oleh: ' + dupNip.nama, 'error'); _resetSaveBtn(); return; }
+
+    // Username akun harus unik di users jika diubah
+    if(accountVisible && newUsername && newUsername !== username){
+      const allUsersCheck = JSON.parse(localStorage.getItem('sjnam_users_v1')||'[]');
+      if(allUsersCheck.find(u => u.username === newUsername && u.username !== username)){
+        showToast('Username "' + newUsername + '" sudah digunakan akun lain', 'error'); _resetSaveBtn(); return;
       }
     }
 
-    const entry = {
-      id: window._karyawanEditId || ('kar_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
-      nama, nip, jabatan, station, hp, email, username,
-      updatedAt: new Date().toISOString()
-    };
-    const idx = karyawan.findIndex(k => k.id === window._karyawanEditId);
-    if(idx > -1) karyawan[idx] = entry; else karyawan.push(entry);
-    saveKaryawan();
-
-    // Sinkronkan nama tampilan di akun login (users) dengan nama karyawan, supaya
-    // nama yang muncul saat login selalu konsisten dengan Data Karyawan — sesuai
-    // tujuan awal: cukup edit di satu tempat (Data Karyawan).
+    // User hanya boleh dihubungkan ke SATU karyawan
     if(username){
-      try {
-        const users = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
-        const u = users.find(x => x.username === username);
-        if(u && u.name !== nama){
-          u.name = nama;
-          saveUsers(users);
-          if(window.currentUser && window.currentUser.username === username){
-            window.currentUser.name = nama;
-            currentUser.name = nama;
-            localStorage.setItem('sjnam_session_v1', JSON.stringify(currentUser));
-            const nameEls = ['userNameDisplay','userNameDisplaySide'];
-            nameEls.forEach(id => { const el = document.getElementById(id); if(el) el.textContent = nama; });
-          }
-        }
-      } catch(e){ console.error('Gagal sinkron nama user dari Data Karyawan', e); }
+      const dupUser = karyawan.find(k => k.id !== window._karyawanEditId && k.username === username);
+      if(dupUser){ showToast('Akun ini sudah terhubung ke karyawan lain: ' + dupUser.nama, 'error'); _resetSaveBtn(); return; }
     }
 
-    if(typeof auditLog === 'function') auditLog(idx > -1 ? 'update' : 'create', 'karyawan', entry.id, nama);
-    closeKaryawanModal();
-    renderKaryawan();
-    if(typeof renderUserTable === 'function') renderUserTable();
-    showToast(idx > -1 ? 'Data karyawan diperbarui' : 'Karyawan ditambahkan', 'success');
+    const doSaveKaryawan = (finalUsername) => {
+      const entry = {
+        id: window._karyawanEditId || ('kar_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+        nama, nip, jabatan, station, hp, email,
+        username: finalUsername || username,
+        updatedAt: new Date().toISOString()
+      };
+      const idx = karyawan.findIndex(k => k.id === window._karyawanEditId);
+      if(idx > -1) karyawan[idx] = entry; else karyawan.push(entry);
+      saveKaryawan();
+
+      // Sync nama ke akun login
+      const finalUname = finalUsername || username;
+      if(finalUname){
+        try {
+          const users = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
+          const u = users.find(x => x.username === finalUname);
+          if(u){
+            u.name = nama;
+            if(finalUsername && finalUsername !== username) u.username = finalUsername;
+            if(newAktif !== null && u.username !== currentUser.username) u.active = newAktif;
+            saveUsers(users);
+            if(window.currentUser && (window.currentUser.username === username || window.currentUser.username === finalUsername)){
+              window.currentUser.name = nama;
+              currentUser.name = nama;
+              if(finalUsername) { window.currentUser.username = finalUsername; currentUser.username = finalUsername; }
+              localStorage.setItem('sjnam_session_v1', JSON.stringify(currentUser));
+              const nameEls = ['userNameDisplay','userNameDisplaySide'];
+              nameEls.forEach(id => { const el = document.getElementById(id); if(el) el.textContent = nama; });
+            }
+          }
+        } catch(e){ console.error('Gagal sinkron akun', e); }
+      }
+
+      if(typeof auditLog === 'function') auditLog(idx > -1 ? 'update' : 'create', 'karyawan', entry.id, nama);
+      closeKaryawanModal();
+      renderKaryawan();
+      if(typeof renderUserTable === 'function') renderUserTable();
+      showToast(idx > -1 ? 'Data karyawan diperbarui' : 'Karyawan ditambahkan', 'success');
+    };
+
+    // Handle password hash if changed
+    if(accountVisible && newPassword){
+      sha256(newPassword).then(hashed => {
+        try {
+          const users = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
+          const u = users.find(x => x.username === username);
+          if(u){ u.password = hashed; saveUsers(users); }
+        } catch(e){}
+        doSaveKaryawan(newUsername && newUsername !== username ? newUsername : null);
+      });
+    } else {
+      doSaveKaryawan(newUsername && newUsername !== username ? newUsername : null);
+    }
   });
 
-  // ── Table click delegation: edit / hapus / reset password ──
+  // ── Table click delegation: edit / hapus ──
   document.getElementById('karyawanTableBody')?.addEventListener('click', async e => {
     const editId = e.target.closest('[data-kar-edit]')?.dataset.karEdit;
-    const delId = e.target.closest('[data-kar-del]')?.dataset.karDel;
-    const pwId  = e.target.closest('[data-kar-pw]')?.dataset.karPw;
+    const delId  = e.target.closest('[data-kar-del]')?.dataset.karDel;
     if(editId){
       if(!window.currentUserCanAdd){ showToast('Tidak ada izin untuk mengedit karyawan', 'error'); return; }
       const item = karyawan.find(k => k.id === editId);
@@ -10230,27 +10327,6 @@ window.getRoleBadgeClass = getRoleBadgeClass;
       if(typeof auditLog === 'function') auditLog('delete', 'karyawan', delId, item?.nama || '');
       renderKaryawan();
       showToast('Karyawan dihapus', 'success');
-    }
-    if(pwId){
-      if(!window.currentUserCanAdd){ showToast('Tidak ada izin untuk reset password', 'error'); return; }
-      const karItem = karyawan.find(k => k.id === pwId);
-      if(!karItem || !karItem.username){ showToast('Karyawan belum terhubung ke akun login', 'error'); return; }
-      const allUsers = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-      const targetUser = allUsers.find(u => u.username === karItem.username);
-      if(!targetUser){ showToast('Akun login tidak ditemukan', 'error'); return; }
-      if(targetUser.role === 'Master' && currentUser.role !== 'Master'){
-        showToast('Password Master hanya dapat direset oleh Master', 'error'); return;
-      }
-      const newPw = prompt(`Reset password untuk "${karItem.nama}" (${karItem.username}):\nKosongkan = tidak jadi`, '');
-      if(newPw === null || newPw.trim() === '') return;
-      sha256(newPw.trim()).then(hashed => {
-        const freshUsers = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-        const fu = freshUsers.find(u => u.username === karItem.username);
-        if(!fu){ showToast('Akun tidak ditemukan', 'error'); return; }
-        fu.password = hashed;
-        saveUsers(freshUsers);
-        showToast(`Password "${karItem.nama}" berhasil direset`, 'success');
-      });
     }
   });
 
@@ -10275,7 +10351,8 @@ window.getRoleBadgeClass = getRoleBadgeClass;
       return {
         'No': i + 1, 'Nama': k.nama || '', 'NIP': k.nip || '', 'Jabatan': k.jabatan || '',
         'No Handphone': k.hp || '', 'Email': k.email || '', 'Station': k.station || '',
-        'Username': k.username || '', 'Role': u ? u.role : ''
+        'Username': k.username || '', 'Role': u ? u.role : '',
+        'Status Akun': u ? (u.active ? 'Aktif' : 'Nonaktif') : ''
       };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -10529,8 +10606,6 @@ function openEditUserModal(id){
   // Populate modal
   document.getElementById('editUserId').value       = id;
   document.getElementById('editUserUsername').value = user.username;
-  document.getElementById('editUserName').value     = user.name || '';
-  document.getElementById('editUserPassword').value = '';
 
   // Build role dropdown sesuai hak caller
   const roleSelect = document.getElementById('editUserRole');
@@ -10561,25 +10636,20 @@ function openEditUserModal(id){
 window.openEditUserModal = openEditUserModal;
 window.editUser = openEditUserModal; // backward compat alias
 
-// ── EDIT USER SAVE ──
+// ── EDIT ROLE SAVE ──
 document.getElementById('editUserModalSave')?.addEventListener('click', function(){
   const id      = parseInt(document.getElementById('editUserId')?.value || '');
-  if(isNaN(id)){ showToast('ID user tidak valid', 'error'); return; }
-  const newName = (document.getElementById('editUserName')?.value || '').trim();
-  const newPass = (document.getElementById('editUserPassword')?.value || '').trim();
+  if(isNaN(id)){ showToast('ID tidak valid', 'error'); return; }
   const newRole = document.getElementById('editUserRole')?.value || '';
   const isActive= document.getElementById('editUserActive')?.checked;
-
-  if(!newName){ showToast('Nama tidak boleh kosong', 'error'); return; }
 
   const isMasterOrAdmin = currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Master');
   let users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
   const user = users.find(u => u.id === id);
-  if(!user){ showToast('User tidak ditemukan', 'error'); return; }
+  if(!user){ showToast('Akun tidak ditemukan', 'error'); return; }
 
   // Validasi role baru
   if(isMasterOrAdmin && newRole && newRole !== user.role){
-    // Cek batas Peserta
     if(newRole === 'Peserta' && user.role !== 'Peserta'){
       const pc = users.filter(u=>u.role==='Peserta').length;
       if(pc >= 150){ showToast('Maksimal 150 akun Peserta tercapai', 'error'); return; }
@@ -10587,49 +10657,24 @@ document.getElementById('editUserModalSave')?.addEventListener('click', function
     user.role = newRole;
   }
 
-  user.name = newName;
-  // Status: tidak bisa ubah status diri sendiri
+  // Status: tidak bisa nonaktifkan akun sendiri
   if(user.username !== currentUser.username) user.active = isActive;
 
-  // Sinkronkan nama ke Data Karyawan jika ada link
-  if(user.name){
-    try {
-      const kar = JSON.parse(localStorage.getItem('sjnam_karyawan_v1')||'[]');
-      const karEntry = kar.find(k=>k.username===user.username);
-      if(karEntry && karEntry.nama !== user.name){
-        karEntry.nama = user.name;
-        localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(kar));
-      }
-    } catch(e){}
-  }
-
-  // Update session jika edit diri sendiri — update name & role di sidebar
+  // Update session jika edit diri sendiri
   if(user.username === currentUser.username){
-    currentUser.name = user.name;
     currentUser.role = user.role;
-    window.currentUser.name = user.name;
     window.currentUser.role = user.role;
     localStorage.setItem('sjnam_session_v1', JSON.stringify(currentUser));
-    const nameEls = ['userNameDisplay','userNameDisplaySide'];
-    nameEls.forEach(elId => { const el = document.getElementById(elId); if(el) el.textContent = user.name; });
     const roleEl  = document.getElementById('userRoleDisplay');
     const roleElS = document.getElementById('userRoleDisplaySide');
     if(roleEl)  roleEl.textContent  = (user.role === 'Admin' || user.role === 'Co-Admin' || user.role === 'Master') ? user.role : '';
     if(roleElS) roleElS.textContent = user.role;
   }
 
-  const _doSave = () => {
-    saveUsers(users);
-    document.getElementById('editUserModal')?.classList.add('hidden');
-    renderUserTable();
-    showToast('User berhasil diperbarui', 'success');
-  };
-
-  if(newPass){
-    sha256(newPass).then(h => { user.password = h; _doSave(); });
-  } else {
-    _doSave();
-  }
+  saveUsers(users);
+  document.getElementById('editUserModal')?.classList.add('hidden');
+  renderUserTable();
+  showToast('Role berhasil diperbarui', 'success');
 });
 
 // ── EDIT MODAL CANCEL & BACKDROP ──
@@ -12784,11 +12829,11 @@ _updateOfflineQueueBadge(); // cek langsung saat load
   // Master role: akses ke semua, diikat ke sistem dengan password khusus
   const MASTER_PASSWORD_PLAIN = 'Nu55y294gpx'; // disimpan plain hanya untuk validasi local fallback
   const CUSTOM_ROLES = [
-    { key:'userall',  label:'User-All',  roleName:'User-All',  accent:'accent-emerald-600', badgeClass:'bg-emerald-100 text-emerald-700', headerTextClass:'text-emerald-700 dark:text-emerald-300' },
-    { key:'usersr',   label:'User-SR',   roleName:'User-SR',   accent:'accent-blue-600',    badgeClass:'bg-blue-100 text-blue-700',       headerTextClass:'text-blue-700 dark:text-blue-300' },
-    { key:'userstcr', label:'User-STCR', roleName:'User-STCR', accent:'accent-purple-600',  badgeClass:'bg-purple-100 text-purple-700',   headerTextClass:'text-purple-700 dark:text-purple-300' },
-    { key:'userst',   label:'User-ST',   roleName:'User-ST',   accent:'accent-teal-600',    badgeClass:'bg-teal-100 text-teal-700',       headerTextClass:'text-teal-700 dark:text-teal-300' },
-    { key:'userdrg',  label:'User-DRG',  roleName:'User-DRG',  accent:'accent-orange-600',  badgeClass:'bg-orange-100 text-orange-700',   headerTextClass:'text-orange-700 dark:text-orange-300' },
+    { key:'userall',  label:'User-All',  roleName:'User-All',  accent:'accent-emerald-600', badgeClass:'bg-emerald-100 text-emerald-700', headerTextClass:'text-emerald-700 dark:text-emerald-300', headerColor:'#059669' },
+    { key:'usersr',   label:'User-SR',   roleName:'User-SR',   accent:'accent-blue-600',    badgeClass:'bg-blue-100 text-blue-700',       headerTextClass:'text-blue-700 dark:text-blue-300',       headerColor:'#2563eb' },
+    { key:'userstcr', label:'User-STCR', roleName:'User-STCR', accent:'accent-purple-600',  badgeClass:'bg-purple-100 text-purple-700',   headerTextClass:'text-purple-700 dark:text-purple-300',   headerColor:'#7c3aed' },
+    { key:'userst',   label:'User-ST',   roleName:'User-ST',   accent:'accent-teal-600',    badgeClass:'bg-teal-100 text-teal-700',       headerTextClass:'text-teal-700 dark:text-teal-300',       headerColor:'#0d9488' },
+    { key:'userdrg',  label:'User-DRG',  roleName:'User-DRG',  accent:'accent-orange-600',  badgeClass:'bg-orange-100 text-orange-700',   headerTextClass:'text-orange-700 dark:text-orange-300',   headerColor:'#ea580c' },
   ];
   window.CUSTOM_ROLES = CUSTOM_ROLES;
   // Semua role yang valid dalam sistem (dipakai untuk validasi di banyak tempat)
@@ -12884,6 +12929,21 @@ _updateOfflineQueueBadge(); // cek langsung saat load
         headRow.appendChild(th);
       });
       headRow.dataset.customRendered = '1';
+    } else if(headRow && headRow.dataset.customRendered) {
+      // Verify count matches - rebuild if CUSTOM_ROLES count changed
+      const existingCustom = headRow.querySelectorAll('th').length - 5; // 5 static cols
+      if(existingCustom !== CUSTOM_ROLES.length){
+        // Remove extra ths and re-add
+        const allThs = headRow.querySelectorAll('th');
+        for(let i = 5; i < allThs.length; i++) allThs[i].remove();
+        CUSTOM_ROLES.forEach(r=>{
+          const th = document.createElement('th');
+          th.className = 'p-3 font-semibold';
+          th.style.color = r.headerColor || '';
+          th.innerHTML = `<span class="${r.headerTextClass||''}">${r.label}</span>`;
+          headRow.appendChild(th);
+        });
+      }
     }
   }
   window.renderPermTable = renderPermTable;
@@ -15540,7 +15600,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
       });
 
     if(!page.length){
-      tbody.innerHTML='<tr><td colspan="12" class="text-center py-8 text-slate-400 text-sm">Tidak ada data transaksi.</td></tr>';
+      tbody.innerHTML='<tr><td colspan="13" class="text-center py-8 text-slate-400 text-sm">Tidak ada data transaksi.</td></tr>';
     } else {
       tbody.innerHTML = page.map((t,i)=>{
         const isIn = t.type==='IN';
