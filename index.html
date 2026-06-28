@@ -1669,6 +1669,7 @@ table:not(.stcr-page table) tbody td {
             <tr class="text-center" id="permTableHeadRow">
               <th class="p-3 text-left font-semibold">Fitur / Tab</th>
               <th class="p-3 font-semibold text-yellow-700 dark:text-yellow-300">Master</th>
+              <th class="p-3 font-semibold text-red-700 dark:text-red-300">Admin</th>
               <th class="p-3 font-semibold text-blue-700 dark:text-blue-300">Co-Admin</th>
               <th class="p-3 font-semibold text-emerald-700 dark:text-emerald-300">User</th>
               <th class="p-3 font-semibold text-indigo-700 dark:text-indigo-300">Peserta</th>
@@ -5711,22 +5712,42 @@ setInterval(updateClock,1000); updateClock();
 // iPhone Safari: setInterval dibekukan saat layar kunci/pindah app.
 // Resync langsung saat halaman kembali aktif (visibilitychange + pageshow).
 document.addEventListener('visibilitychange', function(){
-  if(document.visibilityState === 'visible'){
+  if(document.visibilityState==='visible'){
     updateClock();
     updateStationClocks();
-    // Flush offline queue jika ada antrian dan sedang online
-    if(navigator.onLine && typeof _flushOfflineQueue === 'function'){
-      setTimeout(_flushOfflineQueue, 800);
+    // Cross-tab logout: cek session masih valid
+    if(window.currentUser){
+      var _cs=null;try{_cs=JSON.parse(localStorage.getItem('sjnam_session_v1')||'null');}catch(ex){}
+      if(!_cs){
+        window.currentUser=null;
+        var _ov2=document.getElementById('loginOverlay'); if(_ov2) _ov2.style.display='';
+        document.getElementById('userPanel')?.classList.add('hidden');
+        document.getElementById('sidebar')?.classList.remove('perm-ready');
+        document.getElementById('mainContent')?.classList.remove('perm-ready');
+        document.body.style.overflow='hidden';
+        return;
+      }
     }
-    // Smart pull saat tab kembali aktif — cek apakah ada perubahan dari device lain
-    if(navigator.onLine && typeof cloudPull === 'function' && cloudConfig?.supabaseUrl){
-      setTimeout(()=>{ cloudPull(true); }, 1500);
-    }
+    if(navigator.onLine&&typeof _flushOfflineQueue==='function') setTimeout(_flushOfflineQueue,800);
+    if(navigator.onLine&&typeof cloudPull==='function'&&typeof cloudConfig!=='undefined'&&cloudConfig?.supabaseUrl) setTimeout(function(){cloudPull(true);},1500);
   }
 });
-window.addEventListener('pageshow', function(){
+window.addEventListener('pageshow', function(e){
   updateClock();
   updateStationClocks();
+  if(e.persisted){
+    // bfcache restore: re-validate session
+    var _s=null; try{_s=JSON.parse(localStorage.getItem('sjnam_session_v1')||'null');}catch(ex){}
+    if(!_s&&window.currentUser){
+      window.currentUser=null;
+      var _ov=document.getElementById('loginOverlay'); if(_ov) _ov.style.display='';
+      document.getElementById('userPanel')?.classList.add('hidden');
+      document.getElementById('sidebar')?.classList.remove('perm-ready');
+      document.getElementById('mainContent')?.classList.remove('perm-ready');
+    } else if(_s&&navigator.onLine&&typeof cloudPull==='function'&&typeof cloudConfig!=='undefined'&&cloudConfig.supabaseUrl){
+      setTimeout(function(){cloudPull(true);},500);
+    }
+  }
 });
 
 // Online/offline indicator
@@ -9393,10 +9414,20 @@ document.getElementById('loginPass')?.addEventListener('focus', startBFCountdown
 // Logout
 document.getElementById('btnLogout')?.addEventListener('click', function(){
   if(confirm('Keluar dari sistem?')){
+    if(typeof cloudPush==='function') cloudPush(true);
     localStorage.removeItem(SESSION_KEY);
-    currentUser = null;
-    window.currentUser = null;
-    location.reload();
+    currentUser=null; window.currentUser=null;
+    if(window._idleCountdownInterval){clearInterval(window._idleCountdownInterval);window._idleCountdownInterval=null;}
+    var _ov=document.getElementById('loginOverlay'); if(_ov) _ov.style.display='';
+    document.getElementById('userPanel')?.classList.add('hidden');
+    document.getElementById('userPanelSidebar')?.classList.add('hidden');
+    document.getElementById('sidebar')?.classList.remove('perm-ready');
+    document.getElementById('mainContent')?.classList.remove('perm-ready');
+    document.body.classList.remove('js-ready');
+    document.body.style.overflow='hidden';
+    var _lu=document.getElementById('loginUser'); if(_lu) _lu.value='';
+    var _lp=document.getElementById('loginPass'); if(_lp) _lp.value='';
+    setTimeout(function(){document.getElementById('loginUser')?.focus();},100);
   }
 });
 
@@ -9447,10 +9478,21 @@ document.getElementById('btnLogout')?.addEventListener('click', function(){
     idleTimer = setTimeout(()=>{
       if(!currentUser) return;
       console.log('[AUTO-LOGOUT] Idle 30 menit');
+      if(typeof cloudPush==='function') cloudPush(true);
       localStorage.removeItem(SESSION_KEY);
-      currentUser = null;
-      window.currentUser = null;
-      location.reload();
+      currentUser=null; window.currentUser=null;
+      if(window._idleCountdownInterval){clearInterval(window._idleCountdownInterval);window._idleCountdownInterval=null;}
+      var _ov3=document.getElementById('loginOverlay'); if(_ov3) _ov3.style.display='';
+      document.getElementById('userPanel')?.classList.add('hidden');
+      document.getElementById('userPanelSidebar')?.classList.add('hidden');
+      document.getElementById('sidebar')?.classList.remove('perm-ready');
+      document.getElementById('mainContent')?.classList.remove('perm-ready');
+      document.body.classList.remove('js-ready');
+      document.body.style.overflow='hidden';
+      var _lu2=document.getElementById('loginUser'); if(_lu2) _lu2.value='';
+      var _lp2=document.getElementById('loginPass'); if(_lp2) _lp2.value='';
+      if(typeof showToast==='function') showToast('Sesi berakhir karena tidak aktif. Silakan login kembali.','error');
+      setTimeout(function(){document.getElementById('loginUser')?.focus();},200);
     }, IDLE_TIMEOUT);
   }
 
@@ -9636,31 +9678,19 @@ function applyPermissions(){
         if(userStation && window.currentUser){
           window.currentUser.station = userStation;
         }
-        // BUG4 FIX: Pisah logic ALL vs station spesifik + delay 800ms
+        // BUG-I FIX: Pisah logic ALL vs spesifik + 800ms
         setTimeout(function(){
-          if(userStation === 'ALL'){
-            // User ALL: unlock semua tab, click tab ALL
-            document.querySelectorAll('[data-dg-station]').forEach(function(t){
-              t.style.opacity=''; t.style.pointerEvents=''; t.title='';
-            });
-            var allT=document.querySelector('[data-dg-station="ALL"]');
-            if(allT) allT.click();
-            return;
+          if(userStation==='ALL'){
+            document.querySelectorAll('[data-dg-station]').forEach(function(t){t.style.opacity='';t.style.pointerEvents='';t.title='';});
+            var aT=document.querySelector('[data-dg-station="ALL"]');if(aT)aT.click();return;
           }
-          // User station spesifik: hanya station mereka yang aktif
-          document.querySelectorAll('[data-dg-station]').forEach(function(tab){
-            var st=tab.dataset.dgStation; if(!st) return;
-            if(st===userStation){
-              tab.style.opacity=''; tab.style.pointerEvents=''; tab.title='';
-            } else {
-              tab.style.opacity='0.35'; tab.style.pointerEvents='none';
-              tab.title=(st==='ALL'?'Akses terbatas':'Akses terbatas ke station '+(userStation||'Anda'));
-            }
+          document.querySelectorAll('[data-dg-station]').forEach(function(t){
+            var st=t.dataset.dgStation;if(!st)return;
+            if(st===userStation){t.style.opacity='';t.style.pointerEvents='';t.title='';}
+            else{t.style.opacity='0.35';t.style.pointerEvents='none';t.title=(st==='ALL'?'Akses terbatas':'Akses terbatas ke station '+(userStation||'Anda'));}
           });
-          var myT=document.querySelector('[data-dg-station="'+userStation+'"');
-          if(myT) myT.click();
-        }, 800);
-     } catch(e){ console.warn('[DRG Station Lock]', e); }
+          var mT=document.querySelector('[data-dg-station="'+userStation+'"');if(mT)mT.click();
+        }, 800);      } catch(e){ console.warn('[DRG Station Lock]', e); }
     })();
   } else {
     // Non-DRG: ensure all station tabs are enabled
@@ -10043,11 +10073,11 @@ window.getRoleBadgeClass = getRoleBadgeClass;
     }
     if(formEl){
       const cur = formEl.value;
-      formEl.innerHTML = '<option value="">Pilih station...</option>'
-        + '<option value="ALL">🌐 ALL — Semua Station (akses semua)</option>'
-        + opts;
-      if(cur === 'ALL') formEl.value = 'ALL';
-      else if(list.some(s=>s.iata===cur)) formEl.value = cur;
+      formEl.innerHTML='<option value="">Pilih station...</option>'
+        +'<option value="ALL">🌐 ALL — Semua Station (akses semua)</option>'
+        +opts;
+      if(cur==='ALL') formEl.value='ALL';
+      else if(list.some(s=>s.iata===cur)) formEl.value=cur;
     }
   }
 
@@ -12641,15 +12671,10 @@ window.addEventListener('error', function(e){
 <script>
 // cleanup intervals on unload + flush perubahan yang masih tertunda (debounce)
 // supaya data tidak hilang/gagal ter-sync ke device lain saat tab ditutup cepat
-window.addEventListener('beforeunload', ()=>{
-  if(typeof _autoSyncTimer !== 'undefined' && _autoSyncTimer){
-    clearTimeout(_autoSyncTimer);
-    // Push langsung (silent) — upaya terakhir agar perubahan tidak hilang.
-    // Browser tidak menjamin promise async selesai saat unload, tapi
-    // fetch yang sudah terkirim oleh Supabase client umumnya tetap diproses
-    // selama belum unload sepenuhnya (best-effort).
-    if(typeof cloudPush === 'function') cloudPush(true);
-  }
+window.addEventListener('beforeunload', function(){
+  if(typeof _autoSyncTimer!=='undefined'&&_autoSyncTimer) clearTimeout(_autoSyncTimer);
+  if(window.currentUser){try{localStorage.setItem('sjnam_last_active',Date.now().toString());}catch(ex){}}
+  if(typeof cloudPush==='function') cloudPush(true);
 });
 
 // === AUDIT LOG UI ===
@@ -12915,13 +12940,7 @@ _updateOfflineQueueBadge(); // cek langsung saat load
     FEATURES.forEach(f=>{ p[f.id] = {...f.def}; });
     return p;
   }
-  function getPerms(){
-    var saved=loadPerms();
-    if(!saved) return getDefaultPerms();
-    var defs=getDefaultPerms(), merged={};
-    Object.keys(defs).forEach(function(id){ merged[id]=Object.assign({},defs[id],saved[id]||{}); });
-    return merged;
-  }
+  function getPerms(){var saved=loadPerms();if(!saved)return getDefaultPerms();var defs=getDefaultPerms(),merged={};Object.keys(defs).forEach(function(id){merged[id]=Object.assign({},defs[id],saved[id]||{});});return merged;}
   window.getRolePerms = getPerms;
 
   // RENDER permission table
@@ -12949,6 +12968,9 @@ _updateOfflineQueueBadge(); // cek langsung saat load
         <td class="p-3 text-center" title="Master selalu punya akses penuh">
           <input type="checkbox" checked disabled class="w-4 h-4 accent-yellow-500 opacity-70" title="Master: akses penuh (tidak dapat diubah)">
         </td>
+        <td class="p-3 text-center" title="Admin selalu punya akses penuh">
+          <input type="checkbox" checked disabled class="w-4 h-4 accent-red-500 opacity-70" title="Admin: akses penuh (tidak dapat diubah)">
+        </td>
         <td class="p-3 text-center">
           <input type="checkbox" data-feat="${f.id}" data-role="coAdmin" ${p.coAdmin?'checked':''} class="perm-chk w-4 h-4 accent-blue-600" ${isViewerAdmin?'':'disabled'}>
         </td>
@@ -12973,11 +12995,11 @@ _updateOfflineQueueBadge(); // cek langsung saat load
       headRow.dataset.customRendered = '1';
     } else if(headRow && headRow.dataset.customRendered) {
       // Verify count matches - rebuild if CUSTOM_ROLES count changed
-      const existingCustom = headRow.querySelectorAll('th').length - 5; // 5 static cols
+      const existingCustom = headRow.querySelectorAll('th').length - 6; // 6 static cols (Fitur,Master,Admin,Co-Admin,User,Peserta)
       if(existingCustom !== CUSTOM_ROLES.length){
         // Remove extra ths and re-add
         const allThs = headRow.querySelectorAll('th');
-        for(let i = 5; i < allThs.length; i++) allThs[i].remove();
+        for(let i = 6; i < allThs.length; i++) allThs[i].remove();
         CUSTOM_ROLES.forEach(r=>{
           const th = document.createElement('th');
           th.className = 'p-3 font-semibold';
@@ -15447,7 +15469,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   // pilih sendiri lewat "+ Station").
   function deriveActiveStations(){
     const fromTrx = dgData.transactions.map(t=>t.station).filter(Boolean);
-    const fromKar = getKaryawanList().map(k=>k.station).filter(function(s){return s && s!=='ALL';});
+    const fromKar=getKaryawanList().map(k=>k.station).filter(function(s){return s&&s!=='ALL';});
     const combined = Array.from(new Set([...fromTrx, ...fromKar]));
     const validCodes = new Set(getBankStationCodes());
     return combined.filter(s=>validCodes.has(s)).sort();
@@ -15470,7 +15492,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
           // Validasi station tersimpan terhadap Bank Data Station; buang
           // kode yang sudah tidak ada di bank (dihapus admin) atau invalid.
           const validCodes = new Set(getBankStationCodes());
-          let savedStations = Array.isArray(parsed.stations) ? parsed.stations.filter(function(s){return validCodes.has(s) && s!=='ALL';}) : [];
+          let savedStations=Array.isArray(parsed.stations)?parsed.stations.filter(function(s){return validCodes.has(s)&&s!=='ALL';}):[];
           dgData.stations = savedStations.length ? savedStations : deriveActiveStations();
           return true;
         }
@@ -15546,19 +15568,13 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     const _cu = window.currentUser;
     if(_cu && _cu.role === 'User-DRG'){
       const _drgSt = window._userDrgStation;
-      if(_drgSt === 'ALL'){
-        container.querySelectorAll('[data-dg-station]').forEach(function(tab){
-          tab.style.opacity=''; tab.style.pointerEvents=''; tab.title='';
-        });
+      if(_drgSt==='ALL'){
+        container.querySelectorAll('[data-dg-station]').forEach(function(t){t.style.opacity='';t.style.pointerEvents='';t.title='';});
       } else {
-        container.querySelectorAll('[data-dg-station]').forEach(function(tab){
-          var st=tab.dataset.dgStation; if(!st) return;
-          if(st===_drgSt){
-            tab.style.opacity=''; tab.style.pointerEvents=''; tab.title='';
-          } else {
-            tab.style.opacity='0.3'; tab.style.pointerEvents='none';
-            tab.title=(st==='ALL'?'Akses terbatas':'Akses terbatas — hanya station '+(_drgSt||'Anda'));
-          }
+        container.querySelectorAll('[data-dg-station]').forEach(function(t){
+          var ts=t.dataset.dgStation;if(!ts)return;
+          if(ts===_drgSt){t.style.opacity='';t.style.pointerEvents='';t.title='';}
+          else{t.style.opacity='0.3';t.style.pointerEvents='none';t.title=(ts==='ALL'?'Akses terbatas':'Akses terbatas — hanya station '+(_drgSt||'Anda'));}
         });
       }
     }
@@ -16221,8 +16237,8 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
     if(cu && cu.role === 'User-DRG'){
       const targetSt = e.target.closest('[data-dg-station]')?.dataset.dgStation;
       if(targetSt){
-        const allowedSt = window._userDrgStation;
-        if(allowedSt !== 'ALL' && targetSt !== allowedSt && targetSt !== cu.station){
+        const allowedSt=window._userDrgStation;
+        if(allowedSt!=='ALL'&&targetSt!==allowedSt&&targetSt!==cu.station){
           showToast('Akses terbatas: Anda hanya dapat melihat station ' + (allowedSt || 'yang ditugaskan'), 'error');
           return; // block switching to other station
         }
@@ -16586,24 +16602,7 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   // ── SIDEBAR TOGGLE — dikontrol sepenuhnya oleh DOMContentLoaded block ────────
 
   // ── TAB SWITCHING HOOK ───────────────────────────────────────────
-  function _applyDrgLock(){
-    var cu=window.currentUser; if(!cu||cu.role!=='User-DRG') return;
-    var st=window._userDrgStation;
-    if(st===undefined||st===null) return;
-    if(st==='ALL'){
-      document.querySelectorAll('[data-dg-station]').forEach(function(t){
-        t.style.opacity=''; t.style.pointerEvents=''; t.title='';
-      });
-      if(typeof activeDgStation!=='undefined') activeDgStation='ALL';
-    } else {
-      document.querySelectorAll('[data-dg-station]').forEach(function(t){
-        var ts=t.dataset.dgStation; if(!ts) return;
-        if(ts===st){t.style.opacity='';t.style.pointerEvents='';t.title='';}
-        else{t.style.opacity='0.3';t.style.pointerEvents='none';t.title=(ts==='ALL'?'Akses terbatas':'Akses terbatas ke station '+st);}
-      });
-      if(typeof activeDgStation!=='undefined'&&activeDgStation==='ALL') activeDgStation=st;
-    }
-  }
+  function _applyDrgLock(){var cu=window.currentUser;if(!cu||cu.role!=='User-DRG')return;var st=window._userDrgStation;if(st===undefined||st===null)return;if(st==='ALL'){document.querySelectorAll('[data-dg-station]').forEach(function(t){t.style.opacity='';t.style.pointerEvents='';t.title='';});if(typeof activeDgStation!=='undefined')activeDgStation='ALL';}else{document.querySelectorAll('[data-dg-station]').forEach(function(t){var ts=t.dataset.dgStation;if(!ts)return;if(ts===st){t.style.opacity='';t.style.pointerEvents='';t.title='';}else{t.style.opacity='0.3';t.style.pointerEvents='none';t.title=(ts==='ALL'?'Akses terbatas':'Akses terbatas ke station '+st);}});if(typeof activeDgStation!=='undefined'&&activeDgStation==='ALL')activeDgStation=st;}}
   const _origSwitch = window.switchTab;
   window.switchTab = function(tab){
     if(typeof _origSwitch === 'function') _origSwitch(tab);
