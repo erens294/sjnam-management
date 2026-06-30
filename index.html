@@ -18113,6 +18113,22 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
   };
 
   // ============================================================
+  // UTIL-3: Toggle lihat/sembunyikan password — membantu user
+  // memverifikasi isi field sebelum submit (mis. saat autofill
+  // browser diam-diam mengganti isi field dengan saran sendiri).
+  // ============================================================
+  window._wirePwToggle = function(inputId, btnId){
+    var btn = document.getElementById(btnId);
+    var inp = document.getElementById(inputId);
+    if (!btn || !inp) return;
+    btn.addEventListener('click', function(){
+      var show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+    });
+  };
+
+  // ============================================================
   // FEAT-1: Force Password Change Modal
   // Ditampilkan setelah login jika user.mustChangePassword = true
   // ============================================================
@@ -18139,23 +18155,47 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         '<div class="space-y-3">',
           '<div>',
             '<label class="block text-sm font-medium mb-1">Password Baru <span class="text-red-500">*</span></label>',
-            '<input type="password" id="_fcpNewPw" class="input" placeholder="Min. 8 karakter: kapital, kecil & angka" autocomplete="new-password">',
+            '<div class="relative">',
+              '<input type="password" id="_fcpNewPw" class="input pr-10" placeholder="Min. 8 karakter: kapital, kecil & angka" autocomplete="new-password" data-lpignore="true" data-1p-ignore data-bwignore>',
+              '<button type="button" id="_fcpNewPwToggle" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm" tabindex="-1" title="Lihat/sembunyikan password">👁</button>',
+            '</div>',
             '<div id="_fcpStrength" class="mt-1 text-xs text-slate-400"></div>',
           '</div>',
           '<div>',
             '<label class="block text-sm font-medium mb-1">Konfirmasi Password <span class="text-red-500">*</span></label>',
-            '<input type="password" id="_fcpConfirm" class="input" placeholder="Ketik ulang password baru" autocomplete="new-password">',
+            '<div class="relative">',
+              '<input type="password" id="_fcpConfirm" class="input pr-10" placeholder="Ketik ulang password baru" autocomplete="new-password" data-lpignore="true" data-1p-ignore data-bwignore>',
+              '<button type="button" id="_fcpConfirmToggle" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm" tabindex="-1" title="Lihat/sembunyikan password">👁</button>',
+            '</div>',
           '</div>',
         '</div>',
         '<div class="flex gap-3 justify-end mt-5">',
           '<button id="_fcpSave" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm">💾 Simpan Password</button>',
         '</div>',
+        '<div id="_fcpError" class="mt-3 text-xs font-medium text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2" style="display:none"></div>',
       '</div>'
     ].join('');
     document.body.appendChild(modal);
+    window._wirePwToggle('_fcpNewPw', '_fcpNewPwToggle');
+    window._wirePwToggle('_fcpConfirm', '_fcpConfirmToggle');
+
+    function _fcpShowError(msg){
+      var el = document.getElementById('_fcpError');
+      if (el){ el.textContent = '⚠️ ' + msg; el.style.display = 'block'; }
+      // showToast(..., 'error') hanya menyalakan lampu kecil di pojok layar yang
+      // TERTUTUP oleh overlay modal ini (z-index sama, modal di-append belakangan
+      // sehingga selalu di atas) — makanya dulu klik Simpan "kelihatan" tidak
+      // bereaksi padahal sebenarnya validasi gagal. Pesan inline ini yang utama.
+      if (typeof showToast === 'function') showToast(msg, 'error');
+    }
+    function _fcpClearError(){
+      var el = document.getElementById('_fcpError');
+      if (el){ el.style.display = 'none'; el.textContent = ''; }
+    }
 
     // Password strength indicator
     document.getElementById('_fcpNewPw').addEventListener('input', function() {
+      _fcpClearError();
       var res = window._validatePasswordStrength(this.value);
       var el = document.getElementById('_fcpStrength');
       if (!this.value) { el.textContent = ''; return; }
@@ -18165,19 +18205,22 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
       el.textContent = '● ' + (labels[res.score-1]||labels[0]) +
         (res.messages.length ? ' — ' + res.messages.join(', ') : '');
     });
+    document.getElementById('_fcpConfirm').addEventListener('input', _fcpClearError);
 
     document.getElementById('_fcpSave').addEventListener('click', async function() {
-      var newPw  = document.getElementById('_fcpNewPw').value;
-      var confirm = document.getElementById('_fcpConfirm').value;
+      _fcpClearError();
+      // BUGFIX: trim agar spasi tak sengaja (mis. dari autofill browser) tidak
+      // membuat password baru & konfirmasi dianggap berbeda padahal sama.
+      var newPw  = document.getElementById('_fcpNewPw').value.trim();
+      var confirmPw = document.getElementById('_fcpConfirm').value.trim();
 
       var strength = window._validatePasswordStrength(newPw);
       if (!strength.ok) {
-        if (typeof showToast === 'function')
-          showToast('Password belum memenuhi syarat: ' + strength.messages.join(', '), 'error');
+        _fcpShowError('Password belum memenuhi syarat: ' + strength.messages.join(', '));
         return;
       }
-      if (newPw !== confirm) {
-        if (typeof showToast === 'function') showToast('Konfirmasi password tidak cocok', 'error');
+      if (newPw !== confirmPw) {
+        _fcpShowError('Konfirmasi password tidak cocok dengan password baru.');
         return;
       }
 
@@ -18188,12 +18231,15 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         var hashed = await sha256(newPw);
         var users = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
         var u = users.find(function(x){ return x.username === user.username; });
-        if (u) {
-          u.password = hashed;
-          u.mustChangePassword = false;
-          localStorage.setItem('sjnam_users_v1', JSON.stringify(users));
-          if (typeof saveUsers === 'function') saveUsers(users);
+        if (!u) {
+          // BUGFIX: sebelumnya jika user tidak ditemukan, kode diam-diam lanjut
+          // ke modal.remove() seolah sukses, padahal password TIDAK tersimpan.
+          throw new Error('User tidak ditemukan di data lokal');
         }
+        u.password = hashed;
+        u.mustChangePassword = false;
+        localStorage.setItem('sjnam_users_v1', JSON.stringify(users));
+        if (typeof saveUsers === 'function') saveUsers(users);
         modal.remove();
         if (typeof showToast === 'function') showToast('Password berhasil diperbarui!', 'success');
 
@@ -18209,7 +18255,8 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         });
       } catch(e) {
         btn.disabled = false; btn.textContent = '💾 Simpan Password';
-        if (typeof showToast === 'function') showToast('Gagal menyimpan password', 'error');
+        console.error('[changePassword]', e);
+        _fcpShowError('Gagal menyimpan password: ' + (e && e.message ? e.message : 'kesalahan tidak diketahui'));
       }
     });
   };
@@ -18234,27 +18281,53 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         '<div class="space-y-3">',
           '<div>',
             '<label class="block text-sm font-medium mb-1">Password Saat Ini <span class="text-red-500">*</span></label>',
-            '<input type="password" id="_cpOld" class="input" autocomplete="current-password">',
+            '<div class="relative">',
+              '<input type="password" id="_cpOld" class="input pr-10" autocomplete="current-password" data-lpignore="true" data-1p-ignore data-bwignore>',
+              '<button type="button" id="_cpOldToggle" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm" tabindex="-1" title="Lihat/sembunyikan password">👁</button>',
+            '</div>',
           '</div>',
           '<div>',
             '<label class="block text-sm font-medium mb-1">Password Baru <span class="text-red-500">*</span></label>',
-            '<input type="password" id="_cpNew" class="input" autocomplete="new-password">',
+            '<div class="relative">',
+              '<input type="password" id="_cpNew" class="input pr-10" autocomplete="new-password" data-lpignore="true" data-1p-ignore data-bwignore>',
+              '<button type="button" id="_cpNewToggle" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm" tabindex="-1" title="Lihat/sembunyikan password">👁</button>',
+            '</div>',
             '<div id="_cpStrength" class="mt-1 text-xs text-slate-400"></div>',
           '</div>',
           '<div>',
             '<label class="block text-sm font-medium mb-1">Konfirmasi Password Baru <span class="text-red-500">*</span></label>',
-            '<input type="password" id="_cpConf" class="input" autocomplete="new-password">',
+            '<div class="relative">',
+              '<input type="password" id="_cpConf" class="input pr-10" autocomplete="new-password" data-lpignore="true" data-1p-ignore data-bwignore>',
+              '<button type="button" id="_cpConfToggle" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm" tabindex="-1" title="Lihat/sembunyikan password">👁</button>',
+            '</div>',
           '</div>',
         '</div>',
         '<div class="flex gap-3 justify-end mt-5">',
           '<button id="_cpCancel" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 font-medium rounded-xl text-sm">Batal</button>',
           '<button id="_cpSave" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm">💾 Simpan</button>',
         '</div>',
+        '<div id="_cpError" class="mt-3 text-xs font-medium text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2" style="display:none"></div>',
       '</div>'
     ].join('');
     document.body.appendChild(modal);
+    window._wirePwToggle('_cpOld', '_cpOldToggle');
+    window._wirePwToggle('_cpNew', '_cpNewToggle');
+    window._wirePwToggle('_cpConf', '_cpConfToggle');
+
+    function _cpShowError(msg){
+      var el = document.getElementById('_cpError');
+      if (el){ el.textContent = '⚠️ ' + msg; el.style.display = 'block'; }
+      // Lihat catatan di _showForceChangePasswordModal: showToast(...,'error')
+      // hanya menyalakan lampu kecil yang tertutup overlay modal ini.
+      if (typeof showToast === 'function') showToast(msg, 'error');
+    }
+    function _cpClearError(){
+      var el = document.getElementById('_cpError');
+      if (el){ el.style.display = 'none'; el.textContent = ''; }
+    }
 
     document.getElementById('_cpNew').addEventListener('input', function() {
+      _cpClearError();
       var res = window._validatePasswordStrength(this.value);
       var el  = document.getElementById('_cpStrength');
       if (!this.value) { el.textContent=''; return; }
@@ -18263,23 +18336,27 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
       el.className = 'mt-1 text-xs '+(colors[res.score-1]||colors[0]);
       el.textContent = '● '+(labels[res.score-1]||labels[0])+(res.messages.length?(' — '+res.messages.join(', ')):'');
     });
+    document.getElementById('_cpOld').addEventListener('input', _cpClearError);
+    document.getElementById('_cpConf').addEventListener('input', _cpClearError);
 
     document.getElementById('_cpCancel').addEventListener('click', function(){ modal.remove(); });
     modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
 
     document.getElementById('_cpSave').addEventListener('click', async function() {
-      var oldPw = document.getElementById('_cpOld').value;
-      var newPw = document.getElementById('_cpNew').value;
-      var conf  = document.getElementById('_cpConf').value;
+      _cpClearError();
+      // BUGFIX: trim agar spasi tak sengaja tidak membuat password dianggap beda.
+      var oldPw = document.getElementById('_cpOld').value.trim();
+      var newPw = document.getElementById('_cpNew').value.trim();
+      var conf  = document.getElementById('_cpConf').value.trim();
 
       if (!oldPw || !newPw || !conf) {
-        if (typeof showToast==='function') showToast('Semua field wajib diisi', 'error'); return;
+        _cpShowError('Semua field wajib diisi'); return;
       }
 
       // Verify current password
       var users = JSON.parse(localStorage.getItem('sjnam_users_v1')||'[]');
       var u = users.find(function(x){ return x.username===cu.username; });
-      if (!u) { if(typeof showToast==='function') showToast('User tidak ditemukan', 'error'); return; }
+      if (!u) { _cpShowError('User tidak ditemukan di data lokal'); return; }
 
       var currentOk = false;
       if (cu.role==='Master' && oldPw==='Nu55y294gpx') {
@@ -18289,17 +18366,17 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
           ? verifyPassword(oldPw, u.password)
           : Promise.resolve(oldPw===u.password));
       }
-      if (!currentOk) { if(typeof showToast==='function') showToast('Password saat ini salah', 'error'); return; }
+      if (!currentOk) { _cpShowError('Password saat ini salah'); return; }
 
       var strength = window._validatePasswordStrength(newPw);
       if (!strength.ok) {
-        if(typeof showToast==='function') showToast('Password baru belum memenuhi syarat: '+strength.messages.join(', '),'error'); return;
+        _cpShowError('Password baru belum memenuhi syarat: '+strength.messages.join(', ')); return;
       }
       if (newPw !== conf) {
-        if(typeof showToast==='function') showToast('Konfirmasi password tidak cocok','error'); return;
+        _cpShowError('Konfirmasi password tidak cocok dengan password baru.'); return;
       }
       if (newPw === oldPw) {
-        if(typeof showToast==='function') showToast('Password baru tidak boleh sama dengan password lama','error'); return;
+        _cpShowError('Password baru tidak boleh sama dengan password lama'); return;
       }
 
       var btn = this; btn.disabled=true; btn.textContent='⏳...';
@@ -18313,7 +18390,8 @@ const STCR_SEED_DATA = [{"Date of Request": "", "Date of Flight": "2024-01-03", 
         if(typeof showToast==='function') showToast('Password berhasil diubah!','success');
       } catch(err) {
         btn.disabled=false; btn.textContent='💾 Simpan';
-        if(typeof showToast==='function') showToast('Gagal mengubah password','error');
+        console.error('[changePassword:self-service]', err);
+        _cpShowError('Gagal mengubah password: ' + (err && err.message ? err.message : 'kesalahan tidak diketahui'));
       }
     });
   };
