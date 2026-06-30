@@ -4,6 +4,37 @@
 
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth"><head><meta charset="UTF-8">
+<script>
+/* ============================================================
+   ANTI-FLASH LOGIN: dijalankan SEBELUM apapun lain di-parse/paint.
+   Banyak script di file ini (CDN Tailwind dkk) bersifat blocking dan
+   #loginOverlay berada di awal <body>, sedangkan script yang biasanya
+   menyembunyikannya (checkAuth) baru berjalan ribuan baris kemudian.
+   Akibatnya saat refresh, browser sempat mem-paint #loginOverlay
+   sebelum checkAuth sempat menyembunyikannya -> "flash" layar login.
+   Fix: cek sesi tersimpan SECEPATNYA (sebelum #loginOverlay bahkan
+   di-parse) dan tandai <html> agar CSS langsung menyembunyikannya
+   pada paint pertama. checkAuth() di bawah tetap jadi sumber
+   kebenaran (akan membatalkan tanda ini jika sesi ternyata invalid).
+   ============================================================ */
+(function(){
+  try{
+    var raw = localStorage.getItem('sjnam_session_v1');
+    if(raw){
+      var s = JSON.parse(raw);
+      if(s && s.username){
+        document.documentElement.classList.add('sjnam-session-pending');
+      }
+    }
+  }catch(e){ /* sesi korup -> biarkan loginOverlay tampil normal */ }
+})();
+</script>
+<style>
+/* Selama sjnam-session-pending aktif, loginOverlay disembunyikan duluan.
+   !important perlu di-lepas via class removal (bukan inline style) saat
+   checkAuth() menemukan sesi ternyata tidak valid — lihat checkAuth(). */
+html.sjnam-session-pending #loginOverlay{display:none!important;}
+</style>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#1d4ed8">
@@ -1361,7 +1392,7 @@ table:not(.stcr-page table) tbody td {
 <!-- ============= TAB HOME ============= -->
 <section id="tab-home" class="tab-pane">
   <!-- HOME BACKGROUND EDITOR -->
-  <div id="homeContainer" style="position:relative;width:100%;min-height:520px;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.25);user-select:none;">
+  <div id="homeContainer" style="position:relative;width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);min-height:calc(100vh - 65px);border-radius:0;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.25);user-select:none;">
     <!-- Background layer -->
     <div id="homeBg" style="position:absolute;inset:0;background:linear-gradient(135deg,#1e3a8a,#312e81);background-size:cover;background-position:center;background-repeat:no-repeat;transition:background 0.3s;"></div>
     <!-- Overlay -->
@@ -5716,7 +5747,7 @@ document.addEventListener('visibilitychange', function(){
     updateClock(); updateStationClocks();
     if(window.currentUser){
       var _cs=null;try{_cs=JSON.parse(localStorage.getItem('sjnam_session_v1')||'null');}catch(ex){}
-      if(!_cs){window.currentUser=null;var _ov2=document.getElementById('loginOverlay');if(_ov2)_ov2.style.display='';document.getElementById('userPanel')?.classList.add('hidden');document.getElementById('sidebar')?.classList.remove('perm-ready');document.getElementById('mainContent')?.classList.remove('perm-ready');document.body.style.overflow='hidden';return;}
+      if(!_cs){window.currentUser=null;document.documentElement.classList.remove('sjnam-session-pending');var _ov2=document.getElementById('loginOverlay');if(_ov2)_ov2.style.display='';document.getElementById('userPanel')?.classList.add('hidden');document.getElementById('sidebar')?.classList.remove('perm-ready');document.getElementById('mainContent')?.classList.remove('perm-ready');document.body.style.overflow='hidden';return;}
     }
     if(navigator.onLine&&typeof _flushOfflineQueue==='function')setTimeout(_flushOfflineQueue,800);
     if(navigator.onLine&&typeof cloudPull==='function'&&typeof cloudConfig!=='undefined'&&cloudConfig?.supabaseUrl)setTimeout(function(){cloudPull(true);},1500);
@@ -5738,7 +5769,8 @@ window.addEventListener('pageshow', function(e){
     var _s=null;try{_s=JSON.parse(localStorage.getItem('sjnam_session_v1')||'null');}catch(ex){}
     if(!_s&&window.currentUser){
       window.currentUser=null;
-      var _ov=document.getElementById('loginOverlay');if(_ov)_ov.style.display='';
+      document.documentElement.classList.remove('sjnam-session-pending');
+    var _ov=document.getElementById('loginOverlay');if(_ov)_ov.style.display='';
       document.getElementById('userPanel')?.classList.add('hidden');
       document.getElementById('sidebar')?.classList.remove('perm-ready');
       document.getElementById('mainContent')?.classList.remove('perm-ready');
@@ -9466,6 +9498,7 @@ document.getElementById('btnLogout')?.addEventListener('click', function(){
     if(typeof cloudPush==='function')cloudPush(true);
     localStorage.removeItem(SESSION_KEY);currentUser=null;window.currentUser=null;
     if(window._idleCountdownInterval){clearInterval(window._idleCountdownInterval);window._idleCountdownInterval=null;}
+    document.documentElement.classList.remove('sjnam-session-pending');
     var _ov=document.getElementById('loginOverlay');if(_ov)_ov.style.display='';
     document.getElementById('userPanel')?.classList.add('hidden');
     document.getElementById('userPanelSidebar')?.classList.add('hidden');
@@ -9528,6 +9561,7 @@ document.getElementById('btnLogout')?.addEventListener('click', function(){
       if(typeof cloudPush==='function')cloudPush(true);
       localStorage.removeItem(SESSION_KEY);currentUser=null;window.currentUser=null;
       if(window._idleCountdownInterval){clearInterval(window._idleCountdownInterval);window._idleCountdownInterval=null;}
+      document.documentElement.classList.remove('sjnam-session-pending');
       var _ov3=document.getElementById('loginOverlay');if(_ov3)_ov3.style.display='';
       document.getElementById('userPanel')?.classList.add('hidden');
       document.getElementById('userPanelSidebar')?.classList.add('hidden');
@@ -10979,6 +11013,9 @@ function restoreSession(){
       if(!stillValid){
         localStorage.removeItem(SESSION_KEY);
         document.body.style.overflow = 'hidden';
+        // ANTI-FLASH: lepas class pending yang menyembunyikan loginOverlay via CSS
+        // (lihat <head>) — karena di sini kita JUSTRU mau loginOverlay tetap terlihat.
+        document.documentElement.classList.remove('sjnam-session-pending');
         // BUGFIX: sebelumnya kode ini menambahkan 'perm-ready' ke #sidebar dan
         // #mainContent — yang secara keliru me-reveal SELURUH menu sidebar (Admin,
         // STCR, Training, Drygoods, dst) tanpa applyPermissions() dipanggil sama
@@ -11064,6 +11101,9 @@ function restoreSession(){
     } catch(e){
       localStorage.removeItem(SESSION_KEY);
       document.body.style.overflow = 'hidden';
+      // ANTI-FLASH: lepas class pending agar loginOverlay (yang sempat disembunyikan
+      // optimis via CSS) kembali terlihat — sesi ternyata korup/tidak valid.
+      document.documentElement.classList.remove('sjnam-session-pending');
       // BUGFIX: lihat catatan di branch !stillValid di atas — JANGAN reveal
       // sidebar/mainContent di sini. Session korup/parse error berarti user
       // belum (lagi) terotentikasi; loginOverlay sudah tampil secara default,
