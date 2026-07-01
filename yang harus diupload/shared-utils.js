@@ -564,7 +564,92 @@ function updateSyncStatus(status){
 }
 
 // === MERGE HELPERS - anti tabrakan ===
-function mergeById(localArr=[], remoteArr=[]){
+// ================================================================
+// [BUGFIX] TOMBSTONE TRACKING — mencegah user/karyawan yang sudah
+// dihapus muncul kembali setelah cloudPull.
+// ================================================================
+// AKAR MASALAH: merge logic untuk `users` dan `karyawan` di cloudPull
+// (lihat di bawah) sebelumnya hanya tahu cara MENGGABUNGKAN data lokal
+// + remote berdasarkan id — tidak ada cara untuk membedakan "id ini
+// memang belum pernah ada di local" vs "id ini SENGAJA dihapus di
+// local". Akibatnya: hapus user → localStorage benar (user hilang) →
+// beberapa saat kemudian cloudPull otomatis berjalan (Smart-Sync) →
+// payload cloud (yang belum tahu user ini sudah dihapus, misal karena
+// push belum sempat selesai atau berasal dari device lain) di-merge
+// balik → user yang sudah dihapus muncul lagi di tabel.
+//
+// PERBAIKAN: setiap kali user/karyawan dihapus, ID-nya dicatat ke
+// "tombstone list" (localStorage terpisah) berikut waktu hapusnya.
+// Saat merge berjalan di cloudPull, ID apa pun yang ada di tombstone
+// list TIDAK akan dimasukkan ke hasil merge — bahkan jika masih ada
+// di payload cloud — KECUALI jika cloud punya versi yang updatedAt-nya
+// LEBIH BARU dari waktu hapus (artinya user itu memang sengaja
+// dibuat ulang/diaktifkan lagi setelah penghapusan, bukan data basi).
+//
+// Tombstone otomatis dibersihkan setelah 30 hari (tidak perlu disimpan
+// selamanya — setelah itu, payload cloud yang sudah usang dianggap
+// sudah ter-replace oleh push normal di semua device yang aktif).
+const TOMBSTONE_KEY = 'sjnam_deleted_tombstones_v1';
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 hari
+
+function _loadTombstones(){
+  try {
+    const raw = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '{}');
+    const now = Date.now();
+    // Buang tombstone yang sudah kedaluwarsa (>30 hari) saat dimuat,
+    // supaya file tidak membengkak tak terbatas seiring waktu.
+    let changed = false;
+    Object.keys(raw).forEach(scope => {
+      Object.keys(raw[scope] || {}).forEach(id => {
+        if(now - raw[scope][id] > TOMBSTONE_TTL_MS){ delete raw[scope][id]; changed = true; }
+      });
+    });
+    if(changed) localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(raw));
+    return raw;
+  } catch(e){ return {}; }
+}
+
+function _saveTombstones(obj){
+  try { localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(obj)); } catch(e){}
+}
+
+// Dipanggil dari user-management.js/karyawan-management.js tepat saat
+// penghapusan terjadi — mencatat id + waktu hapus untuk scope tertentu
+// ('users' atau 'karyawan'), supaya merge logic di cloudPull tahu untuk
+// tidak memasukkannya kembali.
+function markDeletedTombstone(scope, ids){
+  if(!Array.isArray(ids) || !ids.length) return;
+  const all = _loadTombstones();
+  if(!all[scope]) all[scope] = {};
+  const now = Date.now();
+  ids.forEach(id => { all[scope][String(id)] = now; });
+  _saveTombstones(all);
+}
+window.markDeletedTombstone = markDeletedTombstone;
+
+// Filter array hasil merge: buang item yang id-nya ada di tombstone
+// scope tertentu, KECUALI item itu sendiri punya updatedAt yang lebih
+// baru dari waktu tombstone dicatat (berarti memang sengaja dibuat
+// ulang setelah dihapus, bukan data basi dari cloud).
+function _filterTombstoned(scope, mergedArr){
+  const all = _loadTombstones();
+  const scopeTombstones = all[scope];
+  if(!scopeTombstones || !Object.keys(scopeTombstones).length) return mergedArr;
+  return mergedArr.filter(item => {
+    if(!item || item.id == null) return true;
+    const deletedAt = scopeTombstones[String(item.id)];
+    if(deletedAt == null) return true; // tidak pernah dihapus, aman
+    const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+    // Item dipertahankan HANYA jika punya bukti diperbarui setelah waktu hapus
+    // (mis. dibuat ulang secara sengaja). Jika tidak ada info waktu sama
+    // sekali pada item (itemTime = 0/NaN), anggap basi → tetap dibuang.
+    return itemTime > deletedAt;
+  });
+}
+window._filterTombstoned = _filterTombstoned;
+
+
+function mergeById(localArr=[], remoteArr=[], tombstoneScope=null){
   const map = new Map();
   // Remote goes first (lower priority), local goes second (higher priority = overwrites)
   [...remoteArr,...localArr].forEach(it=>{
@@ -582,13 +667,22 @@ function mergeById(localArr=[], remoteArr=[]){
       }
     }
   });
-  return Array.from(map.values());
+  let result = Array.from(map.values());
+  // [BUGFIX] Jika scope tombstone diberikan, buang item yang sudah
+  // dihapus secara lokal — mencegah item yang sudah dihapus muncul
+  // kembali dari payload remote yang belum tahu item ini sudah dihapus.
+  // Sama seperti fix untuk users/karyawan — lihat catatan TOMBSTONE
+  // TRACKING di atas (dekat deklarasi TOMBSTONE_KEY) untuk detail.
+  if(tombstoneScope && typeof _filterTombstoned === 'function'){
+    result = _filterTombstoned(tombstoneScope, result);
+  }
+  return result;
 }
 
 function mergeTraining(local, remote){
   if(!remote) return local;
   const out = {...local, ...remote};
-  out.peserta = mergeById(local.peserta||[], remote.peserta||[]);
+  out.peserta = mergeById(local.peserta||[], remote.peserta||[], 'peserta');
   out.materi = mergeById(local.materi||[], remote.materi||[]);
   out.stations = mergeById(local.stations||[], remote.stations||[]);
   out.banks = (remote.banks||[]).map(rb=>{
@@ -901,6 +995,11 @@ async function cloudPull(silent = false){
         _localUsers.forEach(u=>{ if(u.id) _userMap.set(u.id, u); });
         _mergedUsers = Array.from(_userMap.values());
       }
+      // [BUGFIX] Buang user yang sudah dihapus secara lokal (tercatat di
+      // tombstone) supaya tidak muncul kembali dari payload cloud yang
+      // belum tahu user ini sudah dihapus. Lihat catatan TOMBSTONE TRACKING
+      // di atas (dekat mergeById) untuk detail akar masalah & desain fix.
+      if(typeof _filterTombstoned === 'function') _mergedUsers = _filterTombstoned('users', _mergedUsers);
       localStorage.setItem('sjnam_users_v1', JSON.stringify(_mergedUsers));
       if(window._userSelectedIds) window._userSelectedIds.clear(); // clear stale selections
       if(typeof renderUserTable === 'function') renderUserTable();
@@ -916,6 +1015,10 @@ async function cloudPull(silent = false){
         _localKar.forEach(k=>{ if(k.id) _karMap.set(k.id, k); });
         _mergedKar = Array.from(_karMap.values());
       }
+      // [BUGFIX] Sama seperti users di atas — buang karyawan yang sudah
+      // dihapus secara lokal (tercatat di tombstone) supaya tidak muncul
+      // kembali dari payload cloud yang belum tahu sudah dihapus.
+      if(typeof _filterTombstoned === 'function') _mergedKar = _filterTombstoned('karyawan', _mergedKar);
       localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(_mergedKar));
       if(typeof window.setKaryawanData === 'function') window.setKaryawanData(_mergedKar);
       if(typeof window.renderKaryawanUserOptions === 'function') window.renderKaryawanUserOptions();
@@ -1108,6 +1211,16 @@ function startRealtimeSubscription(){
                 _rtLU.forEach(u=>{ if(u.id) _m.set(u.id, u); });
                 _rtMU = Array.from(_m.values());
               }
+              // [BUGFIX] Sama seperti fix di cloudPull() — buang user yang sudah
+              // dihapus secara lokal (tercatat di tombstone) supaya tidak muncul
+              // kembali dari payload realtime yang belum tahu user ini sudah
+              // dihapus. Ini adalah jalur KEDUA yang bisa menyebabkan user yang
+              // sudah dihapus "kembali muncul" selain cloudPull() yang sudah
+              // diperbaiki sebelumnya — realtime subscription dipicu setiap kali
+              // device LAIN melakukan push, jadi sering terjadi bahkan hanya
+              // beberapa detik setelah penghapusan. Lihat catatan TOMBSTONE
+              // TRACKING di atas (dekat mergeById) untuk detail.
+              if(typeof _filterTombstoned === 'function') _rtMU = _filterTombstoned('users', _rtMU);
               localStorage.setItem('sjnam_users_v1', JSON.stringify(_rtMU));
               if(window._userSelectedIds) window._userSelectedIds.clear();
               if(typeof renderUserTable === 'function') renderUserTable();
@@ -1122,6 +1235,10 @@ function startRealtimeSubscription(){
                 _rtLK.forEach(k=>{ if(k.id) _mk.set(k.id, k); });
                 _rtMK = Array.from(_mk.values());
               }
+              // [BUGFIX] Sama seperti fix untuk users di atas — buang karyawan
+              // yang sudah dihapus secara lokal agar tidak kembali muncul dari
+              // payload realtime yang belum tahu data ini sudah dihapus.
+              if(typeof _filterTombstoned === 'function') _rtMK = _filterTombstoned('karyawan', _rtMK);
               localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(_rtMK));
               if(typeof window.setKaryawanData === 'function') window.setKaryawanData(_rtMK);
               if(typeof window.renderKaryawanUserOptions === 'function') window.renderKaryawanUserOptions();

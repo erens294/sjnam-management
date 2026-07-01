@@ -1336,3 +1336,128 @@ Diuji 2 skenario:
 - `dist/.gitignore` — **baru**, mendaftarkan `js/config.js`
 - `test/run-integration-smoke-test.js` — inline `config.js` sebelum `shared-utils.js`
 - `test/run-full-runtime-audit.js` — sama
+
+---
+
+# Perbaikan Bug: User Terhapus Muncul Kembali Setelah Beberapa Waktu
+
+## Status: ✅ Selesai & teruji (194/194 assertion lulus: 49 unit + 145 integrasi)
+
+## Laporan pengguna
+
+"di manajemen role jika saya hapus user beberapa waktu kemudian user
+itu tampil kembali" — dikonfirmasi sebagai bug nyata, bukan kesalahan
+penggunaan.
+
+## Akar masalah (ditemukan & dikonfirmasi dengan reproduksi langsung)
+
+`cloudPull()` di `shared-utils.js` melakukan **merge** (gabung) antara
+data user lokal dan data user dari cloud setiap kali sinkronisasi
+otomatis (Smart-Sync) berjalan — BUKAN replace/timpa. Logic merge-nya:
+
+```js
+rec.users.forEach(u=>{ if(u.id) _userMap.set(u.id, u); });   // cloud dulu
+_localUsers.forEach(u=>{ if(u.id) _userMap.set(u.id, u); }); // lokal menimpa
+```
+
+Masalahnya: kalau sebuah user **dihapus** secara lokal, ia hilang dari
+`_localUsers` — tapi merge logic ini tidak tahu cara membedakan "user
+ini memang belum pernah ada di lokal" dengan "user ini SENGAJA
+dihapus di lokal". Karena cloud (yang belum tahu user ini sudah
+dihapus — entah karena proses push belum sempat selesai, atau berasal
+dari device lain yang local copy-nya masih lama) tetap menyertakan
+user tersebut, ia ditambahkan kembali ke hasil merge.
+
+**Skenario nyata yang memicu ini:** hapus user → tersimpan benar di
+localStorage → beberapa saat kemudian (detik/menit) Smart-Sync
+otomatis menjalankan `cloudPull()` → user yang sudah dihapus
+"kembali" muncul di tabel — persis gejala yang dilaporkan ("beberapa
+waktu kemudian").
+
+Direproduksi secara eksak dengan skrip terpisah sebelum perbaikan
+ditulis, memakai logic merge yang sama persis dari kode sumber —
+bug terkonfirmasi 100% sebelum melakukan perubahan apa pun.
+
+Pola bug yang SAMA PERSIS juga ditemukan untuk data Karyawan dan
+Peserta Training — sengaja diperbaiki sekaligus karena akar
+masalahnya identik.
+
+## Perbaikan: sistem Tombstone (penanda "sudah dihapus")
+
+Ditambahkan mekanisme **tombstone tracking** di `shared-utils.js`:
+- `markDeletedTombstone(scope, ids)` — dipanggil tepat saat
+  penghapusan terjadi (di `user-management.js`, `karyawan-management.js`,
+  `training.js`), mencatat ID + waktu hapus ke localStorage terpisah
+  (`sjnam_deleted_tombstones_v1`).
+- `_filterTombstoned(scope, mergedArr)` — dipanggil setelah merge
+  selesai di `cloudPull()`, membuang item yang ID-nya tercatat di
+  tombstone — KECUALI item itu punya `updatedAt` yang lebih baru dari
+  waktu tombstone (menangani kasus tepi: user yang sengaja dibuat
+  ulang dengan ID sama setelah dihapus, bukan data basi).
+- Tombstone otomatis kedaluwarsa setelah 30 hari (tidak menumpuk
+  selamanya — setelah itu dianggap semua device sudah ter-sinkron
+  ulang lewat alur normal).
+- `mergeById()` (dipakai juga oleh data Training: peserta/materi/
+  stations/soal) diberi parameter opsional `tombstoneScope` supaya
+  perbaikan ini jadi infrastruktur yang bisa dipakai ulang, bukan
+  tambalan satu tempat saja.
+
+**Diterapkan ke:** penghapusan user (single & bulk — keduanya
+ternyata memakai satu handler konfirmasi yang sama), penghapusan
+karyawan, dan penghapusan peserta training.
+
+## ⚠️ Insiden kecil saat implementasi (ditemukan & diperbaiki sebelum lanjut)
+
+Satu `str_replace` saat menyisipkan blok tombstone secara tidak
+sengaja IKUT MENGHAPUS baris deklarasi `function mergeById(...)` itu
+sendiri, meninggalkan badan fungsi tanpa header (`const map = new
+Map();` menggantung tanpa pembungkus). **Ditemukan langsung lewat
+`node --check` yang dijalankan tepat setelah setiap edit** — bagian
+dari kebiasaan wajib di proyek ini sejak insiden serupa di tahap
+modularisasi awal. Diperbaiki sebelum lanjut ke langkah berikutnya,
+tidak sempat masuk ke file yang diuji apalagi diserahkan.
+
+## Pengujian: 3 lapis verifikasi
+
+1. **Reproduksi murni** (test [33]): memakai logic merge yang sama
+   persis untuk membuktikan bug ASLI ada sebelum fix, lalu membuktikan
+   tombstone benar-benar mencegahnya.
+2. **Kasus tepi** (test [34]): tombstone tidak salah memblokir record
+   yang sengaja dibuat ulang dengan ID sama setelah dihapus.
+3. **End-to-end via UI sungguhan** (test [35]): membuat user uji coba,
+   me-render tabel asli, **mengklik tombol 🗑️ yang benar-benar
+   ter-render** dan tombol konfirmasi modal yang benar-benar ada di
+   DOM — bukan memanggil fungsi secara langsung — lalu memverifikasi
+   tombstone otomatis tercatat dan user tidak kembali muncul setelah
+   simulasi merge cloud yang basi. Ini lapis paling meyakinkan karena
+   menguji jalur yang benar-benar dipakai pengguna.
+
+Audit runtime menyeluruh (`run-full-runtime-audit.js`, klik semua
+tombol di semua tab) juga dijalankan ulang setelah perbaikan ini —
+tidak ada regresi baru.
+
+## Hasil pengujian (kumulatif, semua tahap + perbaikan bug)
+
+| Suite | Assertion | Status |
+|-------|-----------|--------|
+| `run-auth-tests.js` (unit) | 49 | ✅ 49/49 |
+| `run-integration-smoke-test.js` (dokumen penuh, +13 test sejak audit terakhir) | 145 | ✅ 145/145 |
+| `run-full-runtime-audit.js` (klik semua tombol di semua tab) | — | ✅ 0 bug aplikasi ditemukan |
+| **Total assertion** | **194** | **✅ 194/194** |
+
+## File yang diubah pada perbaikan ini
+
+- `js/shared-utils.js` + `dist/js/shared-utils.js` — tambah sistem tombstone (`markDeletedTombstone`, `_filterTombstoned`), terapkan ke merge `users`/`karyawan`/`peserta` di `cloudPull()` dan `mergeById()`
+- `js/user-management.js` + `dist/js/user-management.js` — catat tombstone di handler "BULK DELETE CONFIRM" (mencakup hapus single & bulk)
+- `js/karyawan-management.js` + `dist/js/karyawan-management.js` — catat tombstone saat hapus karyawan
+- `js/training.js` + `dist/js/training.js` — catat tombstone saat hapus data peserta
+- `test/run-integration-smoke-test.js` — +13 assertion baru (test [33]-[35])
+
+## Cara menjalankan ulang
+
+```bash
+cd sjnam-refactor
+node test/run-auth-tests.js              # 49 assertion
+node test/run-integration-smoke-test.js  # 145 assertion
+node test/run-full-runtime-audit.js      # audit runtime, exit code 0 = bersih
+```
