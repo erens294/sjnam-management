@@ -5780,45 +5780,13 @@ window.addEventListener('error', function(e){
     }
   });
 
-  // Admin sub-tab switching
-  // Fungsi switchAdminSubtab diekstrak agar bisa dipanggil langsung dari
-  // auth.js saat restore session — lebih andal dari simulasi .click() yang
-  // bergantung pada timing event listener.
-  window.switchAdminSubtab = function(target) {
-    if (!target) return;
-    document.querySelectorAll('.admin-subtab-btn').forEach(b=>{
-      b.classList.remove('active','border-blue-600','text-blue-600');
-      b.classList.add('border-transparent','text-slate-500');
-    });
-    const btn = document.querySelector(`[data-admin-subtab="${target}"]`);
-    if (btn) {
-      btn.classList.add('active','border-blue-600','text-blue-600');
-      btn.classList.remove('border-transparent','text-slate-500');
-    }
-    document.querySelectorAll('.admin-subtab-pane').forEach(p=>p.classList.add('hidden'));
-    const paneId = target === 'karyawan' ? 'adminSubKaryawan' : target === 'users' ? 'adminSubUsers' : 'adminSubPerms';
-    const pane = document.getElementById(paneId);
-    if(pane){
-      pane.classList.remove('hidden');
-      if(target === 'perms') renderPermTable();
-      if(target === 'karyawan' && typeof window.renderKaryawanTable === 'function') window.renderKaryawanTable();
-      if(target === 'users' && typeof renderUserTable === 'function'){
-        window._userSelectedIds = window._userSelectedIds || new Set();
-        const rfSel = document.getElementById('userFilterRole');
-        if(rfSel && window.ALL_ROLES){
-          rfSel.innerHTML = '<option value="">Semua Role</option>' +
-            (window.ALL_ROLES||[]).map(r=>`<option value="${r}">${r}</option>`).join('');
-        }
-        renderUserTable();
-      }
-    }
-    try { localStorage.setItem('sjnam_current_admin_subtab', target); } catch(e){}
-  };
-
+  // Admin sub-tab switching — delegasi ke window.switchAdminSubtab
+  // yang sekarang didefinisikan di js/service-recovery.js (lebih awal)
+  // supaya selalu tersedia saat switchTab('admin') dipanggil dari mana pun.
   document.addEventListener('click', function(e){
-    const btn = e.target.closest('[data-admin-subtab]');
+    var btn = e.target.closest('[data-admin-subtab]');
     if(!btn) return;
-    window.switchAdminSubtab(btn.dataset.adminSubtab);
+    if(typeof window.switchAdminSubtab === 'function') window.switchAdminSubtab(btn.dataset.adminSubtab);
   });
 
 })();

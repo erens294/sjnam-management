@@ -183,6 +183,45 @@ $$('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
   else switchTab(b.dataset.tab);
 }));
 
+// ================================================================
+// SWITCH ADMIN SUB-TAB
+// Didefinisikan di sini (bukan di FEATURE 1 inline script) supaya
+// SELALU tersedia sejak dini — sebelum auth.js bisa memanggil
+// checkAuth()/restoreSession() terlepas dari timing document.readyState.
+// Jika didefinisikan di inline script setelah auth.js, ada kondisi
+// (readyState !== 'loading' saat auth.js diparse) di mana initAuthModule()
+// dipanggil langsung sinkron sebelum script yang lebih belakang diparse.
+// ================================================================
+window.switchAdminSubtab = function(target){
+  if(!target) return;
+  document.querySelectorAll('.admin-subtab-btn').forEach(function(b){
+    b.classList.remove('active','border-blue-600','text-blue-600');
+    b.classList.add('border-transparent','text-slate-500');
+  });
+  var btn = document.querySelector('[data-admin-subtab="'+target+'"]');
+  if(btn){
+    btn.classList.add('active','border-blue-600','text-blue-600');
+    btn.classList.remove('border-transparent','text-slate-500');
+  }
+  document.querySelectorAll('.admin-subtab-pane').forEach(function(p){ p.classList.add('hidden'); });
+  var paneId = target==='karyawan' ? 'adminSubKaryawan' : target==='users' ? 'adminSubUsers' : 'adminSubPerms';
+  var pane = document.getElementById(paneId);
+  if(pane){
+    pane.classList.remove('hidden');
+    if(target==='perms' && typeof renderPermTable==='function') renderPermTable();
+    if(target==='karyawan' && typeof window.renderKaryawanTable==='function') window.renderKaryawanTable();
+    if(target==='users' && typeof renderUserTable==='function'){
+      window._userSelectedIds = window._userSelectedIds || new Set();
+      var rfSel = document.getElementById('userFilterRole');
+      if(rfSel && window.ALL_ROLES){
+        rfSel.innerHTML = '<option value="">Semua Role</option>'+(window.ALL_ROLES||[]).map(function(r){ return '<option value="'+r+'">'+r+'</option>'; }).join('');
+      }
+      renderUserTable();
+    }
+  }
+  try{ localStorage.setItem('sjnam_current_admin_subtab', target); }catch(e){}
+};
+
 // =================================================================
 // CLOCK
 // =================================================================
