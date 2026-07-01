@@ -203,6 +203,14 @@
   }
 
   function saveUsers(users) {
+    // [BUGFIX] Tombstone filter sebagai safety net akhir — memastikan user yang
+    // sudah dihapus TIDAK PERNAH bisa tersimpan kembali melalui jalur mana pun,
+    // termasuk jalur yang tidak/belum menerapkan filter secara eksplisit.
+    // Ini menutup semua celah sekaligus: _doAddUser (async), password migration
+    // (async), password change handler (async), dan lain-lain.
+    if (typeof window._filterTombstoned === 'function') {
+      users = window._filterTombstoned('users', users);
+    }
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
     if (typeof window.markDirty === 'function') window.markDirty('users');
     if (typeof window.triggerAutoSync === 'function') window.triggerAutoSync('users');
@@ -233,7 +241,7 @@
   window._pwMigrationDone = (async function migratePasswordsToSHA256() {
     const MIGRATED_KEY = 'sjnam_pw_migrated_v1';
     if (localStorage.getItem(MIGRATED_KEY)) return;
-    const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+    let users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
     if (!users.length) { localStorage.setItem(MIGRATED_KEY, '1'); return; }
     let changed = 0;
     for (const u of users) {
@@ -242,7 +250,14 @@
         changed++;
       }
     }
-    if (changed > 0) localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    if (changed > 0) {
+      // [BUGFIX] Terapkan tombstone filter sebelum tulis balik — fungsi ini async
+      // (memakai await sha256), sehingga selama iterasi berlangsung cloudPull/realtime
+      // bisa sudah me-restore user yang dihapus ke localStorage. Filter memastikan
+      // user yang sudah dihapus tidak ikut tersimpan kembali.
+      if(typeof window._filterTombstoned === 'function') users = window._filterTombstoned('users', users);
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    }
     localStorage.setItem(MIGRATED_KEY, '1');
   })();
 
@@ -360,9 +375,14 @@
     } catch (e) {}
     if (displayName !== user.name) {
       try {
-        const usrs = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+        let usrs = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
         const u = usrs.find(x => x.username === user.username);
-        if (u) { u.name = displayName; localStorage.setItem(USERS_KEY, JSON.stringify(usrs)); }
+        if (u) {
+          u.name = displayName;
+          // [BUGFIX] Terapkan tombstone filter sebelum tulis balik
+          if(typeof window._filterTombstoned === 'function') usrs = window._filterTombstoned('users', usrs);
+          localStorage.setItem(USERS_KEY, JSON.stringify(usrs));
+        }
       } catch (e) {}
       user.name = displayName;
     }

@@ -534,9 +534,19 @@ function _doAddUser(preselectedRole){
         // Generate random secure password (not 123456)
         const defaultPw = window._generateTempPassword ? window._generateTempPassword() : _genTempPw();
         sha256(defaultPw).then(hashedPw => {
-          const finalUsers = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
+          // Baca ulang dari localStorage (async sudah selesai, ada kemungkinan
+          // cloudPull/realtime sudah mengubah isi localStorage dalam jeda ini).
+          let finalUsers = JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]');
           if(finalUsers.find(u => u.username.toLowerCase() === uname)){
             showToast(`Username "${uname}" sudah ada`, 'error'); return;
+          }
+          // [BUGFIX] Terapkan tombstone filter sebelum push — jika selama sha256()
+          // berjalan (async), cloudPull/realtime sudah me-restore user yang sudah
+          // dihapus ke localStorage, pastikan mereka dibuang kembali SEBELUM user
+          // baru ditambahkan dan disimpan. Tanpa ini, user yang sudah dihapus ikut
+          // tersimpan kembali ke cloud bersama user baru yang baru ditambahkan.
+          if(typeof window._filterTombstoned === 'function'){
+            finalUsers = window._filterTombstoned('users', finalUsers);
           }
           const newUser = {
             id: Date.now(),
