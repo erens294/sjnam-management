@@ -4,6 +4,28 @@
 
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth"><head><meta charset="UTF-8">
+<!-- Anti-flash: sembunyikan loginOverlay SEGERA jika ada session tersimpan,
+     sebelum browser merender apapun. Tanpa ini, loginOverlay selalu terlihat
+     sesaat saat refresh karena ia visible by default di HTML. -->
+<script>
+(function(){
+  try {
+    var session = localStorage.getItem('sjnam_session_v1');
+    if (session) {
+      var s = JSON.parse(session);
+      if (s && s.username) {
+        // Session ada dan valid — sembunyikan overlay sebelum render
+        document.documentElement.style.setProperty('--login-overlay-display', 'none');
+      }
+    }
+  } catch(e) {}
+})();
+</script>
+<style>
+  /* Terapkan anti-flash: jika CSS variable di-set oleh script di atas,
+     loginOverlay langsung tersembunyi tanpa menunggu JS utama selesai */
+  #loginOverlay { display: var(--login-overlay-display, flex); }
+</style>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#1d4ed8">
