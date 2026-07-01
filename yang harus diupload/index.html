@@ -5804,6 +5804,8 @@ window.addEventListener('error', function(e){
         renderUserTable();
       }
     }
+    // Simpan sub-tab yang aktif supaya tetap di sini setelah refresh halaman
+    try { localStorage.setItem('sjnam_current_admin_subtab', target); } catch(e){}
   });
 
 })();
