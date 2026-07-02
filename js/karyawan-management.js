@@ -633,6 +633,32 @@
   });
 
   // ── Helper: self-update station DRG ─────────────────────────────────────
+
+  // [FIX] Jika karyawan yang diedit adalah User-DRG yang sedang login,
+  // refresh station lock-nya secara langsung tanpa perlu re-login
+  document.addEventListener('sjn:karyawan-updated', function _onKarUpdated() {
+    const cu = window.currentUser;
+    if (!cu || !window._STATION_FILTER_ROLES || !window._STATION_FILTER_ROLES.includes(cu.role)) return;
+    try {
+      const kar = JSON.parse(localStorage.getItem('sjnam_karyawan_v1') || '[]');
+      const me = kar.find(k => (k.username || '').toLowerCase() === (cu.username || '').toLowerCase());
+      if (!me) return;
+      const newSt = me.station && me.station !== 'ALL' ? me.station : null;
+      if (newSt !== window._userDrgStation) {
+        window._userDrgStation = newSt;
+        window._userStationLock = newSt;
+        cu.station = newSt;
+        if (typeof window._applyStationLockForUser === 'function') {
+          window._applyStationLockForUser(cu.role, cu.username);
+        }
+        if (typeof window.DRYGOODS !== 'undefined' && typeof window.DRYGOODS.renderAll === 'function') {
+          setTimeout(window.DRYGOODS.renderAll, 100);
+        }
+        console.info('[StationLock] Diperbarui ke:', newSt || 'ALL');
+      }
+    } catch(e) { console.warn('[StationLock refresh]', e); }
+  }, false);
+
   function _selfUpdateDrgStation(entry) {
     try {
       const cu = window.currentUser;
