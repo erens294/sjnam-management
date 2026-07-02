@@ -373,6 +373,9 @@
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Menyimpan...'; }
 
     const _resetSaveBtn = () => { if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan'; } };
+    
+    // [FIX] Wrap dengan try-catch agar error tidak diam-diam bikin tombol stuck disabled
+    try {
 
     // Baca field
     const nama            = document.getElementById('karyawanNama').value.trim();
@@ -398,7 +401,12 @@
     const selectedNewRole   = newRoleEl?.value || '';
     const generatedPw       = newRoleEl?.dataset?.generatedPw || '';
     const newAccSection     = document.getElementById('karyawanNewAccountSection');
-    const createNewAccount  = !!(selectedNewRole && newAccSection && !newAccSection.classList.contains('hidden') && !username);
+    // [FIX] Tidak syaratkan !username dari hidden field
+    // Tapi jika karyawan sudah punya akun (username tidak kosong), jangan buat akun baru
+    const existingLinkedUser = username ? (function() {
+      try { return JSON.parse(localStorage.getItem('sjnam_users_v1') || '[]').find(u => u.username === username); } catch(e) { return null; }
+    })() : null;
+    const createNewAccount  = !!(selectedNewRole && newAccSection && !newAccSection.classList.contains('hidden') && !existingLinkedUser);
 
     // ── Validasi wajib ──
     if (!nama || !nip || !jabatan) {
@@ -612,6 +620,12 @@
 
     // ── Jalur C: simpan karyawan saja (tanpa perubahan akun) ────────────────
     doSaveKaryawan(newUsername && newUsername !== username ? newUsername : null);
+
+    } catch (unexpectedErr) {
+      console.error('[karyawanModalSave] Error tak terduga:', unexpectedErr);
+      showToast('Gagal menyimpan: ' + (unexpectedErr?.message || String(unexpectedErr)), 'error');
+      _resetSaveBtn();
+    }
   });
 
   // ── Helper: self-update station DRG ─────────────────────────────────────
