@@ -270,6 +270,21 @@ document.getElementById('userBulkDeleteConfirm')?.addEventListener('click', func
     if (typeof window._unlinkKaryawanByUsernames === 'function') window._unlinkKaryawanByUsernames(deletedUsernames);
     // [BUG FIX A] emit event agar karyawan-management bisa refresh state-nya
     document.dispatchEvent(new CustomEvent('sjn:user-deleted', { detail: { usernames: deletedUsernames } }));
+    // [FIX] Tulis marker force-logout agar tab/session user yang dihapus otomatis keluar
+    try {
+      const existing = JSON.parse(localStorage.getItem('sjnam_force_logout') || '[]');
+      const combined = [...new Set([...existing, ...deletedUsernames])];
+      localStorage.setItem('sjnam_force_logout', JSON.stringify(combined));
+      // Hapus marker setelah 60 detik (cukup untuk semua tab detect)
+      setTimeout(() => {
+        try {
+          const cur = JSON.parse(localStorage.getItem('sjnam_force_logout') || '[]');
+          const remaining = cur.filter(u => !deletedUsernames.includes(u));
+          if (remaining.length) localStorage.setItem('sjnam_force_logout', JSON.stringify(remaining));
+          else localStorage.removeItem('sjnam_force_logout');
+        } catch(e) {}
+      }, 60000);
+    } catch(e) {}
   }
 
   window._userSelectedIds.clear();
