@@ -641,7 +641,7 @@
     if (!cu || !window._STATION_FILTER_ROLES || !window._STATION_FILTER_ROLES.includes(cu.role)) return;
     try {
       const kar = JSON.parse(localStorage.getItem('sjnam_karyawan_v1') || '[]');
-      const me = kar.find(k => (k.username || '').toLowerCase() === (cu.username || '').toLowerCase());
+      const me = kar.find(k => { const un = (cu.username || '').toLowerCase(); return (k.username || '').toLowerCase() === un || (k.nip || '').toLowerCase() === un; });
       if (!me) return;
       const newSt = me.station && me.station !== 'ALL' ? me.station : null;
       if (newSt !== window._userDrgStation) {
