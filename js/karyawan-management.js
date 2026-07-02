@@ -555,7 +555,11 @@
       const pwToHash = generatedPw || _genTempPwFallback();
 
       try {
-        const hashedPw = await sha256(pwToHash);
+        // sha256 ada di _authInternal (auth.js), fallback ke implementasi inline
+        const _sha256fn = (typeof sha256 === 'function') ? sha256
+          : window._authInternal?.sha256
+          ?? (async str => { const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join(''); });
+        const hashedPw = await _sha256fn(pwToHash);
 
         // [BUG FIX 3] Cek ulang setelah async selesai (race condition)
         let finalUsers = getUsersList();
