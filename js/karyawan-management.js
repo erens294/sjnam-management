@@ -530,8 +530,16 @@
       if (typeof renderUserTable === 'function') renderUserTable();
       showToast(idx > -1 ? 'Data karyawan diperbarui' : 'Karyawan ditambahkan', 'success');
 
-      // Update station DRG diri sendiri jika relevan
+      // [FIX] Update station DRG untuk sesi yang sedang login (jika relevan)
       _selfUpdateDrgStation(entry);
+
+      // [FIX] Refresh tampilan Drygoods (station tabs, tabel IFS, dsb) TANPA
+      // SYARAT — sebelumnya hanya di-refresh via _selfUpdateDrgStation yang
+      // cuma jalan kalau yang login adalah karyawan yang sama persis dengan
+      // yang sedang diedit. Akibatnya kalau Admin mengedit station karyawan
+      // LAIN (kasus paling umum), tab Drygoods → IFS Station tetap
+      // menampilkan station lama sampai halaman di-refresh manual.
+      if (typeof window.DRYGOODS?.renderAll === 'function') window.DRYGOODS.renderAll();
     };
 
     // ── Jalur A: buat akun BARU bersamaan dengan karyawan ──────────────────
@@ -710,6 +718,9 @@
       if (typeof window.markDeletedTombstone === 'function') window.markDeletedTombstone('karyawan', [delId]);
       if (typeof auditLog === 'function') auditLog('delete', 'karyawan', delId, item?.nama || '');
       renderKaryawan();
+      // [FIX] Sama seperti simpan/edit — refresh Drygoods agar karyawan yang
+      // dihapus juga hilang dari tabel IFS Station & tab station tanpa perlu reload.
+      if (typeof window.DRYGOODS?.renderAll === 'function') window.DRYGOODS.renderAll();
       showToast('Karyawan dihapus', 'success');
     }
   });
