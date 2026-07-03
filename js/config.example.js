@@ -1,1 +1,1 @@
-window.SJNAM_CONFIG={NEON_DATA_API_URL:"https://YOUR-ENDPOINT.apirest.YOUR-REGION.aws.neon.tech/YOUR-DB/rest/v1"};
+window.SJNAM_CONFIG={NEON_DATA_API_URL:"https://YOUR-ENDPOINT.apirest.YOUR-REGION.aws.neon.tech/YOUR-DB/rest/v1",NEON_JWT:"YOUR-SELF-SIGNED-JWT-HERE"};

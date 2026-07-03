@@ -98,12 +98,16 @@ function() {
     window._LAST_PULL_TS_KEY = "sjnam_last_cloud_pull_ts_v1";
 
     // ---- Neon Data API helpers -------------------------------------------------
-    // Menggantikan supabase-js. Neon Data API mengizinkan request TANPA header
-    // Authorization sama sekali — request semacam itu dijalankan memakai role
-    // database "anonymous". Supaya ini bekerja, role anonymous harus diberi
-    // GRANT SELECT/INSERT/UPDATE/DELETE di Neon SQL Editor (lihat panduan migrasi).
+    // Menggantikan supabase-js. Catatan (update): Neon Data API ternyata TETAP
+    // mewajibkan header Authorization berisi JWT di setiap request, walau untuk
+    // role "anonymous" sekalipun (beda dari asumsi awal migrasi). Solusinya:
+    // NEON_JWT di config.js adalah token statis yang ditandatangani sendiri
+    // (bukan dari Neon Auth, tidak expired dalam praktiknya), isinya cuma
+    // {"role":"anonymous"} — perannya di database tetap dibatasi lewat GRANT
+    // ke role anonymous seperti biasa. Kunci publik pasangannya didaftarkan
+    // sebagai Custom Authentication Provider di Neon Console.
     function neonConfigured() {
-        return "undefined" != typeof window && !!(window.SJNAM_CONFIG && window.SJNAM_CONFIG.NEON_DATA_API_URL);
+        return "undefined" != typeof window && !!(window.SJNAM_CONFIG && window.SJNAM_CONFIG.NEON_DATA_API_URL && window.SJNAM_CONFIG.NEON_JWT);
     }
 
     function neonBase() {
@@ -112,7 +116,8 @@ function() {
 
     async function neonFetch(path, options = {}) {
         const headers = Object.assign({
-            "Accept": "application/json"
+            "Accept": "application/json",
+            "Authorization": "Bearer " + window.SJNAM_CONFIG.NEON_JWT
         }, options.body ? {
             "Content-Type": "application/json"
         } : {}, options.headers || {});
