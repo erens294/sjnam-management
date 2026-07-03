@@ -2,18 +2,16 @@ function toggleAuditPanel(){const panel=document.getElementById("auditPanel"),ch
 async function loadAuditLog(){
   const container=document.getElementById("auditLogTable");
   if(!container)return;
-  const neonReady="undefined"!=typeof window.SJNAM_CONFIG&&!!(window.SJNAM_CONFIG&&window.SJNAM_CONFIG.NEON_DATA_API_URL);
-  if(neonReady){
+  const firebaseReady="undefined"!=typeof window.SJNAM_CONFIG&&!!(window.SJNAM_CONFIG&&window.SJNAM_CONFIG.FIREBASE_PROJECT_ID);
+  if(firebaseReady){
     container.innerHTML='<p class="text-slate-400 p-3 italic">Memuat...</p>';
     try{
       const moduleFilter=document.getElementById("auditModuleFilter")?.value||"";
-      const base=window.SJNAM_CONFIG.NEON_DATA_API_URL.replace(/\/$/,"");
-      let q="select=*&order=created_at.desc&limit=50";
-      moduleFilter&&(q+="&module=eq."+encodeURIComponent(moduleFilter));
-      const res=await fetch(base+"/sjnam_audit_log?"+q,{headers:{"Accept":"application/json"}});
-      if(!res.ok){let msg=res.status+" "+res.statusText;try{const t=await res.text();t&&(msg+=" - "+t)}catch(e){}throw new Error(msg)}
-      const logs=await res.json();
-      if(!logs||!logs.length)return void(container.innerHTML='<p class="text-slate-400 p-3 italic">Belum ada log. Pastikan tabel sjnam_audit_log sudah dibuat & role anonymous sudah di-GRANT akses di Neon.</p>');
+      const logs=await window.firestoreRunQuery("sjnam_audit_log",{
+        orderByField:"created_at", desc:!0, limit:50,
+        whereField: moduleFilter||undefined, whereValue: moduleFilter||undefined
+      });
+      if(!logs||!logs.length)return void(container.innerHTML='<p class="text-slate-400 p-3 italic">Belum ada log. Pastikan sudah pernah push/pull minimal sekali.</p>');
       const actionColor={push:"text-blue-500",pull:"text-green-500",merge:"text-amber-500",create:"text-emerald-500",update:"text-slate-400",delete:"text-red-400"};
       container.innerHTML=`
       <table class="w-full text-xs">
@@ -35,7 +33,7 @@ async function loadAuditLog(){
         </tbody>
       </table>`
     }catch(e){
-      container.innerHTML='<p class="text-red-400 p-3 italic">Gagal memuat: '+e.message+". Pastikan tabel sjnam_audit_log sudah dibuat & GRANT ke role anonymous sudah dijalankan.</p>"
+      container.innerHTML='<p class="text-red-400 p-3 italic">Gagal memuat: '+e.message+"</p>"
     }
   }else container.innerHTML='<p class="text-red-400 p-3 italic">Cloud belum terhubung</p>'
 }

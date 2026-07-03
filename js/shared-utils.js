@@ -97,33 +97,89 @@ function() {
     "use strict";
     window._LAST_PULL_TS_KEY = "sjnam_last_cloud_pull_ts_v1";
 
-    // ---- Neon Data API helpers -------------------------------------------------
-    // Menggantikan supabase-js. Catatan (update): Neon Data API ternyata TETAP
-    // mewajibkan header Authorization berisi JWT di setiap request, walau untuk
-    // role "anonymous" sekalipun (beda dari asumsi awal migrasi). Solusinya:
-    // NEON_JWT di config.js adalah token statis yang ditandatangani sendiri
-    // (bukan dari Neon Auth, tidak expired dalam praktiknya), isinya cuma
-    // {"role":"anonymous"} — perannya di database tetap dibatasi lewat GRANT
-    // ke role anonymous seperti biasa. Kunci publik pasangannya didaftarkan
-    // sebagai Custom Authentication Provider di Neon Console.
+    // ---- Firebase Firestore helpers --------------------------------------------
+    // Migrasi ke-2 (2026-07-03): Neon Data API dilepas karena bug persisten
+    // ("jwk not found") pada custom JWKS provider yang gagal diperbaiki walau
+    // sudah dicoba 3 keypair berbeda. Firestore dipilih karena: kuota gratis
+    // jauh lebih longgar (reset harian, bukan bulanan), tidak perlu kartu
+    // kredit, dan akses publik/tanpa-login didukung resmi lewat Security Rules
+    // (bukan trik custom JWT kayak yang gagal di Neon). Tidak perlu API key
+    // untuk request REST biasa — akses diatur oleh Firestore Security Rules
+    // (lihat catatan "allow read, write: if true" di Firebase Console).
     function neonConfigured() {
-        return "undefined" != typeof window && !!(window.SJNAM_CONFIG && window.SJNAM_CONFIG.NEON_DATA_API_URL && window.SJNAM_CONFIG.NEON_JWT);
+        return "undefined" != typeof window && !!(window.SJNAM_CONFIG && window.SJNAM_CONFIG.FIREBASE_PROJECT_ID);
     }
 
-    function neonBase() {
-        return (window.SJNAM_CONFIG.NEON_DATA_API_URL || "").replace(/\/$/, "");
+    function firestoreBase() {
+        return "https://firestore.googleapis.com/v1/projects/" + window.SJNAM_CONFIG.FIREBASE_PROJECT_ID + "/databases/(default)/documents";
     }
 
-    async function neonFetch(path, options = {}) {
+    // Konversi nilai JS biasa <-> format "Value" khusus Firestore REST API.
+    function toFirestoreValue(v) {
+        if (null == v) return {
+            nullValue: null
+        };
+        if ("boolean" == typeof v) return {
+            booleanValue: v
+        };
+        if ("number" == typeof v) return Number.isInteger(v) ? {
+            integerValue: String(v)
+        } : {
+            doubleValue: v
+        };
+        if ("string" == typeof v) return {
+            stringValue: v
+        };
+        if (Array.isArray(v)) return {
+            arrayValue: {
+                values: v.map(toFirestoreValue)
+            }
+        };
+        if ("object" == typeof v) return {
+            mapValue: {
+                fields: Object.fromEntries(Object.entries(v).map(([k, val]) => [k, toFirestoreValue(val)]))
+            }
+        };
+        return {
+            stringValue: String(v)
+        }
+    }
+
+    function fromFirestoreValue(fv) {
+        if (!fv) return null;
+        if ("nullValue" in fv) return null;
+        if ("booleanValue" in fv) return fv.booleanValue;
+        if ("integerValue" in fv) return parseInt(fv.integerValue, 10);
+        if ("doubleValue" in fv) return fv.doubleValue;
+        if ("stringValue" in fv) return fv.stringValue;
+        if ("timestampValue" in fv) return fv.timestampValue;
+        if ("arrayValue" in fv) return (fv.arrayValue.values || []).map(fromFirestoreValue);
+        if ("mapValue" in fv) {
+            const out = {},
+                fields = fv.mapValue.fields || {};
+            for (const k in fields) out[k] = fromFirestoreValue(fields[k]);
+            return out
+        }
+        return null
+    }
+
+    function docToObject(doc) {
+        if (!doc || !doc.fields) return null;
+        const out = {};
+        for (const k in doc.fields) out[k] = fromFirestoreValue(doc.fields[k]);
+        return out
+    }
+
+    async function firestoreFetch(path, options = {}) {
         const headers = Object.assign({
-            "Accept": "application/json",
-            "Authorization": "Bearer " + window.SJNAM_CONFIG.NEON_JWT
+            "Accept": "application/json"
         }, options.body ? {
             "Content-Type": "application/json"
         } : {}, options.headers || {});
-        const res = await fetch(neonBase() + path, Object.assign({}, options, {
+        const res = await fetch(firestoreBase() + path, Object.assign({}, options, {
             headers: headers
         }));
+        if (404 === res.status) return null;
         if (!res.ok) {
             let msg = res.status + " " + res.statusText;
             try {
@@ -137,37 +193,76 @@ function() {
         return text ? JSON.parse(text) : null
     }
 
-    async function neonSelectOne(table, query) {
-        const rows = await neonFetch("/" + table + "?" + query);
-        return Array.isArray(rows) && rows.length ? rows[0] : null
+    // Ambil satu dokumen by ID. Return null kalau belum ada.
+    async function neonSelectOne(collection, docId) {
+        const doc = await firestoreFetch("/" + collection + "/" + docId);
+        return doc ? docToObject(doc) : null
     }
 
-    async function neonUpsert(table, row, conflictCol) {
-        const q = conflictCol ? "?on_conflict=" + conflictCol : "";
-        const rows = await neonFetch("/" + table + q, {
-            method: "POST",
-            headers: {
-                "Prefer": "resolution=merge-duplicates,return=representation"
-            },
-            body: JSON.stringify(row)
+    // Timpa (upsert) seluruh isi dokumen by ID — PATCH tanpa updateMask di
+    // Firestore REST akan membuat dokumen baru kalau belum ada, atau
+    // mengganti seluruh isinya kalau sudah ada (persis semantik "upsert").
+    async function neonUpsert(collection, docId, dataObj) {
+        const fields = {};
+        for (const k in dataObj) fields[k] = toFirestoreValue(dataObj[k]);
+        const doc = await firestoreFetch("/" + collection + "/" + docId, {
+            method: "PATCH",
+            body: JSON.stringify({
+                fields: fields
+            })
         });
-        return Array.isArray(rows) ? rows[0] : rows
+        return docToObject(doc)
     }
 
-    async function neonInsert(table, row) {
-        await neonFetch("/" + table, {
+    // Tambah dokumen baru dengan ID auto-generate (dipakai untuk audit log).
+    async function neonInsert(collection, dataObj) {
+        const fields = {};
+        for (const k in dataObj) fields[k] = toFirestoreValue(dataObj[k]);
+        await firestoreFetch("/" + collection, {
             method: "POST",
-            headers: {
-                "Prefer": "return=minimal"
-            },
-            body: JSON.stringify(row)
+            body: JSON.stringify({
+                fields: fields
+            })
         })
     }
+
+    // Query terurut/terbatas via endpoint :runQuery (dipakai audit-log-ui.js).
+    async function firestoreRunQuery(collection, opts = {}) {
+        const structuredQuery = {
+            from: [{
+                collectionId: collection
+            }],
+            limit: opts.limit || 50
+        };
+        if (opts.orderByField) structuredQuery.orderBy = [{
+            field: {
+                fieldPath: opts.orderByField
+            },
+            direction: opts.desc ? "DESCENDING" : "ASCENDING"
+        }];
+        if (opts.whereField) structuredQuery.where = {
+            fieldFilter: {
+                field: {
+                    fieldPath: opts.whereField
+                },
+                op: "EQUAL",
+                value: toFirestoreValue(opts.whereValue)
+            }
+        };
+        const rows = await firestoreFetch(":runQuery", {
+            method: "POST",
+            body: JSON.stringify({
+                structuredQuery: structuredQuery
+            })
+        });
+        return (Array.isArray(rows) ? rows : []).filter(r => r.document).map(r => docToObject(r.document))
+    }
+    window.firestoreRunQuery = firestoreRunQuery;
 
     // Shim dipertahankan untuk kompatibilitas mundur (kode lain mungkin memanggil
     // window.getSupabaseClient() dan hanya mengecek truthy/falsy hasilnya).
     function getSupabaseClient() {
-        return neonConfigured() ? {} : (console.warn("[Cloud Sync] Neon Data API belum dikonfigurasi (js/config.js) — sinkronisasi cloud dilewati."), null)
+        return neonConfigured() ? {} : (console.warn("[Cloud Sync] Firebase belum dikonfigurasi (js/config.js) — sinkronisasi cloud dilewati."), null)
     }
     // ------------------------------------------------------------------------
 
@@ -175,12 +270,12 @@ function() {
     // service-recovery.js, bank-station-sync.js) masih mengecek
     // `cloudConfig.supabaseUrl && cloudConfig.supabaseKey` sebagai gerbang
     // "apakah cloud sync sudah siap" sebelum memanggil cloudPush/cloudPull.
-    // Field itu dipertahankan (diisi nilai Neon) supaya modul-modul tsb
-    // tidak perlu diubah satu per satu.
+    // Field itu dipertahankan (diisi nilai dummy non-kosong) supaya
+    // modul-modul tsb tidak perlu diubah satu per satu.
     window.cloudConfig = {
-        neonUrl: neonConfigured() ? window.SJNAM_CONFIG.NEON_DATA_API_URL : "",
-        supabaseUrl: neonConfigured() ? window.SJNAM_CONFIG.NEON_DATA_API_URL : "",
-        supabaseKey: neonConfigured() ? "neon-anonymous-role-no-key-needed" : ""
+        firebaseProjectId: neonConfigured() ? window.SJNAM_CONFIG.FIREBASE_PROJECT_ID : "",
+        supabaseUrl: neonConfigured() ? window.SJNAM_CONFIG.FIREBASE_PROJECT_ID : "",
+        supabaseKey: neonConfigured() ? "firestore-public-rules-no-key-needed" : ""
     };
 
     function stampRecord(record, action = "update") {
@@ -311,11 +406,10 @@ function() {
         if (items.length) {
             console.log("[OfflineQueue] Flush", items.length, "item antrian..."), cloudLog("📶 Koneksi kembali — mengirim " + items.length + " perubahan yang tertunda...", "info");
             for (const item of items) try {
-                await neonUpsert("sjnam_sync", {
-                    id: "sjnam_main",
+                await neonUpsert("sjnam_sync", "sjnam_main", {
                     payload: item.payload,
                     updated_at: (new Date).toISOString()
-                }, "id"), await _offlineQueue.remove(item.id), console.log("[OfflineQueue] Item", item.id, "berhasil dikirim")
+                }), await _offlineQueue.remove(item.id), console.log("[OfflineQueue] Item", item.id, "berhasil dikirim")
             } catch (e) {
                 console.warn("[OfflineQueue] Gagal kirim item", item.id, ":", e.message);
                 break
@@ -515,7 +609,7 @@ function() {
         return localStorage.getItem("sjnam_device_id") || "unknown"
     }
     async function cloudPush(silent = !1, dirtyHint = null) {
-        if (!neonConfigured()) return silent || showToast("Neon Data API belum dikonfigurasi (js/config.js)", "error"), !1;
+        if (!neonConfigured()) return silent || showToast("Firebase belum dikonfigurasi (js/config.js)", "error"), !1;
         const localPayload = getAllCloudData(),
             currentHash = _hashPayload(localPayload);
         if (silent && currentHash && currentHash === _lastPushedHash) return cloudLog("⏭️ Smart Push: tidak ada perubahan data, skip upload", "info"), !0;
@@ -523,7 +617,7 @@ function() {
         updateSyncStatus("syncing");
         try {
             let mergedPayload = localPayload;
-            const cloudRow = await neonSelectOne("sjnam_sync", "id=eq.sjnam_main&select=payload,updated_at");
+            const cloudRow = await neonSelectOne("sjnam_sync", "sjnam_main");
             if (cloudRow && cloudRow.updated_at && (!_lastCloudUpdatedAt || cloudRow.updated_at > _lastCloudUpdatedAt)) {
                 const cloudPayload = cloudRow.payload || {},
                     byIdOrKey = r => r.id || r["App Service & Tehnik"] || JSON.stringify(r),
@@ -578,34 +672,33 @@ function() {
                 }, Array.isArray(localPayload.drygoodsData.transactions) && Array.isArray(cloudPayload.drygoodsData.transactions) && (mergedPayload.drygoodsData.transactions = _mergeWithConflict(cloudPayload.drygoodsData.transactions, localPayload.drygoodsData.transactions, dgTrxKeyFn)), Array.isArray(localPayload.drygoodsData.bankItems) && Array.isArray(cloudPayload.drygoodsData.bankItems) && (mergedPayload.drygoodsData.bankItems = _mergeWithConflict(cloudPayload.drygoodsData.bankItems, localPayload.drygoodsData.bankItems, dgTrxKeyFn))), cloudLog("🔀 Konflik terdeteksi — data digabung otomatis (merge). Cloud: " + cloudRow.updated_at, "info"), await auditLog("merge", dirtyHint || "all", "", "Merge dari cloud: " + cloudRow.updated_at), silent || showToast("🔀 Merge: data dari 2 device digabung otomatis", "info")
             }
             mergedPayload._pushedBy = getDeviceId(), mergedPayload._pushedAt = (new Date).toISOString(), dirtyHint && (mergedPayload._dirtyModule = dirtyHint);
-            const upsertResult = await neonUpsert("sjnam_sync", {
-                id: "sjnam_main",
+            const upsertResult = await neonUpsert("sjnam_sync", "sjnam_main", {
                 payload: mergedPayload,
                 updated_at: (new Date).toISOString()
-            }, "id");
+            });
             const serverUpdatedAt = upsertResult?.updated_at || mergedPayload._pushedAt;
             window._lastPushedHash = _hashPayload(mergedPayload), window._lastCloudUpdatedAt = serverUpdatedAt;
             try {
                 localStorage.setItem(window._LAST_PULL_TS_KEY, window._lastCloudUpdatedAt)
             } catch (e) {}
-            return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil. Server ts: " + serverUpdatedAt), window._rolePermsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Neon (" + window.data.length + " delay, " + window.dfsData.length + " DFS)", "success"), silent || showToast("⚡ Neon Sync berhasil! (" + window.data.length + " records)", "success"), !0
+            return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil. Server ts: " + serverUpdatedAt), window._rolePermsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Firestore (" + window.data.length + " delay, " + window.dfsData.length + " DFS)", "success"), silent || showToast("⚡ Firestore Sync berhasil! (" + window.data.length + " records)", "success"), !0
         } catch (err) {
             return updateSyncStatus("error"), cloudLog("❌ Gagal upload: " + err.message, "error"), silent || showToast("Sync gagal: " + err.message, "error"), !1
         }
     }
     async function cloudPull(silent = !1) {
-        if (!neonConfigured()) return void (silent || showToast("Neon Data API belum dikonfigurasi (js/config.js)", "error"));
+        if (!neonConfigured()) return void (silent || showToast("Firebase belum dikonfigurasi (js/config.js)", "error"));
         updateSyncStatus("syncing");
         try {
-            const meta = await neonSelectOne("sjnam_sync", "id=eq.sjnam_main&select=updated_at");
-            if (!meta) throw new Error("Data tidak ditemukan di Neon");
+            const meta = await neonSelectOne("sjnam_sync", "sjnam_main");
+            if (!meta) throw new Error("Data tidak ditemukan di Firestore");
             const cloudUpdatedAt = meta.updated_at;
             if (_lastCloudUpdatedAt && cloudUpdatedAt && cloudUpdatedAt <= _lastCloudUpdatedAt) return cloudLog("⏭️ Smart Pull: tidak ada perubahan data antar device, skip pull (payload tidak diunduh)", "info"), updateSyncStatus("connected"), void (silent || showToast("Data sudah paling baru — tidak ada perubahan dari device lain", "info"));
-            const row = await neonSelectOne("sjnam_sync", "id=eq.sjnam_main&select=payload,updated_at");
-            if (!row) throw new Error("Data tidak ditemukan di Neon");
+            const row = await neonSelectOne("sjnam_sync", "sjnam_main");
+            if (!row) throw new Error("Data tidak ditemukan di Firestore");
             const rec = row.payload,
                 savedAt = cloudUpdatedAt ? new Date(cloudUpdatedAt).toLocaleString("id-ID") : "-";
-            if (!silent && !await showConfirm("⚡ Tarik Data dari Neon", `Data cloud: ${(rec.data||[]).length} delay records, ${(rec.dfsData||[]).length} DFS, disimpan ${savedAt}.\n\nData lokal saat ini akan DIGANTI. Lanjutkan?`)) return void updateSyncStatus("connected");
+            if (!silent && !await showConfirm("⚡ Tarik Data dari Firestore", `Data cloud: ${(rec.data||[]).length} delay records, ${(rec.dfsData||[]).length} DFS, disimpan ${savedAt}.\n\nData lokal saat ini akan DIGANTI. Lanjutkan?`)) return void updateSyncStatus("connected");
             window._cloudPullInProgress = !0;
             try {
                 if (rec.deletedTombstones && "object" == typeof rec.deletedTombstones) {
@@ -705,7 +798,7 @@ function() {
             } finally {
                 window._cloudPullInProgress = !1
             }
-            renderTable(), renderDashboard(), renderStations(), renderDfsTable(), "function" == typeof window.refreshTrainingViews && window.refreshTrainingViews(), "function" == typeof window.renderBankStations && window.renderBankStations(), updateSyncStatus("connected"), cloudLog("✅ Data berhasil diambil dari Neon (" + window.data.length + " delay, " + window.dfsData.length + " DFS)", "success"), blinkBlueLight(), await auditLog("pull", "all", "", "Pull dari cloud. " + window.data.length + " delay, " + window.dfsData.length + " DFS"), setTimeout(_flushOfflineQueue, 2e3)
+            renderTable(), renderDashboard(), renderStations(), renderDfsTable(), "function" == typeof window.refreshTrainingViews && window.refreshTrainingViews(), "function" == typeof window.renderBankStations && window.renderBankStations(), updateSyncStatus("connected"), cloudLog("✅ Data berhasil diambil dari Firestore (" + window.data.length + " delay, " + window.dfsData.length + " DFS)", "success"), blinkBlueLight(), await auditLog("pull", "all", "", "Pull dari cloud. " + window.data.length + " delay, " + window.dfsData.length + " DFS"), setTimeout(_flushOfflineQueue, 2e3)
         } catch (err) {
             window._cloudPullInProgress = !1, updateSyncStatus("error"), cloudLog("❌ Gagal download: " + err.message, "error"), silent || showToast("Gagal download: " + err.message, "error")
         }
@@ -774,7 +867,7 @@ function() {
                     } catch (e) {
                         console.warn("[DAILY BACKUP] JSON export gagal:", e.message)
                     }
-                    await cloudPush(!0) ? console.log("[DAILY BACKUP] Neon push sukses") : console.warn("[DAILY BACKUP] Neon push gagal (mungkin belum dikonfigurasi)"), localStorage.setItem("sjnam_last_backup_v1", today), showToast("📦 Backup harian selesai: JSON + Neon", "success")
+                    await cloudPush(!0) ? console.log("[DAILY BACKUP] Firestore push sukses") : console.warn("[DAILY BACKUP] Firestore push gagal (mungkin belum dikonfigurasi)"), localStorage.setItem("sjnam_last_backup_v1", today), showToast("📦 Backup harian selesai: JSON + Firestore", "success")
                 }
             }! function() {
                 const pollForLogin = setInterval(() => {
@@ -786,12 +879,12 @@ function() {
         }), $("#btnCloudLoad")?.addEventListener("click", async () => {
             await cloudPull()
         }), $("#btnCloudAutoToggle")?.addEventListener("click", () => {}), $("#btnCloudClear")?.addEventListener("click", async () => {
-            if (await showConfirm("Cek Koneksi Neon", "Uji koneksi ke Neon Data API sekarang?")) {
+            if (await showConfirm("Cek Koneksi Firestore", "Uji koneksi ke Firestore sekarang?")) {
                 initCloudUI();
                 try {
-                    await neonSelectOne("sjnam_sync", "id=eq.sjnam_main&select=updated_at"), showToast("✅ Koneksi Neon OK", "success")
+                    await neonSelectOne("sjnam_sync", "sjnam_main"), showToast("✅ Koneksi Firestore OK", "success")
                 } catch (e) {
-                    showToast("❌ Koneksi Neon gagal: " + e.message, "error")
+                    showToast("❌ Koneksi Firestore gagal: " + e.message, "error")
                 }
             }
         }), document.addEventListener("click", function(e) {
@@ -803,7 +896,7 @@ function() {
         console.error("[Cloud Sync] Gagal inisialisasi (dilewati, aplikasi tetap berjalan normal):", cloudInitErr)
     }
     setTimeout(async () => {
-        neonConfigured() && (console.log("[Smart-Sync] Cek perubahan data dari Neon (hanya pull jika ada perubahan)..."), await cloudPull(!0))
+        neonConfigured() && (console.log("[Smart-Sync] Cek perubahan data dari Firestore (hanya pull jika ada perubahan)..."), await cloudPull(!0))
     }, 1200), window.cloudConfig = cloudConfig, window.stampRecord = stampRecord, window.stampArray = function(arr, action = "update") {
         return Array.isArray(arr) ? arr.map(item => item._updatedAt ? item : stampRecord(item, action)) : arr
     }, window.detectConflict = detectConflict, window.MODULE_KEYS = {
