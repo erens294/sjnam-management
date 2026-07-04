@@ -275,13 +275,6 @@
       var pa = a.r.pct === null ? -1 : a.r.pct, pb = b.r.pct === null ? -1 : b.r.pct;
       return pb - pa;
     });
-    var lb = document.getElementById("srActLeaderboardBody");
-    if (lb) {
-      lb.innerHTML = sorted.map(function (x, i) {
-        return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.distrik) + '</td><td>' + fmtPct(x.r.pct) +
-          '</td><td><span class="sr-act-badge ' + x.r.cat + '">' + x.r.cat + '</span></td></tr>';
-      }).join("");
-    }
 
     if (typeof Chart === "undefined") return;
 
@@ -510,53 +503,64 @@
 
   function exportDashboardPdf() {
     if (!window.jspdf) return void ("function" == typeof window.showToast && window.showToast("Library PDF tidak tersedia", "error"));
+    if (!window.html2canvas) return void ("function" == typeof window.showToast && window.showToast("Library screenshot (html2canvas) tidak tersedia", "error"));
     if (!srActMonths[srActCurMonthIdx]) return;
     var mo = srActMonths[srActCurMonthIdx];
-    var rows = STATION_LIST.map(function (d) { return { d: d, r: computeDistrikMonth(d, mo.y, mo.m) }; })
-      .sort(function (a, b) { var pa = a.r.pct === null ? -1 : a.r.pct, pb = b.r.pct === null ? -1 : b.r.pct; return pb - pa; });
-    var aktif = rows.filter(function (x) { return x.r.lapor > 0; }).length;
-    var rata = rows.length ? (rows.reduce(function (s, x) { return s + x.r.lapor; }, 0) / rows.length) : 0;
-    var better = rows.filter(function (x) { return x.r.cat === "Better"; }).length;
-    var middle = rows.filter(function (x) { return x.r.cat === "Middle"; }).length;
-    var worst = rows.filter(function (x) { return x.r.cat === "Worst"; }).length;
-    var nol = rows.filter(function (x) { return x.r.pct === 0; }).length;
+    var target = document.getElementById("srActSubDashboard");
+    if (!target) return;
 
-    var jsPDF = window.jspdf.jsPDF;
-    var doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-    var W = 595;
-    doc.setFillColor(15, 26, 48); doc.rect(0, 0, W, 60, "F");
-    doc.setTextColor(255, 255, 255); doc.setFontSize(15); doc.setFont("helvetica", "bold");
-    doc.text("DASHBOARD AKTIVITAS STATION — Service Management SJNAM", W / 2, 26, { align: "center" });
-    doc.setFontSize(9); doc.setFont("helvetica", "normal");
-    doc.text("Periode: " + mo.label + " | Generated: " + new Date().toLocaleString("id-ID"), W / 2, 44, { align: "center" });
+    "function" == typeof window.showToast && window.showToast("Membuat PDF dari tampilan dashboard...", "info");
 
-    doc.setTextColor(15, 23, 42);
-    var kpiRows = [
-      ["Station Aktif", String(aktif)], ["Rata-rata Hari Lapor", rata.toFixed(1)],
-      ["Kategori Better", String(better)], ["Kategori Middle", String(middle)],
-      ["Kategori Worst", String(worst)], ["Tidak Lapor (0%)", String(nol)]
-    ];
-    doc.autoTable({ startY: 74, head: [["KPI", "Nilai"]], body: kpiRows, styles: { fontSize: 9 }, headStyles: { fillColor: [15, 26, 48] }, margin: { left: 40, right: 40 }, tableWidth: 250 });
+    html2canvas(target, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      ignoreElements: function (el) { return el.id === "srActDashActionsRow"; }
+    }).then(function (canvas) {
+      var jsPDF = window.jspdf.jsPDF;
+      var margin = 24;
+      var doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      var pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
 
-    var pieCanvas = document.getElementById("srActPieChart"), barCanvas = document.getElementById("srActBarChart");
-    var afterKpiY = doc.lastAutoTable.finalY + 14;
-    try {
-      if (pieCanvas) { var pieImg = pieCanvas.toDataURL("image/png"); doc.addImage(pieImg, "PNG", 320, 74, 200, 130); }
-    } catch (e) { console.warn("[Dashboard PDF] pie chart embed gagal", e); }
+      doc.setFillColor(15, 26, 48); doc.rect(0, 0, pageW, 46, "F");
+      doc.setTextColor(255, 255, 255); doc.setFontSize(13); doc.setFont("helvetica", "bold");
+      doc.text("DASHBOARD AKTIVITAS STATION — Periode: " + mo.label, pageW / 2, 20, { align: "center" });
+      doc.setFontSize(8); doc.setFont("helvetica", "normal");
+      doc.text("Generated: " + new Date().toLocaleString("id-ID"), pageW / 2, 34, { align: "center" });
 
-    var tableRows = rows.map(function (x, i) { return [i + 1, x.d, fmtPct(x.r.pct), x.r.cat]; });
-    doc.autoTable({
-      startY: afterKpiY + 140, head: [["#", "Station", "Kepatuhan", "Kategori"]], body: tableRows,
-      styles: { fontSize: 8 }, headStyles: { fillColor: [15, 26, 48] },
-      didParseCell: function (data) {
-        if (data.section === "body" && data.column.index === 3) {
-          var cat = data.cell.raw;
-          var map = { Better: [228, 247, 239], Middle: [253, 243, 223], Worst: [252, 230, 231], Tutup: [238, 240, 244] };
-          if (map[cat]) data.cell.styles.fillColor = map[cat];
+      var startY = 58;
+      var drawW = pageW - margin * 2;
+      var drawH = canvas.height * drawW / canvas.width;
+      var availFirstPage = pageH - startY - margin;
+      var availOtherPage = pageH - margin * 2;
+
+      if (drawH <= availFirstPage) {
+        doc.addImage(canvas.toDataURL("image/png"), "PNG", margin, startY, drawW, drawH);
+      } else {
+        // Potong screenshot jadi beberapa halaman supaya tetap terbaca jelas
+        // (tidak diperkecil paksa jadi satu halaman yang sulit dibaca).
+        var pxPerPt = canvas.width / drawW;
+        var firstPagePx = availFirstPage * pxPerPt;
+        var otherPagePx = availOtherPage * pxPerPt;
+        var offsetPx = 0, firstSlice = true;
+        while (offsetPx < canvas.height) {
+          var sliceHeightPx = Math.min(firstSlice ? firstPagePx : otherPagePx, canvas.height - offsetPx);
+          var sliceCanvas = document.createElement("canvas");
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sliceHeightPx;
+          sliceCanvas.getContext("2d").drawImage(canvas, 0, offsetPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+          var sliceDrawH = sliceHeightPx / pxPerPt;
+          if (!firstSlice) doc.addPage();
+          doc.addImage(sliceCanvas.toDataURL("image/png"), "PNG", margin, firstSlice ? startY : margin, drawW, sliceDrawH);
+          offsetPx += sliceHeightPx;
+          firstSlice = false;
         }
       }
+      doc.save("Dashboard_Aktivitas_Station_" + mo.y + "-" + String(mo.m).padStart(2, "0") + ".pdf");
+    }).catch(function (err) {
+      console.error("[Dashboard PDF]", err);
+      "function" == typeof window.showToast && window.showToast("Gagal membuat PDF: " + err.message, "error");
     });
-    doc.save("Dashboard_Aktivitas_Station_" + mo.y + "-" + String(mo.m).padStart(2, "0") + ".pdf");
   }
 
   /* ── Export PDF/Excel untuk sub-tab Rekap Bulanan ── */

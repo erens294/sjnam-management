@@ -688,6 +688,38 @@ mencoba `switchTab` ke tab yang boleh (berhasil) dan yang tidak boleh (diblokir)
 ### Verifikasi
 Ditambahkan 2 test baru khusus untuk kedua bug di atas. **Total 199 dari 199 test lulus.**
 
+---
+
+## Update 16: Dashboard Activity Report dirapikan, Export PDF sekarang tangkapan layar
+
+### Tabel "Peringkat Kepatuhan Station" dihapus dari Dashboard
+- File: `index.html`, `js/station-report.js`.
+- Tabel ini dihapus dari tampilan Dashboard sesuai permintaan. Data yang sama tetap tersedia di
+  **Export Excel** (sheet "Peringkat Station") dan di tab **Rekap Bulanan** kalau sewaktu-waktu
+  dibutuhkan.
+
+### Grafik "Distribusi Kategori" diperbesar
+- Sebelumnya grafik pie ini disempilkan kecil (tinggi 210px) di atas grafik batang dalam 1 panel
+  yang sama. Sekarang keduanya dipisah jadi 2 panel bersebelahan yang sama besar — grafik pie naik
+  jadi 380px dan punya kolom sendiri, jadi lebih jelas dibaca dan proporsinya lebih pas dengan
+  ukuran halaman.
+
+### Export PDF Dashboard — sekarang benar-benar tangkapan layar
+- File: `js/station-report.js`.
+- Sebelumnya "Export PDF" di Dashboard membuat halaman PDF baru dari data mentah (tabel teks +
+  1 grafik kecil) — bukan tampilan Dashboard yang sesungguhnya. Sekarang diganti total: PDF berisi
+  **tangkapan layar asli** dari tampilan Dashboard Aktivitas Station (KPI card, grafik pie, grafik
+  batang, grafik tren) persis seperti yang terlihat di layar untuk bulan yang sedang dipilih.
+- Tombol Export Excel/PDF itu sendiri otomatis disembunyikan dari hasil tangkapan (tidak ikut
+  ter-screenshot).
+- Kalau tampilan Dashboard terlalu panjang untuk 1 halaman PDF, otomatis dipotong jadi beberapa
+  halaman (bukan diperkecil paksa sampai sulit dibaca).
+
+### Audit menyeluruh
+Dijalankan ulang seluruh 199 test otomatis setelah perubahan di atas — semua tetap lulus, dan
+dipastikan tidak ada lagi kode yang mencoba menulis ke tabel "Peringkat Kepatuhan Station" yang
+sudah dihapus (yang bisa menyebabkan error diam-diam di versi lama).
+
 
 
 
