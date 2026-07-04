@@ -767,11 +767,11 @@ function() {
                                 if (!_cu || "User-DRG" !== _cu.role) return;
                                 var _myUser = (_cu.username || "").toLowerCase(),
                                     _found = _mergedKar.find(function(k) {
-                                        return (k.username || "").toLowerCase() === _myUser
+                                        return (k.username || "").toLowerCase() === _myUser || (k.nip || "").toLowerCase() === _myUser
                                     }),
-                                    _newSt = _found && _found.station ? _found.station : null;
+                                    _newSt = _found && _found.station && "ALL" !== _found.station ? _found.station : null;
                                 if (window._userDrgStation === _newSt) return;
-                                window._userDrgStation = _newSt, _cu && (_cu.station = _newSt), document.querySelectorAll("[data-dg-station]").forEach(function(t) {
+                                window._userDrgStation = _newSt, window._userStationLock = _newSt, _cu && (_cu.station = _newSt), document.querySelectorAll("[data-dg-station]").forEach(function(t) {
                                     var ts = t.dataset.dgStation;
                                     ts && (_newSt && "ALL" !== _newSt ? ts === _newSt ? (t.style.opacity = "", t.style.pointerEvents = "", t.title = "") : (t.style.opacity = "0.35", t.style.pointerEvents = "none", t.title = "ALL" === ts ? "Akses terbatas" : "Akses terbatas ke station " + _newSt) : (t.style.opacity = "", t.style.pointerEvents = "", t.title = ""))
                                 }), "object" == typeof window.DRYGOODS && "function" == typeof window.DRYGOODS.renderAll && setTimeout(function() {
@@ -897,7 +897,9 @@ function() {
     }
     setTimeout(async () => {
         neonConfigured() && (console.log("[Smart-Sync] Cek perubahan data dari Firestore (hanya pull jika ada perubahan)..."), await cloudPull(!0))
-    }, 1200), window.cloudConfig = cloudConfig, window.stampRecord = stampRecord, window.stampArray = function(arr, action = "update") {
+    }, 1200), setInterval(async () => {
+        window._cloudPullInProgress || neonConfigured() && window.currentUser && await cloudPull(!0)
+    }, 25000), window.cloudConfig = cloudConfig, window.stampRecord = stampRecord, window.stampArray = function(arr, action = "update") {
         return Array.isArray(arr) ? arr.map(item => item._updatedAt ? item : stampRecord(item, action)) : arr
     }, window.detectConflict = detectConflict, window.MODULE_KEYS = {
         data: "sjn_delay_pro_v4",

@@ -70,3 +70,57 @@
 - Untuk user dengan station `ALL` (termasuk Admin/Master), tombol tetap berfungsi normal seperti
   sebelumnya.
 
+---
+
+## Update 3: Perbaikan akar masalah sinkronisasi station + redesain Activity Report
+
+### Bug akar masalah ditemukan: lookup karyawan di dalam cloudPull tidak punya fallback NIP
+- File: `js/shared-utils.js` (diperbaiki).
+- Selain 2 titik yang sudah diperbaiki di Update 2, ternyata ada **satu lagi titik utama** —
+  di dalam fungsi `cloudPull()` sendiri (bukan cuma di file patch) — yang mendeteksi ulang station
+  User-DRG setiap kali data ditarik dari cloud. Titik ini mencari data karyawan **hanya berdasarkan
+  `username`**, tanpa fallback ke NIP seperti fungsi-fungsi lain di aplikasi. Kalau pencarian itu
+  gagal cocok, station dianggap kosong/tidak terkunci — makanya tab station & tombol "+ Station"
+  tampil seperti tidak ada pembatasan sama sekali, walau data karyawannya sudah benar diubah ke
+  station tertentu (SUB, dsb.) di Admin.
+- Diperbaiki agar lookup ini konsisten dengan bagian lain: cocok lewat `username` **atau** `NIP`.
+
+### Tambahan: auto-sync berkala (bukan cuma sekali saat halaman dibuka)
+- Sebelumnya, pengambilan data terbaru dari cloud (Smart-Sync) hanya berjalan **sekali**, ± 1 detik
+  setelah halaman pertama kali dibuka. Kalau Admin mengubah data di device/browser lain sementara
+  user lain sudah lebih dulu login dan tidak reload halaman, perubahan itu baru akan terlihat kalau
+  user tersebut reload manual.
+- Ditambahkan pengambilan data otomatis berkala **setiap 25 detik** (selama Firebase terkonfigurasi
+  & user sedang login), supaya perubahan seperti "station karyawan diubah di Admin" ikut terlihat
+  di sesi user lain tanpa perlu logout/login atau reload manual — cukup tunggu sebentar.
+- Dengan 2 perbaikan di atas + perbaikan Update 2 sebelumnya, sekarang ada 4 lapis mekanisme yang
+  saling menopang untuk menjaga tab station & tombol "+ Station" selalu sesuai data karyawan
+  terbaru: refresh di dalam `cloudPull()`, hook tambahan di `patch-arsitektur-v3.js`, polling lokal
+  5 detik, dan auto-sync berkala 25 detik.
+
+### Activity Report — didesain ulang mengikuti model "Dashboard Distrik App" yang dilampirkan
+- File: `index.html` (markup tab Activity Report diganti total), `js/station-report.js` (logika
+  dashboard baru).
+- Tab Activity Report sekarang punya **3 sub-tab**, meniru gaya dashboard "Denyut Distrik" yang
+  dilampirkan:
+  1. **📊 Dashboard** — tampilan utama: 6 KPI card (Distrik Aktif, Rata-rata Hari Lapor, Kategori
+     Better/Middle/Worst, Tidak Lapor), leaderboard peringkat kepatuhan per distrik, chart pie
+     (distribusi kategori), chart bar horizontal (kepatuhan % per distrik, diurutkan), dan chart
+     tren garis (rata-rata kepatuhan seluruh distrik antar bulan). Ada month-picker (◀ ▶ + dropdown
+     bulan) dan "pulse strip" — deretan titik warna kecil di kanan atas yang menunjukkan status
+     kepatuhan tiap distrik sekilas pandang.
+  2. **✍️ Input Data** — bentuk pengisian harian yang sudah ada sebelumnya tetap dipertahankan
+     (pilih tanggal → klik status Lapor/Tidak Lapor/Tutup per distrik, satu klik langsung
+     tersimpan) plus riwayat & pencarian. Ini tetap satu-satunya tempat input manual.
+  3. **🗓️ Rekap Bulanan** — tabel rekap per distrik x 12 bulan dalam satu tahun (bisa pilih tahun
+     via tab tahun), dengan 2 mode tampilan: **Kepatuhan %** (sel diwarnai sesuai kategori) atau
+     **Jumlah Hari Lapor**.
+- Kategori kepatuhan dihitung sama seperti pola pada file Excel/Dashboard yang dilampirkan:
+  **Better ≥ 87%**, **Middle 53–86%**, **Worst < 53%** (dihitung dari hari Lapor dibagi hari
+  efektif dalam bulan — hari berstatus Tutup dikeluarkan dari pembagi). Kalau seluruh hari dalam
+  sebulan berstatus Tutup, distrik itu masuk kategori **Tutup** (bukan Worst).
+- Semua chart menggunakan Chart.js yang sudah termuat di aplikasi (tidak menambah library baru).
+- Data & skema penyimpanan **tidak berubah** — masih pakai data Input Data yang sama, jadi tidak
+  ada migrasi/kehilangan data.
+
+

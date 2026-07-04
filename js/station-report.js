@@ -72,10 +72,11 @@
   }
 
   /* ============================== ACTIVITY REPORT ============================== */
+  var MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  var CAT_COLOR = { Better: "#17A673", Middle: "#D9970B", Worst: "#DC3A45", Tutup: "#94A0B4" };
+
   function getActivityData() { return load(LS_ACT, []); }
   function saveActivityData(list) { persist(LS_ACT, list); }
-
-  function actKeyOf(date, distrik) { return date + "|" + distrik; }
 
   function findActEntry(date, distrik) {
     var list = getActivityData();
@@ -97,6 +98,209 @@
     if (idx > -1) list[idx] = entry; else list.push(entry);
     saveActivityData(list);
     return entry;
+  }
+
+  function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+
+  function computeDistrikMonth(distrik, y, m) {
+    var mm = String(m).padStart(2, "0"), prefix = y + "-" + mm;
+    var lapor = 0, tutup = 0;
+    getActivityData().forEach(function (r) {
+      if (r.distrik !== distrik || !r.tanggal || r.tanggal.slice(0, 7) !== prefix) return;
+      if (r.status === "Lapor") lapor++; else if (r.status === "Tutup") tutup++;
+    });
+    var dim = daysInMonth(y, m), eff = dim - tutup, pct = eff <= 0 ? null : lapor / eff, cat = "Tutup";
+    if (pct !== null) cat = pct >= 0.87 ? "Better" : pct >= 0.53 ? "Middle" : "Worst";
+    return { lapor: lapor, tutup: tutup, pct: pct, cat: cat };
+  }
+
+  function fmtPct(p) { return p === null ? "—" : Math.round(p * 100) + "%"; }
+
+  // ── Injeksi CSS terpisah untuk tampilan model dashboard ──
+  function ensureActivityStyles() {
+    if (document.getElementById("srActStyles")) return;
+    var css = ".sr-act-app{}" +
+      ".sr-act-kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}" +
+      "@media(max-width:1024px){.sr-act-kpi-grid{grid-template-columns:repeat(3,1fr)}}" +
+      "@media(max-width:640px){.sr-act-kpi-grid{grid-template-columns:repeat(2,1fr)}}" +
+      ".sr-act-kpi{background:var(--card-bg,#fff);border:1px solid var(--card-border,rgba(0,0,0,.08));border-radius:12px;overflow:hidden}" +
+      ".sr-act-kpi .lbl{font-size:9.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#fff;padding:8px 10px}" +
+      ".sr-act-kpi .val{font-size:24px;font-weight:800;padding:12px 10px 14px;text-align:center;color:var(--text-primary,#0f172a)}" +
+      ".sr-act-kpi.navy .lbl{background:#0F1A30}.sr-act-kpi.navy3 .lbl{background:#1E2E52}.sr-act-kpi.green .lbl{background:#17A673}.sr-act-kpi.amber .lbl{background:#D9970B}.sr-act-kpi.red .lbl{background:#DC3A45}.sr-act-kpi.gray .lbl{background:#94A0B4}" +
+      ".sr-act-panels{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}" +
+      "@media(max-width:900px){.sr-act-panels{grid-template-columns:1fr}}" +
+      ".sr-act-panel{background:var(--card-bg,#fff);border:1px solid var(--card-border,rgba(0,0,0,.08));border-radius:12px;padding:16px 18px 14px;margin-bottom:16px}" +
+      ".sr-act-panel h3{font-size:13px;margin:0 0 10px;font-weight:700;color:var(--text-primary,#0f172a)}" +
+      ".sr-act-panel-full{grid-column:1/-1}" +
+      ".sr-act-tbl-scroll{max-height:460px;overflow:auto;border:1px solid var(--card-border,rgba(0,0,0,.08));border-radius:8px}" +
+      ".sr-act-tbl-scroll table{width:100%;border-collapse:collapse;font-size:12.5px}" +
+      ".sr-act-tbl-scroll thead th{background:#0F1A30;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:8px 10px;text-align:left;position:sticky;top:0}" +
+      ".sr-act-tbl-scroll tbody td{padding:7px 10px;border-bottom:1px solid var(--card-border,rgba(0,0,0,.08));color:var(--text-primary,#0f172a)}" +
+      ".sr-act-tbl-scroll tbody tr:hover{background:rgba(59,130,246,.07)}" +
+      ".sr-act-badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700}" +
+      ".sr-act-badge.Better{background:#E4F7EF;color:#17A673}.sr-act-badge.Middle{background:#FDF3DF;color:#D9970B}.sr-act-badge.Worst{background:#FCE6E7;color:#DC3A45}.sr-act-badge.Tutup{background:#EEF0F4;color:#6B7688}" +
+      ".sr-act-pulse{display:flex;gap:2px;align-items:center}.sr-act-pulse .dot{width:6px;height:15px;border-radius:2px;opacity:.9}" +
+      ".sr-act-monthpicker{display:flex;align-items:center;gap:6px;background:var(--input-bg,#f8fafc);border:1px solid var(--input-border,#e2e8f0);border-radius:8px;padding:5px 6px}" +
+      ".sr-act-monthpicker select{border:none;background:transparent;font-weight:600;font-size:12.5px;color:var(--text-primary,#0f172a);outline:0;cursor:pointer}" +
+      ".sr-act-monthpicker button{border:none;background:transparent;cursor:pointer;color:var(--text-secondary,#64748b);width:20px;height:20px;border-radius:5px;font-size:13px}" +
+      ".sr-act-monthpicker button:hover{background:var(--card-border,rgba(0,0,0,.08))}" +
+      ".sr-act-seg{display:flex;gap:4px;background:var(--input-bg,#f1f5f9);border-radius:8px;padding:3px}" +
+      ".sr-act-seg button{border:none;background:transparent;padding:6px 12px;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;color:var(--text-secondary,#64748b)}" +
+      ".sr-act-seg button.active{background:#0F1A30;color:#fff}" +
+      ".sr-act-year-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px}" +
+      ".sr-act-year-tabs button{border:1px solid var(--card-border,rgba(0,0,0,.08));background:var(--card-bg,#fff);padding:5px 12px;font-size:12px;font-weight:600;border-radius:7px;cursor:pointer;color:var(--text-primary,#0f172a)}" +
+      ".sr-act-year-tabs button.active{background:#0F1A30;color:#fff;border-color:#0F1A30}";
+    var style = document.createElement("style");
+    style.id = "srActStyles";
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  // ── Bulan yang tersedia (dibangun dari tahun-tahun yang muncul di data + tahun berjalan) ──
+  var srActMonths = [], srActCurMonthIdx = 0, srActRekapMode = "pct", srActRekapYear = null, srActCurrentSubtab = "dashboard";
+  var srActPieChart, srActBarChart, srActTrendChart;
+
+  function rebuildActMonths(keepSelection) {
+    var years = new Set();
+    getActivityData().forEach(function (r) { if (r.tanggal) years.add(parseInt(r.tanggal.slice(0, 4), 10)); });
+    var now = new Date();
+    years.add(now.getFullYear());
+    var yearsArr = Array.from(years).sort(function (a, b) { return a - b; });
+    var prevSel = keepSelection && srActMonths[srActCurMonthIdx] ? srActMonths[srActCurMonthIdx] : null;
+    srActMonths = [];
+    yearsArr.forEach(function (y) {
+      for (var m = 1; m <= 12; m++) srActMonths.push({ y: y, m: m, label: MONTH_NAMES[m - 1] + " " + y });
+    });
+    if (prevSel) {
+      var idx = srActMonths.findIndex(function (x) { return x.y === prevSel.y && x.m === prevSel.m; });
+      srActCurMonthIdx = idx > -1 ? idx : srActMonths.length - 1;
+    } else {
+      var ci = srActMonths.findIndex(function (x) { return x.y === now.getFullYear() && x.m === now.getMonth() + 1; });
+      srActCurMonthIdx = ci > -1 ? ci : srActMonths.length - 1;
+    }
+    if (!srActRekapYear) srActRekapYear = srActMonths.length ? srActMonths[srActCurMonthIdx].y : now.getFullYear();
+  }
+
+  function renderMonthSelect() {
+    var sel = document.getElementById("srActMonthSelect");
+    if (!sel) return;
+    sel.innerHTML = srActMonths.map(function (x, i) { return '<option value="' + i + '">' + x.label + "</option>"; }).join("");
+    sel.value = srActCurMonthIdx;
+  }
+
+  function renderPulseStrip() {
+    var el = document.getElementById("srActPulseStrip");
+    if (!el || !srActMonths[srActCurMonthIdx]) return;
+    var y = srActMonths[srActCurMonthIdx].y, m = srActMonths[srActCurMonthIdx].m;
+    el.innerHTML = MASTER_DISTRIK.map(function (d) {
+      var r = computeDistrikMonth(d, y, m);
+      return '<div class="dot" style="background:' + CAT_COLOR[r.cat] + '" title="' + esc(d) + ": " + fmtPct(r.pct) + '"></div>';
+    }).join("");
+  }
+
+  function renderDashboard() {
+    if (!srActMonths[srActCurMonthIdx]) return;
+    var y = srActMonths[srActCurMonthIdx].y, m = srActMonths[srActCurMonthIdx].m;
+    var rows = MASTER_DISTRIK.map(function (d) { return { distrik: d, r: computeDistrikMonth(d, y, m) }; });
+
+    var aktif = rows.filter(function (x) { return x.r.lapor > 0; }).length;
+    var rata = rows.length ? (rows.reduce(function (s, x) { return s + x.r.lapor; }, 0) / rows.length) : 0;
+    var better = rows.filter(function (x) { return x.r.cat === "Better"; }).length;
+    var middle = rows.filter(function (x) { return x.r.cat === "Middle"; }).length;
+    var worst = rows.filter(function (x) { return x.r.cat === "Worst"; }).length;
+    var tutupN = rows.filter(function (x) { return x.r.cat === "Tutup"; }).length;
+    var nol = rows.filter(function (x) { return x.r.pct === 0; }).length;
+
+    var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    set("srActKpiAktif", aktif);
+    set("srActKpiRata", rata.toFixed(1));
+    set("srActKpiBetter", better);
+    set("srActKpiMiddle", middle);
+    set("srActKpiWorst", worst);
+    set("srActKpiNol", nol);
+
+    var sorted = rows.slice().sort(function (a, b) {
+      var pa = a.r.pct === null ? -1 : a.r.pct, pb = b.r.pct === null ? -1 : b.r.pct;
+      return pb - pa;
+    });
+    var lb = document.getElementById("srActLeaderboardBody");
+    if (lb) {
+      lb.innerHTML = sorted.map(function (x, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.distrik) + '</td><td>' + fmtPct(x.r.pct) +
+          '</td><td><span class="sr-act-badge ' + x.r.cat + '">' + x.r.cat + '</span></td></tr>';
+      }).join("");
+    }
+
+    if (typeof Chart === "undefined") return;
+
+    var pieCtx = document.getElementById("srActPieChart");
+    if (srActPieChart) srActPieChart.destroy();
+    if (pieCtx) srActPieChart = new Chart(pieCtx, {
+      type: "doughnut",
+      data: { labels: ["Better", "Middle", "Worst", "Tutup"], datasets: [{ data: [better, middle, worst, tutupN], backgroundColor: [CAT_COLOR.Better, CAT_COLOR.Middle, CAT_COLOR.Worst, CAT_COLOR.Tutup], borderWidth: 0 }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } }, datalabels: { display: !1 } } }
+    });
+
+    var barCtx = document.getElementById("srActBarChart");
+    if (srActBarChart) srActBarChart.destroy();
+    if (barCtx) {
+      var barLabels = sorted.map(function (x) { return x.distrik; });
+      var barVals = sorted.map(function (x) { return x.r.pct === null ? 0 : Math.round(x.r.pct * 100); });
+      var barColors = sorted.map(function (x) { return CAT_COLOR[x.r.cat]; });
+      srActBarChart = new Chart(barCtx, {
+        type: "bar",
+        data: { labels: barLabels, datasets: [{ data: barVals, backgroundColor: barColors, borderRadius: 3, barThickness: 10 }] },
+        options: { indexAxis: "y", maintainAspectRatio: false, scales: { x: { max: 100, ticks: { callback: function (v) { return v + "%"; }, font: { size: 9 } }, grid: { color: "rgba(148,163,184,.15)" } }, y: { ticks: { font: { size: 10 } }, grid: { display: !1 } } }, plugins: { legend: { display: !1 }, datalabels: { display: !1 } } }
+      });
+    }
+
+    var lastRecMonth = "000000";
+    getActivityData().forEach(function (r) { if (r.tanggal) { var key = r.tanggal.slice(0, 7).replace("-", ""); if (key > lastRecMonth) lastRecMonth = key; } });
+    var trendCtx = document.getElementById("srActTrendChart");
+    if (srActTrendChart) srActTrendChart.destroy();
+    if (trendCtx) {
+      var tLabels = [], tVals = [];
+      srActMonths.forEach(function (mo) {
+        var key = mo.y + String(mo.m).padStart(2, "0");
+        tLabels.push(MONTH_NAMES[mo.m - 1].slice(0, 3) + " '" + String(mo.y).slice(2));
+        if (key > lastRecMonth) { tVals.push(null); return; }
+        var vals = MASTER_DISTRIK.map(function (d) { return computeDistrikMonth(d, mo.y, mo.m).pct; }).filter(function (v) { return v !== null; });
+        tVals.push(vals.length ? Math.round(100 * vals.reduce(function (s, v) { return s + v; }, 0) / vals.length) : null);
+      });
+      srActTrendChart = new Chart(trendCtx, {
+        type: "line",
+        data: { labels: tLabels, datasets: [{ data: tVals, borderColor: "#0F1A30", backgroundColor: "rgba(15,26,48,.1)", fill: !0, tension: .25, pointRadius: 2, spanGaps: !1 }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { display: !1 }, datalabels: { display: !1 } }, scales: { y: { min: 0, max: 100, ticks: { callback: function (v) { return v + "%"; }, font: { size: 9 } }, grid: { color: "rgba(148,163,184,.15)" } }, x: { ticks: { font: { size: 8 }, maxRotation: 0, autoSkip: !0, maxTicksLimit: 14 }, grid: { display: !1 } } } }
+      });
+    }
+  }
+
+  function renderYearTabs() {
+    var years = Array.from(new Set(srActMonths.map(function (x) { return x.y; }))).sort(function (a, b) { return a - b; });
+    var el = document.getElementById("srActYearTabs");
+    if (!el) return;
+    el.innerHTML = years.map(function (y) { return '<button type="button" data-sr-act-year="' + y + '" class="' + (y === srActRekapYear ? "active" : "") + '">' + y + "</button>"; }).join("");
+  }
+
+  function renderRekap() {
+    renderYearTabs();
+    var monthsInYear = srActMonths.filter(function (x) { return x.y === srActRekapYear; });
+    var head = document.getElementById("srActRekapHeadRow");
+    if (head) head.innerHTML = "<th>Distrik</th>" + monthsInYear.map(function (mo) { return "<th>" + MONTH_NAMES[mo.m - 1].slice(0, 3) + "</th>"; }).join("");
+    var body = document.getElementById("srActRekapBody");
+    if (body) body.innerHTML = MASTER_DISTRIK.map(function (d) {
+      var cells = monthsInYear.map(function (mo) {
+        var r = computeDistrikMonth(d, mo.y, mo.m);
+        if (srActRekapMode === "count") return '<td>' + (r.pct === null ? "—" : r.lapor) + "</td>";
+        var bg = "transparent", fg = "inherit";
+        if (r.pct !== null) {
+          bg = r.cat === "Better" ? "#E4F7EF" : r.cat === "Middle" ? "#FDF3DF" : "#FCE6E7";
+          fg = CAT_COLOR[r.cat];
+        }
+        return '<td style="background:' + bg + ";color:" + fg + ';font-weight:600">' + fmtPct(r.pct) + "</td>";
+      }).join("");
+      return "<tr><td>" + esc(d) + "</td>" + cells + "</tr>";
+    }).join("");
   }
 
   function renderActivityGrid() {
@@ -157,7 +361,71 @@
     }).join("");
   }
 
+  function switchActSubtab(name) {
+    srActCurrentSubtab = name;
+    document.querySelectorAll("[data-sract-subtab]").forEach(function (b) {
+      var on = b.dataset.sractSubtab === name;
+      b.classList.toggle("active", on);
+      b.classList.toggle("border-blue-600", on);
+      b.classList.toggle("text-blue-600", on);
+      b.classList.toggle("border-transparent", !on);
+      b.classList.toggle("text-slate-500", !on);
+    });
+    var panes = { dashboard: "srActSubDashboard", input: "srActSubInput", rekap: "srActSubRekap" };
+    Object.keys(panes).forEach(function (k) {
+      var el = document.getElementById(panes[k]);
+      if (el) el.classList.toggle("hidden", k !== name);
+    });
+    var titles = {
+      dashboard: ["📋 Dashboard Aktivitas Distrik", "Terhubung otomatis ke Input Data"],
+      input: ["✍️ Input Data Harian", "Satu-satunya tempat input manual"],
+      rekap: ["🗓️ Rekap Bulanan", "Ringkasan 12 bulan per tahun"]
+    };
+    var t = titles[name];
+    var titleEl = document.getElementById("srActTopTitle"), subEl = document.getElementById("srActTopSub");
+    if (t && titleEl) titleEl.textContent = t[0];
+    if (t && subEl) subEl.textContent = t[1];
+    rebuildActMonths(true);
+    renderMonthSelect();
+    renderPulseStrip();
+    if (name === "dashboard") renderDashboard();
+    else if (name === "input") renderActivityGrid();
+    else if (name === "rekap") renderRekap();
+  }
+
   function initActivityReportEvents() {
+    ensureActivityStyles();
+    rebuildActMonths(false);
+
+    document.querySelectorAll("[data-sract-subtab]").forEach(function (b) {
+      b.addEventListener("click", function () { switchActSubtab(b.dataset.sractSubtab); });
+    });
+
+    document.getElementById("srActMonthSelect")?.addEventListener("change", function (e) {
+      srActCurMonthIdx = parseInt(e.target.value, 10) || 0;
+      renderPulseStrip(); renderDashboard();
+    });
+    document.getElementById("srActPrevMonth")?.addEventListener("click", function () {
+      if (srActCurMonthIdx > 0) { srActCurMonthIdx--; renderMonthSelect(); renderPulseStrip(); renderDashboard(); }
+    });
+    document.getElementById("srActNextMonth")?.addEventListener("click", function () {
+      if (srActCurMonthIdx < srActMonths.length - 1) { srActCurMonthIdx++; renderMonthSelect(); renderPulseStrip(); renderDashboard(); }
+    });
+
+    document.getElementById("srActRekapSeg")?.addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-mode]");
+      if (!btn) return;
+      srActRekapMode = btn.dataset.mode;
+      document.querySelectorAll("#srActRekapSeg button").forEach(function (b) { b.classList.toggle("active", b === btn); });
+      renderRekap();
+    });
+    document.getElementById("srActYearTabs")?.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-sr-act-year]");
+      if (!btn) return;
+      srActRekapYear = parseInt(btn.dataset.srActYear, 10);
+      renderRekap();
+    });
+
     var dateInput = document.getElementById("srActDate");
     if (dateInput && !dateInput._srBound) {
       dateInput._srBound = true;
@@ -175,6 +443,7 @@
       var noteInput = document.querySelector('[data-sr-act-note="' + CSS.escape(distrik) + '"]');
       upsertActEntry(date, distrik, status, noteInput ? noteInput.value.trim() : "");
       renderActivityGrid();
+      rebuildActMonths(true);
       "function" == typeof window.showToast && window.showToast(distrik + " → " + status, "success");
     });
     document.getElementById("srActTableBody")?.addEventListener("change", function (e) {
@@ -192,6 +461,7 @@
       var list = getActivityData().filter(function (r) { return r.id !== delId; });
       saveActivityData(list);
       renderActivityGrid();
+      rebuildActMonths(true);
       "function" == typeof window.showToast && window.showToast("Data dihapus", "success");
     });
     document.getElementById("srActHistorySearch")?.addEventListener("input", renderActivityHistory);
@@ -207,6 +477,9 @@
       XLSX.utils.book_append_sheet(wb, ws, "Activity Report");
       XLSX.writeFile(wb, "Activity_Report_" + todayStr() + ".xlsx");
     });
+
+    // Tampilan awal: Dashboard
+    switchActSubtab("dashboard");
   }
 
   /* ============================== CHECK-IN REPORT ============================== */
@@ -368,10 +641,10 @@
 
   function onTabOpen(tab) {
     if (tab === "station-activity") {
-      if (!initedAct) { initActivityReportEvents(); initedAct = true; }
       var d = document.getElementById("srActDate");
       if (d && !d.value) d.value = todayStr();
-      renderActivityGrid();
+      if (!initedAct) { initActivityReportEvents(); initedAct = true; }
+      else switchActSubtab(srActCurrentSubtab);
     }
     if (tab === "station-checkin") {
       if (!initedCi) { initCheckinReportEvents(); initedCi = true; }
