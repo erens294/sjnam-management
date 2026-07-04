@@ -635,6 +635,59 @@ mencoba `switchTab` ke tab yang boleh (berhasil) dan yang tidak boleh (diblokir)
 `switchTab` sungguhan, plus cek visibilitas grup sidebar. **Total 195 dari 195 test lulus**
 (179 test lama + 2 baru untuk role ini + beberapa test lama yang saya sesuaikan jumlah role-nya).
 
+---
+
+## Update 15: 3 bug nyata ditemukan & diperbaiki dari laporan Anda
+
+### Bug #1: Tulisan aneh muncul di bagian bawah layar (`ISTRASI v1 =====...`)
+- File: `index.html`.
+- **Akar masalah:** ada 1 baris komentar JavaScript (`// ============= SISTEM ADMINISTRASI v1 =============...`)
+  yang tertinggal **di luar tag `<script>`** — sisa dari refactor lama yang memindahkan logika
+  auth/login ke `js/auth.js`, tapi komentarnya sendiri tidak ikut dibersihkan. Karena tidak dibungkus
+  `<script>`, browser membacanya sebagai teks biasa dan menampilkannya apa adanya di halaman.
+- **Sudah diperbaiki:** baris itu dihapus. Ini bug lama yang sudah ada sejak sebelum sesi ini
+  dimulai — bukan sesuatu yang baru muncul, hanya baru ketahuan sekarang.
+
+### Bug #2: Import data Kartu Stok Drygoods "muncul lalu langsung hilang", termasuk saat dicek Admin
+- File: `js/drygoods.js`, `js/shared-utils.js`.
+- **Akar masalah — race condition sinkronisasi cloud:** saat import Excel (atau tambah transaksi
+  manual) berhasil, data disimpan ke local storage lalu dijadwalkan dikirim ke cloud (Firestore)
+  dengan jeda ~800ms. Kalau dalam jeda itu ada proses **tarik data dari cloud** (auto-sync
+  berkala, atau device lain), Firestore masih menyimpan versi LAMA (karena data baru belum sempat
+  terkirim) — dan versi lama itu **menimpa balik** data yang baru saja diimport, tanpa
+  pengecekan apa pun. Ini menjelaskan persis gejala yang Anda lihat: data sempat muncul (berhasil
+  tersimpan sesaat), lalu hilang (tertimpa tarikan dari cloud), dan Admin pun tidak melihatnya
+  karena data yang sama sudah ikut hilang di local storage.
+  Kode untuk `rolePerms` (Atur Akses Role) sebenarnya SUDAH punya perlindungan untuk masalah
+  serupa ini sejak awal — tapi Drygoods belum kebagian perlindungan yang sama.
+- **Sudah diperbaiki:** ditambahkan "penanda belum-terkirim" (dirty flag) khusus Drygoods,
+  meniru pola yang sudah ada untuk `rolePerms`. Setiap kali data Drygoods disimpan secara lokal,
+  sistem menandai "belum terkirim ke cloud" selama beberapa detik — tarikan data dari cloud yang
+  datang dalam jendela waktu itu akan **dilewati**, bukan menimpa. Begitu pengiriman selesai,
+  tarikan dari cloud kembali berjalan normal seperti biasa.
+
+### Bug #3: Elyn sudah dipindah ke station DJJ, tapi Drygoods masih menunjukkan "All"
+- File: `js/drygoods.js`.
+- **Kemungkinan penyebab yang ditemukan & diperbaiki:** pencarian data karyawan Elyn di 3 titik
+  kode Drygoods memakai `.find()` — yang mengambil kecocokan PERTAMA di daftar. Kalau pernah ada
+  percobaan hapus-lalu-tambah-ulang sebelumnya dan sampai ada 2 baris data untuk username yang
+  sama (satu lama tanpa station yang benar, satu baru dengan station DJJ), `.find()` bisa saja
+  mengambil baris LAMA duluan tergantung urutan di larik — membuat station terlihat kosong/ALL
+  padahal data yang benar (DJJ) sebenarnya sudah ada.
+- **Sudah diperbaiki:** pencarian sekarang mengambil SEMUA baris yang cocok untuk username/NIP
+  tersebut, lalu memilih yang **paling baru diubah** (`updatedAt`) — bukan sekadar yang pertama
+  ditemukan.
+- **Catatan jujur:** saya tidak bisa memastikan 100% ini akar masalah PERSIS yang Anda alami tanpa
+  akses langsung ke data Anda, tapi ini cocok dengan gejala yang dijelaskan dan merupakan perbaikan
+  yang aman/bermanfaat terlepas dari penyebab pastinya. Kalau setelah update ini + hard refresh
+  Elyn MASIH menunjukkan "All", kemungkinan besar penyebabnya adalah **deployment yang belum
+  sepenuhnya konsisten di GitHub Pages Anda** (mengingat 3 masalah upload yang kita temukan
+  sebelumnya: folder salah, config.js hilang, file lama tidak terhapus) — coba pastikan dulu semua
+  file di repo GitHub Anda benar-benar versi terbaru sebelum menyimpulkan ini bug kode.
+
+### Verifikasi
+Ditambahkan 2 test baru khusus untuk kedua bug di atas. **Total 199 dari 199 test lulus.**
+
 
 
 
