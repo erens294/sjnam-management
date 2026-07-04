@@ -2,12 +2,13 @@
    SJNAM — STATION REPORT
    ================================================================
    Grup tab baru: Activity Report, Check-In Report, First Bag Last
-   Bag Report. Daftar distrik pada Activity Report diambil dari
-   Master Distrik (28 distrik) sesuai file Excel
+   Bag Report. Daftar station pada Activity Report diambil dari
+   Master Distrik (28 station default) sesuai file Excel
    "Distrik_Activity_Dashboard2.xlsx" yang dilampirkan — supaya
    pengisian tetap konsisten dengan skema pelaporan yang sudah ada
-   (Tanggal, Distrik, Status: Lapor / Tidak Lapor / Tutup,
-   Keterangan opsional).
+   (Tanggal, Station, Status: Lapor / Tidak Lapor / Tutup,
+   Keterangan opsional). Daftar 28 station default ini bisa ditambah
+   oleh user lewat tombol "+ Tambah Station" di sub-tab Input Data.
 
    Semua data disimpan di localStorage & disinkronkan lewat
    triggerAutoSync() seperti modul lain (mengikuti pola stok
@@ -45,7 +46,7 @@
     try { return JSON.parse(localStorage.getItem(key) || "null") || fallback; } catch (e) { return fallback; }
   }
 
-  // ── Master Distrik (28 distrik, sesuai Master Distrik pada file Excel) ──
+  // ── Master Station (28 station default, sesuai Master Distrik pada file Excel) ──
   var MASTER_DISTRIK = [
     "Ujung Pandang (UPG)", "Sorong (SOQ)", "Jayapura (DJJ)", "Manado (MDC)",
     "Biak (BIK)", "Timika (TIM)", "Nabire (NBX)", "Wamena (WMX)",
@@ -56,6 +57,33 @@
     "Koepang (KOE)", "Maumere (MOF)", "Tambolaka (TMC)", "Ternate (TTE)",
     "Morowali (MOH)"
   ];
+  var LS_ACT_STATIONS = "sjnam_station_activity_master_v1";
+
+  // Daftar station yang benar-benar dipakai di seluruh modul Activity Report.
+  // Mulai dari 28 default di atas, tapi bisa ditambah/dihapus oleh user lewat
+  // tombol "+ Tambah Station" di sub-tab Input Data — tersimpan terpisah dari
+  // daftar default supaya tidak perlu mengubah kode untuk menambah station.
+  var STATION_LIST = (function () {
+    var saved = load(LS_ACT_STATIONS, null);
+    return (Array.isArray(saved) && saved.length) ? saved : MASTER_DISTRIK.slice();
+  })();
+  function saveStationList() { persist(LS_ACT_STATIONS, STATION_LIST); }
+  function addStationToList(name) {
+    name = (name || "").trim();
+    if (!name) return { ok: false, msg: "Nama station tidak boleh kosong" };
+    if (STATION_LIST.some(function (s) { return s.toLowerCase() === name.toLowerCase(); })) {
+      return { ok: false, msg: "Station tersebut sudah ada di daftar" };
+    }
+    STATION_LIST.push(name);
+    STATION_LIST.sort(function (a, b) { return a.localeCompare(b); });
+    saveStationList();
+    return { ok: true };
+  }
+  function removeStationFromList(name) {
+    STATION_LIST = STATION_LIST.filter(function (s) { return s !== name; });
+    saveStationList();
+  }
+
   var STATUS_OPTS = ["Lapor", "Tidak Lapor", "Tutup"];
   var STATUS_CLASS = {
     "Lapor": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
@@ -192,7 +220,7 @@
     var el = document.getElementById("srActPulseStrip");
     if (!el || !srActMonths[srActCurMonthIdx]) return;
     var y = srActMonths[srActCurMonthIdx].y, m = srActMonths[srActCurMonthIdx].m;
-    el.innerHTML = MASTER_DISTRIK.map(function (d) {
+    el.innerHTML = STATION_LIST.map(function (d) {
       var r = computeDistrikMonth(d, y, m);
       return '<div class="dot" style="background:' + CAT_COLOR[r.cat] + '" title="' + esc(d) + ": " + fmtPct(r.pct) + '"></div>';
     }).join("");
@@ -201,7 +229,7 @@
   function renderDashboard() {
     if (!srActMonths[srActCurMonthIdx]) return;
     var y = srActMonths[srActCurMonthIdx].y, m = srActMonths[srActCurMonthIdx].m;
-    var rows = MASTER_DISTRIK.map(function (d) { return { distrik: d, r: computeDistrikMonth(d, y, m) }; });
+    var rows = STATION_LIST.map(function (d) { return { distrik: d, r: computeDistrikMonth(d, y, m) }; });
 
     var aktif = rows.filter(function (x) { return x.r.lapor > 0; }).length;
     var rata = rows.length ? (rows.reduce(function (s, x) { return s + x.r.lapor; }, 0) / rows.length) : 0;
@@ -264,7 +292,7 @@
         var key = mo.y + String(mo.m).padStart(2, "0");
         tLabels.push(MONTH_NAMES[mo.m - 1].slice(0, 3) + " '" + String(mo.y).slice(2));
         if (key > lastRecMonth) { tVals.push(null); return; }
-        var vals = MASTER_DISTRIK.map(function (d) { return computeDistrikMonth(d, mo.y, mo.m).pct; }).filter(function (v) { return v !== null; });
+        var vals = STATION_LIST.map(function (d) { return computeDistrikMonth(d, mo.y, mo.m).pct; }).filter(function (v) { return v !== null; });
         tVals.push(vals.length ? Math.round(100 * vals.reduce(function (s, v) { return s + v; }, 0) / vals.length) : null);
       });
       srActTrendChart = new Chart(trendCtx, {
@@ -286,9 +314,9 @@
     renderYearTabs();
     var monthsInYear = srActMonths.filter(function (x) { return x.y === srActRekapYear; });
     var head = document.getElementById("srActRekapHeadRow");
-    if (head) head.innerHTML = "<th>Distrik</th>" + monthsInYear.map(function (mo) { return "<th>" + MONTH_NAMES[mo.m - 1].slice(0, 3) + "</th>"; }).join("");
+    if (head) head.innerHTML = "<th>Station</th>" + monthsInYear.map(function (mo) { return "<th>" + MONTH_NAMES[mo.m - 1].slice(0, 3) + "</th>"; }).join("");
     var body = document.getElementById("srActRekapBody");
-    if (body) body.innerHTML = MASTER_DISTRIK.map(function (d) {
+    if (body) body.innerHTML = STATION_LIST.map(function (d) {
       var cells = monthsInYear.map(function (mo) {
         var r = computeDistrikMonth(d, mo.y, mo.m);
         if (srActRekapMode === "count") return '<td>' + (r.pct === null ? "—" : r.lapor) + "</td>";
@@ -311,7 +339,7 @@
     if (dateInput && !dateInput.value) dateInput.value = date;
 
     var filled = 0;
-    tbody.innerHTML = MASTER_DISTRIK.map(function (distrik, i) {
+    tbody.innerHTML = STATION_LIST.map(function (distrik, i) {
       var entry = findActEntry(date, distrik);
       if (entry) filled++;
       var status = entry ? entry.status : "";
@@ -326,11 +354,12 @@
         '<td class="px-3 py-2 font-medium text-sm">' + esc(distrik) + '</td>' +
         '<td class="px-3 py-2 whitespace-nowrap">' + statusBtns + '</td>' +
         '<td class="px-3 py-2"><input type="text" class="input text-xs" data-sr-act-note="' + esc(distrik) + '" placeholder="Catatan (opsional)" value="' + esc(keterangan) + '"></td>' +
+        '<td class="px-3 py-2 text-right"><button type="button" data-sr-act-station-del="' + esc(distrik) + '" class="text-red-600 hover:underline text-xs" title="Hapus station ini dari daftar">Hapus</button></td>' +
         '</tr>';
     }).join("");
 
     var progEl = document.getElementById("srActProgress");
-    if (progEl) progEl.textContent = filled + " / " + MASTER_DISTRIK.length + " distrik sudah diisi untuk tanggal ini";
+    if (progEl) progEl.textContent = filled + " / " + STATION_LIST.length + " station sudah diisi untuk tanggal ini";
 
     renderActivityHistory();
   }
@@ -377,7 +406,7 @@
       if (el) el.classList.toggle("hidden", k !== name);
     });
     var titles = {
-      dashboard: ["📋 Dashboard Aktivitas Distrik", "Terhubung otomatis ke Input Data"],
+      dashboard: ["📋 Dashboard Aktivitas Station", "Terhubung otomatis ke Input Data"],
       input: ["✍️ Input Data Harian", "Satu-satunya tempat input manual"],
       rekap: ["🗓️ Rekap Bulanan", "Ringkasan 12 bulan per tahun"]
     };
@@ -391,6 +420,174 @@
     if (name === "dashboard") renderDashboard();
     else if (name === "input") renderActivityGrid();
     else if (name === "rekap") renderRekap();
+  }
+
+  function openAddStationModal() {
+    var existing = document.getElementById("srActAddStationModal");
+    if (existing) existing.remove();
+    var modal = document.createElement("div");
+    modal.id = "srActAddStationModal";
+    modal.className = "modal-overlay";
+    modal.style.display = "flex";
+    modal.innerHTML = [
+      '<div class="modal-box max-w-sm">',
+      '<h3 class="text-lg font-bold mb-1">➕ Tambah Station</h3>',
+      '<p class="text-xs text-slate-500 mb-4">Tambahkan station baru untuk Activity Report. Format bebas, contoh: <em>Bandung (BDO)</em>.</p>',
+      '<div><label class="block text-sm font-medium mb-1">Nama Station <span class="text-red-500">*</span></label>',
+      '<input id="srActNewStationName" class="input" placeholder="Contoh: Bandung (BDO)"></div>',
+      '<div class="flex gap-3 justify-end mt-5">',
+      '<button id="srActAddStationCancel" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 font-medium rounded-lg">Batal</button>',
+      '<button id="srActAddStationSave" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">💾 Simpan</button>',
+      '</div></div>'
+    ].join("");
+    document.body.appendChild(modal);
+    document.getElementById("srActAddStationCancel").addEventListener("click", function () { modal.remove(); });
+    modal.addEventListener("click", function (e) { if (e.target === modal) modal.remove(); });
+    var input = document.getElementById("srActNewStationName");
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") document.getElementById("srActAddStationSave").click(); });
+    document.getElementById("srActAddStationSave").addEventListener("click", function () {
+      var res = addStationToList(input.value);
+      if (!res.ok) return void ("function" == typeof window.showToast && window.showToast(res.msg, "error"));
+      modal.remove();
+      renderActivityGrid();
+      rebuildActMonths(true);
+      renderMonthSelect();
+      renderPulseStrip();
+      "function" == typeof window.showToast && window.showToast("Station ditambahkan", "success");
+    });
+    setTimeout(function () { input.focus(); }, 50);
+  }
+
+  /* ── Export PDF/Excel untuk sub-tab Dashboard ── */
+  function exportDashboardExcel() {
+    if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("XLSX tidak tersedia", "error"));
+    if (!srActMonths[srActCurMonthIdx]) return;
+    var mo = srActMonths[srActCurMonthIdx];
+    var rows = STATION_LIST.map(function (d) {
+      var r = computeDistrikMonth(d, mo.y, mo.m);
+      return { Station: d, "Hari Lapor": r.lapor, "Hari Tutup": r.tutup, "Kepatuhan %": r.pct === null ? "-" : Math.round(r.pct * 100), Kategori: r.cat };
+    }).sort(function (a, b) { return (typeof b["Kepatuhan %"] === "number" ? b["Kepatuhan %"] : -1) - (typeof a["Kepatuhan %"] === "number" ? a["Kepatuhan %"] : -1); });
+    var aktif = rows.filter(function (r) { return r["Hari Lapor"] > 0; }).length;
+    var rata = rows.length ? (rows.reduce(function (s, r) { return s + r["Hari Lapor"]; }, 0) / rows.length) : 0;
+    var kpi = [
+      { KPI: "Periode", Nilai: mo.label },
+      { KPI: "Station Aktif", Nilai: aktif },
+      { KPI: "Rata-rata Hari Lapor", Nilai: rata.toFixed(1) },
+      { KPI: "Kategori Better", Nilai: rows.filter(function (r) { return r.Kategori === "Better"; }).length },
+      { KPI: "Kategori Middle", Nilai: rows.filter(function (r) { return r.Kategori === "Middle"; }).length },
+      { KPI: "Kategori Worst", Nilai: rows.filter(function (r) { return r.Kategori === "Worst"; }).length },
+      { KPI: "Tidak Lapor (0%)", Nilai: rows.filter(function (r) { return r["Kepatuhan %"] === 0; }).length }
+    ];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kpi), "KPI");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Peringkat Station");
+    XLSX.writeFile(wb, "Dashboard_Aktivitas_Station_" + mo.y + "-" + String(mo.m).padStart(2, "0") + ".xlsx");
+  }
+
+  function exportDashboardPdf() {
+    if (!window.jspdf) return void ("function" == typeof window.showToast && window.showToast("Library PDF tidak tersedia", "error"));
+    if (!srActMonths[srActCurMonthIdx]) return;
+    var mo = srActMonths[srActCurMonthIdx];
+    var rows = STATION_LIST.map(function (d) { return { d: d, r: computeDistrikMonth(d, mo.y, mo.m) }; })
+      .sort(function (a, b) { var pa = a.r.pct === null ? -1 : a.r.pct, pb = b.r.pct === null ? -1 : b.r.pct; return pb - pa; });
+    var aktif = rows.filter(function (x) { return x.r.lapor > 0; }).length;
+    var rata = rows.length ? (rows.reduce(function (s, x) { return s + x.r.lapor; }, 0) / rows.length) : 0;
+    var better = rows.filter(function (x) { return x.r.cat === "Better"; }).length;
+    var middle = rows.filter(function (x) { return x.r.cat === "Middle"; }).length;
+    var worst = rows.filter(function (x) { return x.r.cat === "Worst"; }).length;
+    var nol = rows.filter(function (x) { return x.r.pct === 0; }).length;
+
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    var W = 595;
+    doc.setFillColor(15, 26, 48); doc.rect(0, 0, W, 60, "F");
+    doc.setTextColor(255, 255, 255); doc.setFontSize(15); doc.setFont("helvetica", "bold");
+    doc.text("DASHBOARD AKTIVITAS STATION — Service Management SJNAM", W / 2, 26, { align: "center" });
+    doc.setFontSize(9); doc.setFont("helvetica", "normal");
+    doc.text("Periode: " + mo.label + " | Generated: " + new Date().toLocaleString("id-ID"), W / 2, 44, { align: "center" });
+
+    doc.setTextColor(15, 23, 42);
+    var kpiRows = [
+      ["Station Aktif", String(aktif)], ["Rata-rata Hari Lapor", rata.toFixed(1)],
+      ["Kategori Better", String(better)], ["Kategori Middle", String(middle)],
+      ["Kategori Worst", String(worst)], ["Tidak Lapor (0%)", String(nol)]
+    ];
+    doc.autoTable({ startY: 74, head: [["KPI", "Nilai"]], body: kpiRows, styles: { fontSize: 9 }, headStyles: { fillColor: [15, 26, 48] }, margin: { left: 40, right: 40 }, tableWidth: 250 });
+
+    var pieCanvas = document.getElementById("srActPieChart"), barCanvas = document.getElementById("srActBarChart");
+    var afterKpiY = doc.lastAutoTable.finalY + 14;
+    try {
+      if (pieCanvas) { var pieImg = pieCanvas.toDataURL("image/png"); doc.addImage(pieImg, "PNG", 320, 74, 200, 130); }
+    } catch (e) { console.warn("[Dashboard PDF] pie chart embed gagal", e); }
+
+    var tableRows = rows.map(function (x, i) { return [i + 1, x.d, fmtPct(x.r.pct), x.r.cat]; });
+    doc.autoTable({
+      startY: afterKpiY + 140, head: [["#", "Station", "Kepatuhan", "Kategori"]], body: tableRows,
+      styles: { fontSize: 8 }, headStyles: { fillColor: [15, 26, 48] },
+      didParseCell: function (data) {
+        if (data.section === "body" && data.column.index === 3) {
+          var cat = data.cell.raw;
+          var map = { Better: [228, 247, 239], Middle: [253, 243, 223], Worst: [252, 230, 231], Tutup: [238, 240, 244] };
+          if (map[cat]) data.cell.styles.fillColor = map[cat];
+        }
+      }
+    });
+    doc.save("Dashboard_Aktivitas_Station_" + mo.y + "-" + String(mo.m).padStart(2, "0") + ".pdf");
+  }
+
+  /* ── Export PDF/Excel untuk sub-tab Rekap Bulanan ── */
+  function exportRekapExcel() {
+    if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("XLSX tidak tersedia", "error"));
+    var monthsInYear = srActMonths.filter(function (x) { return x.y === srActRekapYear; });
+    var rows = STATION_LIST.map(function (d) {
+      var row = { Station: d };
+      monthsInYear.forEach(function (mo) {
+        var r = computeDistrikMonth(d, mo.y, mo.m);
+        row[MONTH_NAMES[mo.m - 1]] = srActRekapMode === "count" ? (r.pct === null ? "-" : r.lapor) : fmtPct(r.pct);
+      });
+      return row;
+    });
+    var ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap " + srActRekapYear);
+    XLSX.writeFile(wb, "Rekap_Bulanan_Station_" + srActRekapYear + (srActRekapMode === "count" ? "_JumlahLapor" : "_Kepatuhan") + ".xlsx");
+  }
+
+  function exportRekapPdf() {
+    if (!window.jspdf) return void ("function" == typeof window.showToast && window.showToast("Library PDF tidak tersedia", "error"));
+    var monthsInYear = srActMonths.filter(function (x) { return x.y === srActRekapYear; });
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    var W = 842;
+    doc.setFillColor(15, 26, 48); doc.rect(0, 0, W, 55, "F");
+    doc.setTextColor(255, 255, 255); doc.setFontSize(14); doc.setFont("helvetica", "bold");
+    doc.text("REKAP BULANAN STATION — Tahun " + srActRekapYear + " (" + (srActRekapMode === "count" ? "Jumlah Hari Lapor" : "Kepatuhan %") + ")", W / 2, 24, { align: "center" });
+    doc.setFontSize(9); doc.setFont("helvetica", "normal");
+    doc.text("Generated: " + new Date().toLocaleString("id-ID"), W / 2, 40, { align: "center" });
+
+    var head = ["Station"].concat(monthsInYear.map(function (mo) { return MONTH_NAMES[mo.m - 1].slice(0, 3); }));
+    var catMap = {};
+    var body = STATION_LIST.map(function (d) {
+      var row = [d];
+      monthsInYear.forEach(function (mo) {
+        var r = computeDistrikMonth(d, mo.y, mo.m);
+        catMap[d + "|" + mo.y + "|" + mo.m] = r.cat;
+        row.push(srActRekapMode === "count" ? (r.pct === null ? "-" : r.lapor) : fmtPct(r.pct));
+      });
+      return row;
+    });
+    doc.autoTable({
+      startY: 68, head: [head], body: body, styles: { fontSize: 7 }, headStyles: { fillColor: [15, 26, 48] },
+      didParseCell: function (data) {
+        if (data.section === "body" && data.column.index > 0 && srActRekapMode === "pct") {
+          var d = STATION_LIST[data.row.index], mo = monthsInYear[data.column.index - 1];
+          if (!mo) return;
+          var cat = catMap[d + "|" + mo.y + "|" + mo.m];
+          var map = { Better: [228, 247, 239], Middle: [253, 243, 223], Worst: [252, 230, 231], Tutup: [238, 240, 244] };
+          if (map[cat]) data.cell.styles.fillColor = map[cat];
+        }
+      }
+    });
+    doc.save("Rekap_Bulanan_Station_" + srActRekapYear + (srActRekapMode === "count" ? "_JumlahLapor" : "_Kepatuhan") + ".pdf");
   }
 
   function initActivityReportEvents() {
@@ -470,13 +667,31 @@
       var rows = getActivityData()
         .sort(function (a, b) { return a.tanggal < b.tanggal ? 1 : -1; })
         .map(function (r, i) {
-          return { No: i + 1, Tanggal: r.tanggal, Distrik: r.distrik, Status: r.status, Keterangan: r.keterangan || "" };
+          return { No: i + 1, Tanggal: r.tanggal, Station: r.distrik, Status: r.status, Keterangan: r.keterangan || "" };
         });
       if (!rows.length) return void ("function" == typeof window.showToast && window.showToast("Belum ada data untuk di-export", "error"));
       var ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Activity Report");
       XLSX.writeFile(wb, "Activity_Report_" + todayStr() + ".xlsx");
     });
+
+    document.getElementById("btnSrActAddStation")?.addEventListener("click", openAddStationModal);
+    document.getElementById("srActTableBody")?.addEventListener("click", async function (e) {
+      var delName = e.target.closest("[data-sr-act-station-del]")?.dataset.srActStationDel;
+      if (!delName) return;
+      if (window.showConfirm && !(await window.showConfirm("Hapus Station", 'Hapus station "' + delName + '" dari daftar Activity Report? Riwayat data yang sudah ada untuk station ini tetap tersimpan, hanya tidak akan muncul lagi di form input.'))) return;
+      removeStationFromList(delName);
+      renderActivityGrid();
+      rebuildActMonths(true);
+      renderMonthSelect();
+      renderPulseStrip();
+      "function" == typeof window.showToast && window.showToast("Station dihapus dari daftar", "success");
+    });
+
+    document.getElementById("btnSrActDashExportExcel")?.addEventListener("click", exportDashboardExcel);
+    document.getElementById("btnSrActDashExportPdf")?.addEventListener("click", exportDashboardPdf);
+    document.getElementById("btnSrActRekapExportExcel")?.addEventListener("click", exportRekapExcel);
+    document.getElementById("btnSrActRekapExportPdf")?.addEventListener("click", exportRekapPdf);
 
     // Tampilan awal: Dashboard
     switchActSubtab("dashboard");
@@ -703,6 +918,11 @@
     });
   }
 
+  document.addEventListener("sjn:tab-changed", function (e) {
+    var tab = e && e.detail && e.detail.tab;
+    if (tab === "station-activity" || tab === "station-checkin" || tab === "station-bagreport") onTabOpen(tab);
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     var tries = 0;
     var iv = setInterval(function () {
@@ -723,7 +943,8 @@
     getActivityData: getActivityData,
     getCheckinData: getCiData,
     getBagReportData: getFlbData,
-    MASTER_DISTRIK: MASTER_DISTRIK
+    MASTER_DISTRIK: MASTER_DISTRIK,
+    getStationList: function () { return STATION_LIST.slice(); }
   };
 
   console.info("%c[SJNAM] Station Report module loaded: Activity / Check-In / First-Last Bag", "color:#16a34a;font-weight:bold;font-size:11px");

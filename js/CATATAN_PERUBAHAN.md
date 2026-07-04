@@ -163,5 +163,119 @@ Perbaikan Update 1–3 (lookup NIP, auto-sync berkala, dsb.) **tetap dipertahank
 tambahan — sekarang total ada 5 mekanisme berbeda yang saling menopang, dan yang paling menentukan
 (pengamatan DOM langsung) tidak lagi bisa gagal karena masalah urutan loading skrip.
 
+---
+
+## Update 5: Perbaikan arsitektur — mengapa "saling membungkus fungsi" itu rapuh, dan solusinya
+
+Ini jawaban untuk pertanyaan: *kenapa pola saling membungkus `window.switchTab` ini rapuh, dan apa
+cara yang lebih baik?*
+
+### Kenapa pola "membungkus fungsi" (monkey-patching) itu rapuh
+Pola yang dipakai selama ini di banyak file:
+```js
+const orig = window.switchTab;      // simpan versi lama
+window.switchTab = function(tab) {  // timpa dengan versi baru
+  orig(tab);                        // panggil versi lama di dalamnya
+  // ...tambahan logika...
+};
+```
+Ini terasa praktis, tapi punya kelemahan struktural:
+- **Urutan file jadi krusial.** Kalau satu file di tengah rantai lupa memanggil `orig(...)`, atau
+  file itu dimuat SEBELUM `window.switchTab` pernah diisi (persis yang terjadi di sini — ada 1 titik
+  di awal yang lupa mengisi nilai awal), seluruh rantai setelahnya rusak diam-diam. Tidak ada error
+  di console, aplikasi terlihat jalan, cuma sebagian efek tidak pernah terpanggil.
+- **Sulit dilacak.** Kalau ada bug "kok fitur X tidak jalan saat pindah tab", harus menyusuri semua
+  file satu per satu untuk tahu urutan pembungkusan yang sebenarnya terjadi saat runtime.
+- **Rawan tertimpa.** Siapa pun yang menambah fitur baru dan lupa memanggil versi sebelumnya (atau
+  salah urutan `<script>` di HTML) otomatis mematahkan rantai untuk SEMUA fitur lain yang bergantung
+  pada pemanggilan berantai itu — persis kasus yang baru terjadi.
+
+### Pola yang lebih baik: event bus, bukan rantai pembungkus
+Solusi standar untuk masalah ini adalah **pub/sub (publish-subscribe)** — satu sumber kebenaran yang
+menyiarkan kejadian, dan sebanyak apa pun modul lain tinggal "mendengarkan" tanpa perlu tahu atau
+menyentuh satu sama lain sama sekali. Ini sudah mulai diterapkan:
+
+1. **`js/service-recovery.js`** — fungsi inti `switchTab()` sekarang **langsung diisi ke
+   `window.switchTab` begitu didefinisikan** (baris tambahan: `window.switchTab=switchTab;`).
+   Ini menutup celah di titik paling awal yang jadi akar semua masalah di atas.
+2. Di akhir fungsi inti itu, ditambahkan satu baris:
+   ```js
+   document.dispatchEvent(new CustomEvent("sjn:tab-changed", { detail: { tab: name } }));
+   ```
+   Ini adalah **pengumuman resmi** setiap kali tab berpindah. Modul apa pun — sekarang atau nanti —
+   bisa mendengarkan ini tanpa perlu menyentuh `window.switchTab` sama sekali:
+   ```js
+   document.addEventListener("sjn:tab-changed", (e) => {
+     if (e.detail.tab === "drygoods-data") { /* lakukan sesuatu */ }
+   });
+   ```
+3. Modul yang sudah ditulis ulang mengikuti pola independen ini: `js/station-report.js` dan
+   `js/drygoods-tab-watch.js` — keduanya sudah tidak menyentuh `window.switchTab` sama sekali, cukup
+   mengamati tab-pane yang aktif secara langsung (setara dengan mendengarkan event, tapi lewat DOM).
+
+### Kenapa belum SEMUA file lama saya ubah ke pola event
+File `auth.js` dan `drygoods.js` masih memakai pola pembungkusan lama (kini sudah berfungsi normal
+setelah akar masalahnya diperbaiki di poin 1). Sengaja **tidak saya bongkar total** sekarang,
+karena:
+- `auth.js` membungkus `switchTab` untuk **memblokir** navigasi (gate akses berdasarkan role) —
+  ini butuh jalan SEBELUM/MENGGANTI aksi asli, bukan cuma "beri tahu sesudahnya", jadi memang lebih
+  cocok tetap sebagai pembungkus, bukan event listener.
+- `drygoods.js` adalah file besar (60KB+) yang berisiko tinggi diubah sekaligus tanpa pengujian
+  manual penuh di browser — mengubahnya butuh sesi terpisah dengan pengujian menyeluruh per fitur
+  (transaksi stok, IFS, bank item, dsb.) agar tidak ada regresi yang tidak sengaja.
+
+**Rekomendasi ke depan:** untuk fitur BARU yang cuma perlu "bereaksi" saat tab tertentu dibuka
+(bukan memblokir navigasi), gunakan `document.addEventListener("sjn:tab-changed", ...)` — jangan
+menambah pembungkus baru di atas `window.switchTab`. Kalau Anda mau, saya juga bisa membongkar
+`drygoods.js` ke pola event ini secara bertahap di sesi terpisah (dengan pengujian menyeluruh),
+supaya rantai pembungkusnya makin pendek dan makin jarang punya titik rawan seperti ini.
+
+---
+
+## Update 6: Bongkar `drygoods.js` ke pola event bus + fitur baru Activity Report
+
+### Bongkar drygoods.js
+- File: `js/drygoods.js`.
+- Baris `const _origSwitch=window.switchTab;window.switchTab=function(tab){...}` **dihapus total**
+  dan diganti `document.addEventListener("sjn:tab-changed", function(e){...})` — jadi drygoods.js
+  sekarang **tidak lagi ikut menambah lapisan pembungkus** ke `window.switchTab`. Efeknya persis
+  sama (buka tab Data Stok/Dashboard/IFS Station/Bank Item → data disegarkan), tapi lewat jalur yang
+  tidak bisa rusak karena urutan loading script.
+- Langkah resize chart dashboard yang sebelumnya cuma jalan lewat 1 jalur, sekarang dipindah ke
+  dalam `DRYGOODS.renderAll()` supaya konsisten dipanggil dari jalur mana pun (event bus, DOM
+  watcher di `drygoods-tab-watch.js`, atau panggilan manual).
+- `js/drygoods-tab-watch.js` dan `js/station-report.js` juga ditambahkan listener
+  `sjn:tab-changed` sebagai pelengkap cepat di samping pengamatan DOM yang sudah ada — jadi kalau
+  Firebase/timing apa pun berubah di masa depan, ada 2 jalur independen yang saling menopang.
+- **Belum dibongkar:** pembungkusan di `auth.js` (memang harus tetap sebagai pembungkus karena
+  fungsinya memblokir navigasi) dan lapisan di `index.html` (script "Enhanced" — kecil, berisiko
+  rendah, dan hanya menambah 1 baris `setTimeout` untuk admin, aman dibiarkan).
+
+### Activity Report — bisa tambah Station sendiri
+- Sebelumnya daftar 28 station di Activity Report tetap/baku (hardcode). Sekarang di sub-tab
+  **Input Data** ada tombol **➕ Tambah Station** — isi nama (bebas, misal "Bandung (BDO)"), station
+  baru langsung muncul di form input, dashboard, dan rekap.
+- Tabel Input Data juga dapat kolom **Aksi** dengan tombol **Hapus** per baris untuk menghapus
+  station dari daftar (riwayat data yang sudah ada untuk station itu tetap tersimpan, hanya tidak
+  tampil lagi di form input).
+- Daftar station tersimpan terpisah dari 28 default (di localStorage), jadi tidak perlu ubah kode
+  kalau mau menambah/mengurangi station di kemudian hari.
+
+### Ganti istilah "Distrik" → "Station"
+- Semua label & teks yang terlihat di tab Activity Report (judul, KPI card, header tabel,
+  placeholder pencarian, keterangan kategori Tutup) diganti dari "Distrik" menjadi "Station".
+  Data yang tersimpan tidak berubah — ini murni perubahan tampilan/istilah.
+
+### Export PDF & Excel — sub-tab Dashboard dan Rekap Bulanan
+- **Dashboard**: tombol **⬇️ Export Excel** (2 sheet: ringkasan KPI + peringkat kepatuhan station
+  untuk bulan yang sedang dipilih) dan **📕 Export PDF** (ringkasan KPI, grafik distribusi kategori,
+  dan tabel peringkat dengan warna kategori — untuk bulan yang sedang dipilih).
+- **Rekap Bulanan**: tombol **⬇️ Export Excel** dan **📕 Export PDF** — mengekspor tabel rekap
+  station × 12 bulan sesuai tahun & mode yang sedang aktif (Kepatuhan % atau Jumlah Hari Lapor),
+  termasuk pewarnaan sel kategori pada PDF saat mode Kepatuhan %.
+- Tidak ada library baru yang ditambahkan — memakai jsPDF + jspdf-autotable + SheetJS (XLSX) yang
+  sudah termuat di aplikasi ini.
+
+
 
 

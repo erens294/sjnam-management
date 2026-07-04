@@ -49,6 +49,12 @@
     });
   }
 
+  var WATCH_TABS = ["drygoods-data", "drygoods-ifs", "drygoods-dashboard", "drygoods-bankitem"];
+  document.addEventListener("sjn:tab-changed", function (e) {
+    var tab = e && e.detail && e.detail.tab;
+    if (tab && WATCH_TABS.indexOf(tab) !== -1) refreshDrygoods();
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     var tries = 0;
     var iv = setInterval(function () {
