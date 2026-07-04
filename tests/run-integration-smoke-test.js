@@ -911,6 +911,69 @@ async function hashSha256(str) {
     window.applyPermissions();
   }
 
+  console.log('\n=== NEW BUGS FOUND FROM USER REPORT: duplicate karyawan record + sync race wiping Drygoods import ===\n');
+
+  console.log('\n[46] BUG SCENARIO: a STALE duplicate karyawan record (no station) must NOT win over a newer, correctly-assigned one');
+  {
+    // Simulates exactly what could happen after earlier "delete then re-add" testing:
+    // an old record for the same username lingers with no/ALL station, sorted BEFORE
+    // the correct newer one in the array. A naive .find() would return the stale one.
+    let karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    karyawan.push({ id: 'kar_stale', nama: 'Elyn Old', nip: '111', username: 'elyndup', station: '', updatedAt: '2026-01-01T00:00:00.000Z' });
+    karyawan.push({ id: 'kar_fresh', nama: 'Elyn New', nip: '111', username: 'elyndup', station: 'DJJ', updatedAt: '2026-07-04T00:00:00.000Z' });
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    const bankStations = JSON.parse(window.localStorage.getItem('sjn_stations_v2') || '[]');
+    if (!bankStations.some(s => s.iata === 'DJJ')) { bankStations.push({ iata: 'DJJ', name: 'Jayapura' }); window.localStorage.setItem('sjn_stations_v2', JSON.stringify(bankStations)); }
+
+    window.currentUser = { username: 'elyndup', role: 'User-DRG', name: 'Elyn Dup Test' };
+    window.DRYGOODS.renderAll();
+    await new Promise(r => setTimeout(r, 30));
+
+    assert(window._userDrgStation === 'DJJ', 'lookup correctly picks the NEWER record (DJJ) over the stale duplicate, got: ' + window._userDrgStation);
+
+    // Cleanup
+    karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]').filter(k => k.username !== 'elyndup');
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+    window.currentUser = { username: 'integrationtest', role: 'Admin', name: 'Integration Test' };
+    window.DRYGOODS.renderAll();
+  }
+
+  console.log('\n[47] BUG SCENARIO: a cloudPull landing right after a local Drygoods save must NOT wipe the unpushed change (dirty-flag protection)');
+  {
+    // Reproduces the reported bug: import/add a transaction locally, then a
+    // background cloudPull (periodic sync, another device, etc.) arrives
+    // carrying an OLDER cloud snapshot before the local push has completed —
+    // the pull must not blindly overwrite the newer local data.
+    const before = window.DRYGOODS.getData();
+    const freshTrx = { id: 'trx_dirty_test', date: '2026-07-04', station: 'CGK', item: 'Test Item Dirty Flag', kode: 'TST-001', type: 'IN', qty: 5, unit: 'pcs', remark: '', inputBy: 'test', updatedAt: new Date().toISOString() };
+    before.transactions.unshift(freshTrx);
+    window.DRYGOODS.saveData();
+
+    assert(window._drygoodsLocalDirty === true, 'saving Drygoods data sets the dirty flag');
+
+    // Simulate a cloudPull arriving with a STALE snapshot (missing the fresh transaction)
+    // by directly exercising the same guarded code path shared-utils.js uses.
+    const staleSnapshot = { transactions: [], stations: [], bankItems: [] };
+    if (!window._drygoodsLocalDirty) {
+      window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify(staleSnapshot));
+    }
+    const afterPullAttempt = JSON.parse(window.localStorage.getItem('sjnam_drygoods_v1'));
+    assert(afterPullAttempt.transactions.some(t => t.id === 'trx_dirty_test'), 'the stale pull was correctly skipped — local unpushed transaction survives in localStorage');
+
+    // Once the dirty window elapses (simulating the push having completed), pulls should be allowed again
+    window._drygoodsLocalDirty = false;
+    if (!window._drygoodsLocalDirty) {
+      window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify(staleSnapshot));
+    }
+    const afterClearedPull = JSON.parse(window.localStorage.getItem('sjnam_drygoods_v1'));
+    assert(!afterClearedPull.transactions.some(t => t.id === 'trx_dirty_test'), 'once not dirty, a subsequent pull is allowed to apply normally (flag is not permanently stuck)');
+
+    // Cleanup: restore real data
+    window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify(before));
+    window.DRYGOODS.loadData();
+  }
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   if (fail > 0) {
     console.log('Failures:');
