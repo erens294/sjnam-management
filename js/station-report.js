@@ -208,8 +208,20 @@
     document.head.appendChild(style);
   }
 
+  // ── Persistensi state tampilan (sub-tab, bulan, tahun rekap, dsb) — supaya refresh
+  // halaman tidak mengubah apa yang sedang dilihat/dipilih user. ──
+  var SR_ACT_STATE_KEY = "sjnam_stationreport_activity_state_v1";
+  function loadActState() { try { return JSON.parse(localStorage.getItem(SR_ACT_STATE_KEY) || "{}"); } catch (e) { return {}; } }
+  function saveActState(patch) {
+    try {
+      var cur = loadActState();
+      for (var k in patch) cur[k] = patch[k];
+      localStorage.setItem(SR_ACT_STATE_KEY, JSON.stringify(cur));
+    } catch (e) {}
+  }
+
   // ── Bulan yang tersedia (dibangun dari tahun-tahun yang muncul di data + tahun berjalan) ──
-  var srActMonths = [], srActCurMonthIdx = 0, srActRekapMode = "pct", srActRekapYear = null, srActCurrentSubtab = "dashboard";
+  var srActMonths = [], srActCurMonthIdx = 0, srActRekapMode = loadActState().rekapMode || "pct", srActRekapYear = null, srActCurrentSubtab = loadActState().subtab || "dashboard";
   var srActPieChart, srActBarChart, srActTrendChart;
 
   function rebuildActMonths(keepSelection) {
@@ -227,10 +239,21 @@
       var idx = srActMonths.findIndex(function (x) { return x.y === prevSel.y && x.m === prevSel.m; });
       srActCurMonthIdx = idx > -1 ? idx : srActMonths.length - 1;
     } else {
-      var ci = srActMonths.findIndex(function (x) { return x.y === now.getFullYear() && x.m === now.getMonth() + 1; });
-      srActCurMonthIdx = ci > -1 ? ci : srActMonths.length - 1;
+      var savedMonth = loadActState().month, savedIdx = -1;
+      if (savedMonth) {
+        var parts = String(savedMonth).split("-");
+        var sy = parseInt(parts[0], 10), sm = parseInt(parts[1], 10);
+        savedIdx = srActMonths.findIndex(function (x) { return x.y === sy && x.m === sm; });
+      }
+      if (savedIdx > -1) { srActCurMonthIdx = savedIdx; } else {
+        var ci = srActMonths.findIndex(function (x) { return x.y === now.getFullYear() && x.m === now.getMonth() + 1; });
+        srActCurMonthIdx = ci > -1 ? ci : srActMonths.length - 1;
+      }
     }
-    if (!srActRekapYear) srActRekapYear = srActMonths.length ? srActMonths[srActCurMonthIdx].y : now.getFullYear();
+    if (!srActRekapYear) {
+      var savedYear = parseInt(loadActState().rekapYear, 10);
+      srActRekapYear = (savedYear && yearsArr.indexOf(savedYear) > -1) ? savedYear : (srActMonths.length ? srActMonths[srActCurMonthIdx].y : now.getFullYear());
+    }
   }
 
   function renderMonthSelect() {
@@ -280,11 +303,23 @@
 
     var pieCtx = document.getElementById("srActPieChart");
     if (srActPieChart) srActPieChart.destroy();
-    if (pieCtx) srActPieChart = new Chart(pieCtx, {
-      type: "doughnut",
-      data: { labels: ["Better", "Middle", "Worst", "Tutup"], datasets: [{ data: [better, middle, worst, tutupN], backgroundColor: [CAT_COLOR.Better, CAT_COLOR.Middle, CAT_COLOR.Worst, CAT_COLOR.Tutup], borderWidth: 0 }] },
-      options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } }, datalabels: { display: !1 } } }
-    });
+    if (pieCtx) {
+      var pieTotal = better + middle + worst + tutupN;
+      srActPieChart = new Chart(pieCtx, {
+        type: "doughnut",
+        data: { labels: ["Better", "Middle", "Worst", "Tutup"], datasets: [{ data: [better, middle, worst, tutupN], backgroundColor: [CAT_COLOR.Better, CAT_COLOR.Middle, CAT_COLOR.Worst, CAT_COLOR.Tutup], borderWidth: 0 }] },
+        options: {
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } },
+            datalabels: {
+              display: !0, color: "#fff", font: { size: 11, weight: "bold" },
+              formatter: function (v) { if (!v) return ""; var pct = pieTotal ? Math.round(v / pieTotal * 100) : 0; return v + " (" + pct + "%)"; }
+            }
+          }
+        }
+      });
+    }
 
     var barCtx = document.getElementById("srActBarChart");
     if (srActBarChart) srActBarChart.destroy();
@@ -295,7 +330,17 @@
       srActBarChart = new Chart(barCtx, {
         type: "bar",
         data: { labels: barLabels, datasets: [{ data: barVals, backgroundColor: barColors, borderRadius: 3, barThickness: 10 }] },
-        options: { indexAxis: "y", maintainAspectRatio: false, scales: { x: { max: 100, ticks: { callback: function (v) { return v + "%"; }, font: { size: 9 } }, grid: { color: "rgba(148,163,184,.15)" } }, y: { ticks: { font: { size: 10 } }, grid: { display: !1 } } }, plugins: { legend: { display: !1 }, datalabels: { display: !1 } } }
+        options: {
+          indexAxis: "y", maintainAspectRatio: false,
+          scales: { x: { max: 100, ticks: { callback: function (v) { return v + "%"; }, font: { size: 9 } }, grid: { color: "rgba(148,163,184,.15)" } }, y: { ticks: { font: { size: 10 } }, grid: { display: !1 } } },
+          plugins: {
+            legend: { display: !1 },
+            datalabels: {
+              display: !0, anchor: "end", align: "right", color: "#334155", font: { size: 9, weight: "bold" },
+              formatter: function (v) { return v + "%"; }
+            }
+          }
+        }
       });
     }
 
@@ -407,8 +452,13 @@
     }).join("");
   }
 
+  function persistActMonth() {
+    if (srActMonths[srActCurMonthIdx]) saveActState({ month: srActMonths[srActCurMonthIdx].y + "-" + srActMonths[srActCurMonthIdx].m });
+  }
+
   function switchActSubtab(name) {
     srActCurrentSubtab = name;
+    saveActState({ subtab: name });
     document.querySelectorAll("[data-sract-subtab]").forEach(function (b) {
       var on = b.dataset.sractSubtab === name;
       b.classList.toggle("active", on);
@@ -760,19 +810,21 @@
 
     document.getElementById("srActMonthSelect")?.addEventListener("change", function (e) {
       srActCurMonthIdx = parseInt(e.target.value, 10) || 0;
+      persistActMonth();
       renderPulseStrip(); renderDashboard();
     });
     document.getElementById("srActPrevMonth")?.addEventListener("click", function () {
-      if (srActCurMonthIdx > 0) { srActCurMonthIdx--; renderMonthSelect(); renderPulseStrip(); renderDashboard(); }
+      if (srActCurMonthIdx > 0) { srActCurMonthIdx--; persistActMonth(); renderMonthSelect(); renderPulseStrip(); renderDashboard(); }
     });
     document.getElementById("srActNextMonth")?.addEventListener("click", function () {
-      if (srActCurMonthIdx < srActMonths.length - 1) { srActCurMonthIdx++; renderMonthSelect(); renderPulseStrip(); renderDashboard(); }
+      if (srActCurMonthIdx < srActMonths.length - 1) { srActCurMonthIdx++; persistActMonth(); renderMonthSelect(); renderPulseStrip(); renderDashboard(); }
     });
 
     document.getElementById("srActRekapSeg")?.addEventListener("click", function (e) {
       var btn = e.target.closest("button[data-mode]");
       if (!btn) return;
       srActRekapMode = btn.dataset.mode;
+      saveActState({ rekapMode: srActRekapMode });
       document.querySelectorAll("#srActRekapSeg button").forEach(function (b) { b.classList.toggle("active", b === btn); });
       renderRekap();
     });
@@ -780,17 +832,18 @@
       var btn = e.target.closest("[data-sr-act-year]");
       if (!btn) return;
       srActRekapYear = parseInt(btn.dataset.srActYear, 10);
+      saveActState({ rekapYear: srActRekapYear });
       renderRekap();
     });
 
     var dateInput = document.getElementById("srActDate");
     if (dateInput && !dateInput._srBound) {
       dateInput._srBound = true;
-      dateInput.addEventListener("change", renderActivityGrid);
+      dateInput.addEventListener("change", function () { saveActState({ inputDate: dateInput.value }); renderActivityGrid(); });
     }
     document.getElementById("btnSrActToday")?.addEventListener("click", function () {
       var d = document.getElementById("srActDate");
-      if (d) { d.value = todayStr(); renderActivityGrid(); }
+      if (d) { d.value = todayStr(); saveActState({ inputDate: d.value }); renderActivityGrid(); }
     });
     document.getElementById("srActTableBody")?.addEventListener("click", function (e) {
       var btn = e.target.closest("[data-sr-act-status]");
@@ -905,8 +958,8 @@
     document.getElementById("btnSrActRekapExportExcel")?.addEventListener("click", exportRekapExcel);
     document.getElementById("btnSrActRekapExportPdf")?.addEventListener("click", exportRekapPdf);
 
-    // Tampilan awal: Dashboard
-    switchActSubtab("dashboard");
+    // Tampilan awal: sub-tab terakhir yang dipilih (default Dashboard kalau belum pernah dipilih)
+    switchActSubtab(srActCurrentSubtab);
   }
 
   /* ============================== CHECK-IN REPORT ============================== */
@@ -950,6 +1003,9 @@
   }
 
   function initCheckinReportEvents() {
+    document.getElementById("srCiDate")?.addEventListener("change", function (e) {
+      try { localStorage.setItem("sjnam_stationreport_ci_date_v1", e.target.value); } catch (err) {}
+    });
     document.getElementById("btnSrCiSave")?.addEventListener("click", function () {
       var date = document.getElementById("srCiDate")?.value;
       var station = document.getElementById("srCiStation")?.value;
@@ -1027,6 +1083,9 @@
   }
 
   function initBagReportEvents() {
+    document.getElementById("srFlbDate")?.addEventListener("change", function (e) {
+      try { localStorage.setItem("sjnam_stationreport_flb_date_v1", e.target.value); } catch (err) {}
+    });
     document.getElementById("btnSrFlbSave")?.addEventListener("click", function () {
       var date = document.getElementById("srFlbDate")?.value;
       var station = document.getElementById("srFlbStation")?.value;
@@ -1074,21 +1133,21 @@
   function onTabOpen(tab) {
     if (tab === "station-activity") {
       var d = document.getElementById("srActDate");
-      if (d && !d.value) d.value = todayStr();
+      if (d && !d.value) d.value = loadActState().inputDate || todayStr();
       if (!initedAct) { initActivityReportEvents(); initedAct = true; }
       else switchActSubtab(srActCurrentSubtab);
     }
     if (tab === "station-checkin") {
       if (!initedCi) { initCheckinReportEvents(); initedCi = true; }
       var dCi = document.getElementById("srCiDate");
-      if (dCi && !dCi.value) dCi.value = todayStr();
+      if (dCi && !dCi.value) { try { dCi.value = localStorage.getItem("sjnam_stationreport_ci_date_v1") || todayStr(); } catch (e) { dCi.value = todayStr(); } }
       populateStationSelect("srCiStation");
       renderCiTable();
     }
     if (tab === "station-bagreport") {
       if (!initedFlb) { initBagReportEvents(); initedFlb = true; }
       var dFlb = document.getElementById("srFlbDate");
-      if (dFlb && !dFlb.value) dFlb.value = todayStr();
+      if (dFlb && !dFlb.value) { try { dFlb.value = localStorage.getItem("sjnam_stationreport_flb_date_v1") || todayStr(); } catch (e) { dFlb.value = todayStr(); } }
       populateStationSelect("srFlbStation");
       renderFlbTable();
     }
