@@ -796,6 +796,22 @@
     });
 
     document.getElementById("btnSrActAddStation")?.addEventListener("click", openAddStationModal);
+    document.getElementById("btnSrActDownloadTemplate")?.addEventListener("click", function () {
+      if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("Library XLSX belum termuat", "error"));
+      var sample = STATION_LIST.slice(0, 3);
+      var today = todayStr();
+      var rows = [
+        { Tanggal: today, Station: sample[0] || "Ujung Pandang (UPG)", Status: "Lapor", Keterangan: "" },
+        { Tanggal: today, Station: sample[1] || "Sorong (SOQ)", Status: "Tidak Lapor", Keterangan: "" },
+        { Tanggal: today, Station: sample[2] || "Jayapura (DJJ)", Status: "Tutup", Keterangan: "Station tutup sementara" }
+      ];
+      var ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 14 }, { wch: 30 }];
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Data");
+      XLSX.writeFile(wb, "Template_Import_ActivityReport.xlsx");
+      "function" == typeof window.showToast && window.showToast("Template Excel didownload — isi kolom sesuai contoh", "success");
+    });
     document.getElementById("srActImportExcelInput")?.addEventListener("change", function (e) {
       var file = e.target.files[0];
       if (file) importActivityExcel(file);

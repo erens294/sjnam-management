@@ -379,6 +379,30 @@ Elyn **masih** tidak berubah, kemungkinan besar akar masalahnya bukan lagi di ko
 - Data tanggal & station yang sama akan **diperbarui**, bukan diduplikasi — sama seperti aturan
   input manual. Ada ringkasan hasil import (berapa data baru, berapa diperbarui, berapa baris
   dilewati beserta alasannya).
+- Tombol **📋 Template** juga ditambahkan di sebelah tombol Import — download contoh file Excel
+  siap isi dengan format kolom yang benar (3 baris contoh memakai nama station yang sudah ada di
+  aplikasi, mencontohkan ketiga status: Lapor, Tidak Lapor, Tutup).
+
+### Format file Excel untuk Import Activity Report
+Kolom yang dibaca (nama kolom fleksibel, tidak harus persis — sistem mencari kecocokan):
+
+| Kolom di Excel | Nama alternatif yang juga dikenali | Wajib? | Contoh isi |
+|---|---|---|---|
+| **Tanggal** | Tgl, Date | Wajib | `2026-07-04` atau `04/07/2026` |
+| **Station** | Distrik, Stasiun | Wajib | `Ujung Pandang (UPG)` |
+| **Status** | — | Wajib | `Lapor` / `Tidak Lapor` / `Tutup` (atau singkatan `L` / `TL` / `T`) |
+| **Keterangan** | Catatan, Note | Opsional | bebas teks |
+
+Catatan format:
+- **Tanggal** bisa `yyyy-mm-dd`, `dd/mm/yyyy`, atau format tanggal Excel biasa (serial number) —
+  semua dikenali otomatis.
+- **Station** boleh nama yang sudah ada di daftar aplikasi, ATAU nama baru — kalau baru, akan
+  ditawarkan untuk otomatis ditambahkan ke daftar station saat proses import dikonfirmasi.
+- **Status** harus salah satu dari 3 nilai di atas (besar/kecil huruf tidak masalah).
+- Baris dengan tanggal/station/status yang tidak valid akan **dilewati** (tidak menggagalkan
+  keseluruhan import) — rincian baris mana & kenapa dilewati ditampilkan di ringkasan hasil import.
+- Kalau kombinasi Tanggal + Station pada baris Excel sudah ada datanya di aplikasi, data itu akan
+  **diperbarui** (ditimpa), bukan membuat entri duplikat.
 
 
 
