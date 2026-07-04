@@ -51,12 +51,12 @@ const userManagementSrc = fs.readFileSync(path.join(__dirname, '..', 'dist', 'js
 const karyawanManagementSrc = fs.readFileSync(path.join(__dirname, '..', 'dist', 'js', 'karyawan-management.js'), 'utf8');
 
 function inlineScript(html, srcAttr, code, label) {
-  const before = html;
-  const result = html.replace(`<script src="${srcAttr}"></script>`, () => '<script>' + code + '</script>');
-  if (result === before) {
-    throw new Error(`Could not find <script src="${srcAttr}"></script> tag to inline (${label}) — check dist/index.html`);
+  const escaped = srcAttr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`<script src="${escaped}(?:\\?[^"]*)?"[^>]*></script>`);
+  if (!re.test(html)) {
+    throw new Error(`Could not find <script src="${srcAttr}"> tag to inline (${label}) — check dist/index.html`);
   }
-  return result;
+  return html.replace(re, () => '<script>' + code + '</script>');
 }
 
 html = inlineScript(html, 'js/stcr.js', stcrSrc, 'stcr.js');
@@ -67,43 +67,22 @@ html = inlineScript(html, 'js/bank-station-sync.js', bankStationSyncSrc, 'bank-s
 html = inlineScript(html, 'js/audit-log-ui.js', auditLogUiSrc, 'audit-log-ui.js');
 html = inlineScript(html, 'js/patch-arsitektur-v3.js', patchV3Src, 'patch-arsitektur-v3.js');
 html = inlineScript(html, 'js/blueprint-v1.js', blueprintV1Src, 'blueprint-v1.js');
-const beforeSR = html;
-html = html.replace(
-  '<script src="js/service-recovery.js"></script>',
-  () => '<script>' + serviceRecoverySrc + '</script>'
-);
-if (html === beforeSR) {
-  throw new Error('Could not find <script src="js/service-recovery.js"></script> tag to inline — check dist/index.html');
-}
-const beforeReplace = html;
+html = inlineScript(html, 'js/service-recovery.js', serviceRecoverySrc, 'service-recovery.js');
 const configJsSrc = fs.readFileSync(path.join(__dirname, '..', 'dist', 'js', 'config.js'), 'utf8');
-html = html.replace(
-  /<script src="js\/config\.js"[^>]*><\/script>/,
-  () => '<script>' + configJsSrc + '</script>'
-);
-if (html === beforeReplace) {
-  throw new Error('Could not find <script src="js/config.js" ...></script> tag to inline — check dist/index.html');
-}
-const beforeSharedUtils = html;
-html = html.replace(
-  '<script src="js/shared-utils.js"></script>',
-  () => '<script>' + sharedUtilsSrc + '</script>'
-);
-if (html === beforeSharedUtils) {
-  throw new Error('Could not find <script src="js/shared-utils.js"></script> tag to inline — check dist/index.html');
-}
-const beforeAuth = html;
-html = html.replace(
-  '<script src="js/auth.js"></script>',
-  () => '<script>' + authJsSrc + '</script>'
-);
-if (html === beforeAuth) {
-  throw new Error('Could not find <script src="js/auth.js"></script> tag to inline — check dist/index.html');
-}
+html = inlineScript(html, 'js/config.js', configJsSrc, 'config.js');
+html = inlineScript(html, 'js/shared-utils.js', sharedUtilsSrc, 'shared-utils.js');
+html = inlineScript(html, 'js/auth.js', authJsSrc, 'auth.js');
 // drygoods.js MUST be inlined after auth.js is already in place — it wraps
 // window.switchTab and must wrap the permission-gated version from auth.js,
 // not a pre-auth.js version (see drygoods.js header comment / Tahap 2 regression).
 html = inlineScript(html, 'js/drygoods.js', drygoodsSrc, 'drygoods.js');
+// drygoods-tab-watch.js (added later) reacts to sjn:tab-changed + DOM
+// MutationObserver independent of the switchTab wrapper chain — order vs
+// drygoods.js doesn't matter functionally, but keep it adjacent for clarity.
+const drygoodsTabWatchSrc = fs.readFileSync(path.join(__dirname, '..', 'dist', 'js', 'drygoods-tab-watch.js'), 'utf8');
+html = inlineScript(html, 'js/drygoods-tab-watch.js', drygoodsTabWatchSrc, 'drygoods-tab-watch.js');
+const stationReportSrc = fs.readFileSync(path.join(__dirname, '..', 'dist', 'js', 'station-report.js'), 'utf8');
+html = inlineScript(html, 'js/station-report.js', stationReportSrc, 'station-report.js');
 
 // user-management.js and karyawan-management.js MUST be inlined after auth.js
 // (they read window.currentUser, window.saveUsers which auth.js provides).
@@ -173,7 +152,7 @@ async function hashSha256(str) {
   assert(typeof window.checkAuth === 'function', 'window.checkAuth defined');
   assert(typeof window.getUserStation === 'function', 'window.getUserStation defined');
   assert(typeof window.roleNameToKey === 'function', 'window.roleNameToKey defined');
-  assert(Array.isArray(window.CUSTOM_ROLES) && window.CUSTOM_ROLES.length === 5, 'window.CUSTOM_ROLES has 5 entries');
+  assert(Array.isArray(window.CUSTOM_ROLES) && window.CUSTOM_ROLES.length === 6, 'window.CUSTOM_ROLES has 6 entries (added User-STR for Station Report)');
 
   console.log('\n[2] Default users seeded in real document context');
   const users = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]');
@@ -286,7 +265,7 @@ async function hashSha256(str) {
     });
   }
 
-  console.log('\n[11] REGRESSION TEST: cloudConfig retains real Supabase credentials (not overwritten by stale pre-declare block)');
+  console.log('\n[11] REGRESSION TEST: cloudConfig retains real Firebase credentials (not overwritten by stale pre-declare block)');
   {
     // Bug found during Tahap 3: service-recovery.js's pre-declare block used
     // to set `var cloudConfig = {supabaseUrl:'', supabaseKey:''}` AFTER
@@ -294,9 +273,18 @@ async function hashSha256(str) {
     // default credentials — silently wiping out cloud sync configuration on
     // every page load. Fixed by removing the redundant pre-declare in
     // service-recovery.js once load order became shared-utils.js first.
+    //
+    // NOTE: this app migrated from Supabase to Firebase Firestore (see
+    // js/config.js header comment). shared-utils.js deliberately keeps the
+    // OLD field names `supabaseUrl`/`supabaseKey` populated with the Firebase
+    // project id / a dummy key string, purely so older modules that still
+    // gate on `cloudConfig.supabaseUrl && cloudConfig.supabaseKey` keep
+    // working without being rewritten one by one. A bare Firebase project id
+    // (e.g. "service-sjnam") is NOT a URL, so this test no longer checks for
+    // an "https://" prefix — it only checks the field is non-empty/intact.
     assert(window.cloudConfig && window.cloudConfig.supabaseUrl, 'cloudConfig.supabaseUrl is set (not empty string)');
-    assert(window.cloudConfig && window.cloudConfig.supabaseUrl.startsWith('https://'), 'cloudConfig.supabaseUrl looks like a real URL, not wiped to empty');
-    assert(window.cloudConfig && window.cloudConfig.supabaseKey && window.cloudConfig.supabaseKey.length > 20, 'cloudConfig.supabaseKey is set and non-trivial length');
+    assert(window.cloudConfig && window.cloudConfig.supabaseUrl === window.SJNAM_CONFIG.FIREBASE_PROJECT_ID, 'cloudConfig.supabaseUrl matches the configured Firebase project id, not wiped/stale');
+    assert(window.cloudConfig && window.cloudConfig.supabaseKey && window.cloudConfig.supabaseKey.length > 5, 'cloudConfig.supabaseKey is set and non-trivial length');
   }
 
   console.log('\n[12] REGRESSION TEST: load order — shared-utils.js functions callable from service-recovery.js INIT');
@@ -702,6 +690,225 @@ async function hashSha256(str) {
 
     assert(!_rtMU.some(u => u.id === 9002), 'deleted user does NOT reappear via the REALTIME handler path (the actual culprit for the reported bug)');
     assert(_rtMU.length === 2, 'realtime merged result has correct count');
+  }
+
+  console.log('\n=== DEEP AUDIT: User-DRG station switching (js/drygoods.js) — real functions, real DOM ===\n');
+
+  // Re-login as Admin (test [5] logged out) so we can drive the UI as an admin would.
+  window.currentUser = { username: 'integrationtest', role: 'Admin', name: 'Integration Test' };
+  window.switchTab('drygoods-data');
+  await new Promise(r => setTimeout(r, 50));
+
+  console.log('[37] SETUP: seed a User-DRG employee (karyawan) + matching login account, station = CGK');
+  {
+    const karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    karyawan.push({ id: 'kar_elyn_test', nama: 'Elyn Test', nip: '0700001947', username: 'elyntest', station: 'CGK', jabatan: 'Staff', joinDate: '2025-01-01', expiredKontrak: '2027-01-01', updatedAt: new Date().toISOString() });
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    const users = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]');
+    users.push({ id: 9101, username: 'elyntest', password: 'x'.repeat(64), role: 'User-DRG', name: 'Elyn Test', active: true });
+    window.localStorage.setItem('sjnam_users_v1', JSON.stringify(users));
+
+    // Bank Data Station must list the station code for it to be treated as "valid"
+    // by isValidBankStation() — buildStationTabs/derived logic depends on this.
+    const bankStations = JSON.parse(window.localStorage.getItem('sjn_stations_v2') || '[]');
+    if (!bankStations.some(s => s.iata === 'CGK')) bankStations.push({ iata: 'CGK', name: 'Cengkareng' });
+    if (!bankStations.some(s => s.iata === 'SUB')) bankStations.push({ iata: 'SUB', name: 'Surabaya' });
+    window.localStorage.setItem('sjn_stations_v2', JSON.stringify(bankStations));
+
+    assert(karyawan.some(k => k.username === 'elyntest' && k.station === 'CGK'), 'test karyawan record seeded with station CGK');
+  }
+
+  console.log('\n[38] "Log in" as the User-DRG test account and verify the station lock applies on first render (real function, real DOM)');
+  {
+    window.currentUser = { username: 'elyntest', role: 'User-DRG', name: 'Elyn Test' };
+    window.DRYGOODS.renderAll();
+    await new Promise(r => setTimeout(r, 50));
+
+    assert(window._userDrgStation === 'CGK', '_userDrgStation correctly resolved to CGK for elyntest, got: ' + window._userDrgStation);
+
+    const stationTabs = [...window.document.querySelectorAll('[data-dg-station]')];
+    assert(stationTabs.length > 0, 'station tabs actually rendered in the DOM');
+    const cgkTab = stationTabs.find(t => t.dataset.dgStation === 'CGK');
+    const otherStationTabs = stationTabs.filter(t => t.dataset.dgStation !== 'CGK');
+    assert(!!cgkTab, 'CGK station tab exists');
+    assert(cgkTab && cgkTab.style.pointerEvents !== 'none', 'CGK (the assigned station) tab is NOT dimmed/disabled');
+    assert(otherStationTabs.length === 0 || otherStationTabs.every(t => t.style.pointerEvents === 'none'), 'every OTHER station tab (including "ALL") is dimmed/disabled for a locked User-DRG');
+
+    const addStBtn = window.document.getElementById('btnDgAddStation');
+    assert(addStBtn && addStBtn.disabled === true, '+Station button is disabled for a station-locked User-DRG');
+  }
+
+  console.log('\n[39] BUG SCENARIO: Admin changes the employee\'s station (CGK -> SUB) — verify EVERY refresh mechanism picks it up correctly');
+  {
+    // Simulate the admin-side edit exactly as karyawan-management.js's save
+    // handler does: mutate the record in place and persist.
+    let karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    const rec = karyawan.find(k => k.username === 'elyntest');
+    rec.station = 'SUB';
+    rec.updatedAt = new Date().toISOString();
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    // --- Mechanism 1: _applyDrgLock(), called by the sjn:tab-changed listener ---
+    window._applyDrgLock();
+    await new Promise(r => setTimeout(r, 20));
+    assert(window._userDrgStation === 'SUB', '[Mechanism 1: _applyDrgLock] station updates to SUB after admin edit, got: ' + window._userDrgStation);
+
+    let stationTabs = [...window.document.querySelectorAll('[data-dg-station]')];
+    let subTab = stationTabs.find(t => t.dataset.dgStation === 'SUB');
+    let cgkTabAfter = stationTabs.find(t => t.dataset.dgStation === 'CGK');
+    assert(!!subTab && subTab.style.pointerEvents !== 'none', '[Mechanism 1] SUB tab is now the unlocked/active one');
+    assert(!cgkTabAfter || cgkTabAfter.style.pointerEvents === 'none', '[Mechanism 1] CGK (the OLD station) is now dimmed — user cannot linger on stale access');
+  }
+
+  console.log('\n[40] BUG SCENARIO: revert to CGK, verify the sjn:tab-changed EVENT BUS path (not just direct function calls) also picks it up');
+  {
+    let karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    karyawan.find(k => k.username === 'elyntest').station = 'CGK';
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    window.document.dispatchEvent(new window.CustomEvent('sjn:tab-changed', { detail: { tab: 'drygoods-data' } }));
+    await new Promise(r => setTimeout(r, 20));
+
+    assert(window._userDrgStation === 'CGK', 'sjn:tab-changed event correctly triggers _applyDrgLock + rebuild, station back to CGK, got: ' + window._userDrgStation);
+  }
+
+  console.log('\n[41] BUG SCENARIO: switch to SUB again, verify the 5-second BACKGROUND POLL (no tab navigation, no event) picks it up on its own');
+  {
+    // This is the mechanism that matters most for the reported real-world bug:
+    // the user is ALREADY sitting on the Drygoods tab (no navigation happens),
+    // and an admin changes their station on another device. Only the
+    // standalone setInterval(...,5000) polling loop can catch this.
+    let karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    karyawan.find(k => k.username === 'elyntest').station = 'SUB';
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    let stationChangedEventFired = false;
+    window.document.addEventListener('sjn:station-changed', () => { stationChangedEventFired = true; }, { once: true });
+
+    // Wait past the 5000ms poll interval (jsdom setInterval/setTimeout run on
+    // real wall-clock time here, so this genuinely exercises the real timer).
+    await new Promise(r => setTimeout(r, 5300));
+
+    assert(window._userDrgStation === 'SUB', 'BACKGROUND POLL (setInterval 5s) alone — with no tab switch, no click, no event — still detects the station change, got: ' + window._userDrgStation);
+    assert(stationChangedEventFired === true, 'sjn:station-changed CustomEvent is dispatched when the background poll detects a change');
+  }
+
+  console.log('\n[42] EXACT USER-REPORTED SCENARIO: delete the employee entirely, then re-create with a DIFFERENT station — verify no stale caching anywhere');
+  {
+    // This is literally what the user described trying: "saya sudah coba
+    // delete lalu tambahkan lagi juga tetap tidak bisa dipindahkan
+    // stationnya" (I tried deleting then re-adding, still couldn't move the
+    // station). Simulate that exact sequence end to end.
+    let karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    karyawan = karyawan.filter(k => k.username !== 'elyntest');
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    // Give the background poll a chance to run against a WORLD WHERE THE
+    // EMPLOYEE RECORD NO LONGER EXISTS AT ALL (edge case: lookup finds
+    // nothing, _newSt should become null, not silently keep the last value).
+    await new Promise(r => setTimeout(r, 100));
+    window._applyDrgLock();
+    assert(window._userDrgStation === null || window._userDrgStation === undefined, 'deleting the employee record clears the station lock (does not keep stale SUB value), got: ' + window._userDrgStation);
+
+    // Now re-create with a NEW station (BPN) — simulating "tambahkan lagi" with a different value.
+    karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    const bankStations = JSON.parse(window.localStorage.getItem('sjn_stations_v2') || '[]');
+    if (!bankStations.some(s => s.iata === 'BPN')) { bankStations.push({ iata: 'BPN', name: 'Balikpapan' }); window.localStorage.setItem('sjn_stations_v2', JSON.stringify(bankStations)); }
+    karyawan.push({ id: 'kar_elyn_test_2', nama: 'Elyn Test', nip: '0700001947', username: 'elyntest', station: 'BPN', jabatan: 'Staff', joinDate: '2025-01-01', expiredKontrak: '2027-01-01', updatedAt: new Date().toISOString() });
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    window._applyDrgLock();
+    await new Promise(r => setTimeout(r, 20));
+    assert(window._userDrgStation === 'BPN', 'after delete + re-create with a NEW station (BPN), the lock correctly picks up the NEW value — not stuck on any previous station, got: ' + window._userDrgStation);
+
+    const stationTabsFinal = [...window.document.querySelectorAll('[data-dg-station]')];
+    const bpnTab = stationTabsFinal.find(t => t.dataset.dgStation === 'BPN');
+    assert(!!bpnTab && bpnTab.style.pointerEvents !== 'none', 'BPN tab correctly unlocked after delete+recreate — matches the DOM, not just the internal variable');
+  }
+
+  console.log('\n[43] EDGE CASE: username case-sensitivity and whitespace — real-world data entry is rarely perfectly clean');
+  {
+    let karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    karyawan = karyawan.filter(k => k.username !== 'elyntest');
+    karyawan.push({ id: 'kar_case_test', nama: 'Case Test', nip: '999', username: 'ElynTest', station: 'CGK', updatedAt: new Date().toISOString() });
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+
+    window.currentUser = { username: 'elyntest', role: 'User-DRG', name: 'Elyn Test' }; // lowercase, as a real login session would have it
+    window._applyDrgLock();
+    await new Promise(r => setTimeout(r, 20));
+    assert(window._userDrgStation === 'CGK', 'lookup is case-insensitive: login username "elyntest" matches karyawan username "ElynTest", got: ' + window._userDrgStation);
+
+    // Cleanup
+    karyawan = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]').filter(k => k.username !== 'ElynTest' && k.username !== 'elyntest');
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify(karyawan));
+    let users = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]').filter(u => u.id !== 9101);
+    window.localStorage.setItem('sjnam_users_v1', JSON.stringify(users));
+    window.currentUser = { username: 'integrationtest', role: 'Admin', name: 'Integration Test' };
+  }
+
+  console.log('\n=== NEW ROLE: User-STR (Station Report) ===\n');
+
+  console.log('\n[44] User-STR is registered with correct default permissions (Station Report tabs only)');
+  {
+    const strRole = window.CUSTOM_ROLES.find(r => r.roleName === 'User-STR');
+    assert(!!strRole, 'User-STR is present in window.CUSTOM_ROLES');
+    assert(strRole && strRole.key === 'userstr', 'User-STR roleKey is "userstr"');
+    assert(window.roleNameToKey('User-STR') === 'userstr', 'roleNameToKey correctly resolves User-STR -> userstr');
+
+    const perms = window.getDefaultRolePerms();
+    assert(perms['tab-station-activity'].userstr === true, 'User-STR has access to tab-station-activity by default');
+    assert(perms['tab-station-checkin'].userstr === true, 'User-STR has access to tab-station-checkin by default');
+    assert(perms['tab-station-bagreport'].userstr === true, 'User-STR has access to tab-station-bagreport by default');
+    // Spot-check a broad sample of unrelated tabs are all correctly locked out by default
+    ['tab-home', 'tab-input', 'tab-data', 'tab-dashboard', 'tab-admin', 'tab-settings',
+     'tab-drygoods-data', 'tab-drygoods-dashboard', 'tab-drygoods-bankitem',
+     'tab-stcr-dashboard', 'tab-stcr-data', 'tab-stcr-station',
+     'tab-materi', 'tab-soal', 'tab-sertifikat'].forEach(featId => {
+      assert(perms[featId].userstr === false, `User-STR does NOT have access to ${featId} by default`);
+    });
+  }
+
+  console.log('\n[45] END-TO-END: logging in as User-STR shows only Station Report tabs and blocks everything else via the real switchTab chain');
+  {
+    window.currentUser = { username: 'strtest', role: 'User-STR', name: 'STR Test' };
+    window.applyPermissions();
+
+    const activityTab = window.document.querySelector('[data-tab="station-activity"]');
+    const checkinTab = window.document.querySelector('[data-tab="station-checkin"]');
+    const bagreportTab = window.document.querySelector('[data-tab="station-bagreport"]');
+    assert(activityTab && activityTab.style.display !== 'none', 'Activity Report tab is visible for User-STR');
+    assert(checkinTab && checkinTab.style.display !== 'none', 'Check-In Report tab is visible for User-STR');
+    assert(bagreportTab && bagreportTab.style.display !== 'none', 'First/Last Bag tab is visible for User-STR');
+
+    const homeTab = window.document.querySelector('[data-tab="home"]');
+    const drygoodsDataTab = window.document.querySelector('[data-tab="drygoods-data"]');
+    const adminTab = window.document.getElementById('tabAdminBtn');
+    assert(homeTab && homeTab.style.display === 'none', 'Home tab is HIDDEN for User-STR');
+    assert(drygoodsDataTab && drygoodsDataTab.style.display === 'none', 'Drygoods tabs are HIDDEN for User-STR');
+    assert(adminTab && adminTab.style.display === 'none', 'Admin tab is HIDDEN for User-STR');
+
+    // Real end-to-end gate check through the actual switchTab chain, not just visibility
+    const activityPane = window.document.getElementById('tab-station-activity');
+    window.switchTab('station-activity');
+    await new Promise(r => setTimeout(r, 30));
+    assert(activityPane && activityPane.classList.contains('active'), 'User-STR CAN actually switch into station-activity via the real switchTab chain');
+
+    const homePane = window.document.getElementById('tab-home');
+    const wasHomeActive = homePane && homePane.classList.contains('active');
+    window.switchTab('home');
+    await new Promise(r => setTimeout(r, 30));
+    const isHomeActiveNow = homePane && homePane.classList.contains('active');
+    assert(isHomeActiveNow === wasHomeActive, 'User-STR is BLOCKED from switching into home via the real switchTab chain (permission gate holds end-to-end)');
+
+    // Sidebar group itself should show (at least one child tab allowed) despite individual unrelated groups being hidden
+    const grpStationReport = window.document.getElementById('toggleStationReportMenu')?.closest('div');
+    const grpDrygoods = window.document.getElementById('toggleDrygoodsMenu')?.closest('div');
+    assert(grpStationReport && grpStationReport.style.display !== 'none', 'Station Report sidebar group is visible for User-STR');
+    assert(grpDrygoods && grpDrygoods.style.display === 'none', 'Drygoods sidebar group is HIDDEN for User-STR (no accessible tabs inside)');
+
+    window.currentUser = { username: 'integrationtest', role: 'Admin', name: 'Integration Test' };
+    window.applyPermissions();
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

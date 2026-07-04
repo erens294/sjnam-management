@@ -404,6 +404,237 @@ Catatan format:
 - Kalau kombinasi Tanggal + Station pada baris Excel sudah ada datanya di aplikasi, data itu akan
   **diperbarui** (ditimpa), bukan membuat entri duplikat.
 
+---
+
+## Update 9: Bug rumus kepatuhan — bulan yang belum terjadi ikut dihitung "0% / Worst"
+
+### Bug ditemukan & diperbaiki
+Pertanyaan Anda ("kenapa Rekap Bulanan sudah sampai Desember padahal data cuma sampai Juli?")
+mengarah ke bug nyata di rumus penghitungan kepatuhan (`computeDistrikMonth` di
+`js/station-report.js`). Rumusnya adalah *hari Lapor ÷ jumlah hari efektif dalam bulan* — tapi
+untuk bulan yang **belum terjadi** (Agustus–Desember, karena sekarang baru Juli), jumlah hari
+Lapor pasti 0, sehingga hasilnya selalu **0% dan masuk kategori "Worst" (merah)** — padahal bulan
+itu memang belum berjalan sama sekali, bukan berarti station-nya benar-benar tidak lapor.
+
+### Perbaikan
+- Bulan yang **sepenuhnya belum terjadi** (lebih besar dari bulan berjalan saat ini) sekarang
+  ditandai kategori baru **"Belum"** dan ditampilkan sebagai **"—"** (strip, tanpa warna merah) di
+  tabel Rekap Bulanan — bukan lagi "0% Worst". Ini otomatis berlaku di semua tempat yang memakai
+  rumus ini: Rekap Bulanan, Dashboard (KPI, leaderboard, chart), dan pulse strip.
+- Sekalian diperbaiki juga bug terkait: untuk **bulan yang sedang berjalan** (misalnya Juli, kalau
+  hari ini tanggal 4 Juli), persentase sekarang dihitung dari **hari yang sudah lewat saja** (1–4
+  Juli), bukan dari 31 hari penuh bulan Juli. Sebelumnya station yang rutin lapor pun akan terlihat
+  persentasenya sangat rendah di awal bulan hanya karena dibagi jumlah hari yang belum tercapai.
+- Data & histori yang tersimpan **tidak berubah** — ini murni perbaikan rumus tampilan/kalkulasi.
+
+---
+
+## Update 10: Bug import Excel salah bulan, konfirmasi fitur Reset Data, dan perbaikan kecil dialog konfirmasi
+
+### Bug ditemukan & diperbaiki: import Excel bisa salah ambil kolom tanggal
+- File: `js/station-report.js`.
+- Ini kemungkinan besar penjelasan kenapa import data Januari–Juni bisa memunculkan 1 data bulan
+  Juli: pencarian kolom "Tanggal" sebelumnya punya jalur cadangan (*fuzzy match*) yang menerima
+  kolom APA SAJA yang namanya *mengandung* kata "date" — misalnya kolom metadata seperti "Updated
+  Date" atau "Created Date" kalau kebetulan ada di file Excel Anda dan kolom "Tanggal" utama tidak
+  terbaca sempurna. Kolom seperti itu biasanya berisi tanggal hari ini (saat file diproses/dibuat),
+  yang kebetulan match dengan sistem sekarang di bulan Juli 2026.
+- Diperbaiki: kolom **Tanggal sekarang HARUS cocok persis** dengan salah satu nama "Tanggal", "Tgl",
+  atau "Date" (tidak lagi menerima kecocokan sebagian/fuzzy). Kolom lain (Station, Status,
+  Keterangan) tetap fleksibel seperti sebelumnya karena risikonya jauh lebih kecil.
+- Tambahan **lapisan pengaman**: sebelum data benar-benar disimpan, dialog konfirmasi import
+  sekarang menampilkan **rentang tanggal yang terdeteksi di file** (misalnya "01-Jan-2026 s/d
+  30-Jun-2026") di baris paling atas — supaya kalau ada tanggal yang meleset, langsung terlihat
+  SEBELUM data ikut tersimpan, bukan sesudahnya.
+
+### Soal data "06-Dec-2026" di Riwayat Terbaru
+Saya tidak bisa memastikan 100% asal data tersebut (kemungkinan tersisa dari sesi testing
+sebelumnya — pola isiannya seperti tandai-status-satu-per-satu untuk semua 28 station, bukan pola
+yang dihasilkan bug otomatis). Yang jelas, perbaikan kolom tanggal import di atas menutup jalur
+paling mungkin penyebabnya. Untuk membersihkannya: pilih tanggal 06-Dec-2026 di kalender Input
+Data, lalu pakai fitur **Reset Data → Hapus data harian** (lihat poin berikutnya) — atau hapus satu
+per satu lewat tombol Hapus di baris Riwayat Terbaru.
+
+### Fitur "Reset Data" (by day / by month / all)
+Fitur ini **sudah ada** di aplikasi — tombol **🗑️ Reset Data** di sub-tab Input Data (sebelah
+Export Excel) berisi dropdown dengan 3 opsi: **Hapus data harian** (sesuai tanggal yang sedang
+dipilih di kalender), **Hapus data bulanan** (sesuai bulan dari tanggal yang sedang dipilih), dan
+**Hapus SEMUA data**. Masing-masing minta konfirmasi eksplisit sebelum benar-benar menghapus, dan
+menyebutkan jumlah data yang akan terhapus. Kalau tombol ini belum terlihat, pastikan sudah
+melakukan hard-refresh setelah upload versi terbaru.
+
+### Perbaikan kecil: dialog konfirmasi sekarang menampilkan baris baru dengan benar
+- File: `index.html`.
+- Dialog konfirmasi (dipakai di banyak tempat: hapus data, import Excel, dst.) sebelumnya tidak
+  menampilkan baris baru (`\n`) dengan benar — semua teks jadi menyatu dalam satu baris panjang.
+  Ini bug lama yang mempengaruhi SEMUA dialog konfirmasi di aplikasi, bukan cuma yang baru
+  ditambahkan. Sudah diperbaiki dengan satu baris CSS — sekarang pesan multi-baris (termasuk
+  preview rentang tanggal import di atas) tampil rapi per baris.
+
+---
+
+## Update 11: Audit tampilan mobile — bug CSS ditemukan & diperbaiki, plus perbaikan cache HTML
+
+### Bug ditemukan & diperbaiki: sidebar di HP tampil kosong (cuma ikon, tanpa teks)
+- File: `index.html`.
+- Akar masalahnya murni CSS: ada 2 aturan yang saling bertentangan untuk teks menu sidebar.
+  Aturan "sembunyikan teks" (dipakai untuk mode sidebar diciutkan di laptop) ditulis dengan
+  `!important`, sedangkan aturan "tampilkan teks di HP" yang seharusnya membatalkannya **tidak**
+  memakai `!important`. Dalam CSS, aturan tanpa `!important` **tidak pernah bisa mengalahkan**
+  aturan ber-`!important`, jadi kalau sidebar sempat dalam mode "diciutkan" (misalnya tersimpan
+  dari sesi laptop sebelumnya), begitu dibuka di HP teksnya tetap tersembunyi — persis seperti di
+  screenshot Anda (kolom ikon gelap tanpa tulisan).
+- Sudah diperbaiki: aturan "tampilkan teks di HP" sekarang juga memakai `!important`, plus posisi
+  ikon ikut dirapikan supaya sejajar dengan teks (bukan ikut mode "ikon di tengah" ala laptop).
+
+### Peningkatan UX mobile: overlay gelap di belakang sidebar
+- Sebelumnya saat sidebar dibuka di HP, konten di belakangnya tetap terlihat terang tanpa penanda
+  visual bahwa sidebar sedang aktif. Sekarang ditambahkan overlay gelap transparan di belakang
+  sidebar — standar pola "drawer menu" di aplikasi mobile — sekaligus bisa disentuh untuk menutup
+  sidebar (selain tombol X/toggle yang sudah ada).
+
+### Perbaikan cache: HTML utama sekarang tidak lagi di-cache
+- File: `index.html`.
+- `?v=...` yang ditambahkan di Update 7 hanya melindungi file JavaScript dari cache — dokumen
+  `index.html` itu sendiri tetap bisa di-cache oleh browser/hosting. Sudah ditambahkan header
+  `Cache-Control: no-cache, no-store, must-revalidate` supaya `index.html` **selalu** diambil ulang
+  dari server setiap kali dibuka, bukan dari cache. Ini melengkapi perbaikan cache di Update 7 —
+  sekarang baik file HTML maupun semua file JS-nya sama-sama tidak akan nyangkut di versi lama.
+
+### Perbaikan tambahan untuk kestabilan tampilan mobile secara umum
+- Ditambahkan pengaman CSS agar halaman tidak bisa scroll ke samping (horizontal) di layar kecil —
+  penyebab umum tampilan "meleset"/terpotong di HP kalau ada elemen yang sedikit lebih lebar dari
+  layar. Elemen seperti tabel yang memang perlu di-scroll ke samping (misalnya Rekap Bulanan) tetap
+  bisa di-scroll normal di dalam kotaknya sendiri — ini cuma mencegah SELURUH HALAMAN ikut bergeser.
+
+### Yang perlu Anda lakukan
+1. Timpa `index.html` dengan yang baru ini.
+2. Di HP, lakukan **hard refresh / hapus cache Safari atau Chrome** SATU KALI (biasanya lewat
+   Pengaturan browser → Hapus Riwayat & Data Situs Web, karena HP tidak punya tombol
+   Ctrl+Shift+R seperti laptop). Setelah itu header `no-cache` yang baru akan menjaga agar versi
+   terbaru selalu termuat otomatis ke depannya.
+
+---
+
+## Update 12: Audit mendalam pengalihan station User-DRG — dites otomatis, akar masalah asli ditemukan & diperbaiki
+
+### Metodologi
+Karena tidak ada VirtualBox di lingkungan kerja saya, saya membangun **test otomatis** yang benar-benar
+menjalankan seluruh aplikasi (semua file JS asli, tanpa disederhanakan) di dalam mesin browser
+virtual (headless), lengkap dengan localStorage sungguhan — lalu men-simulasikan skenario nyata:
+login sebagai User-DRG, admin mengubah station, dan memeriksa apakah tampilan benar-benar berubah.
+Ini jauh lebih dapat diandalkan dibanding membaca kode secara manual, karena setiap klaim
+"seharusnya berfungsi" langsung diuji, bukan diasumsikan. File tesnya saya sertakan di
+`tests/run-integration-smoke-test.js` kalau Anda ingin menjalankannya sendiri (`npm i jsdom` lalu
+`node tests/run-integration-smoke-test.js` dari folder yang berisi `dist/`).
+
+### Akar masalah SEBENARNYA — akhirnya ditemukan
+Tes otomatis ini berhasil mereproduksi persis laporan Anda ("saya sudah coba delete lalu tambahkan
+lagi juga tetap tidak bisa dipindahkan stationnya") dan menunjukkan akar masalah yang **belum pernah
+ketahuan di 11 update sebelumnya**:
+
+Daftar station yang muncul sebagai tab di Drygoods (`dgData.stations`) itu **daftar terpisah**
+dari data karyawan — hanya terisi saat aplikasi pertama kali dimuat, atau saat station baru
+ditambahkan lewat form Drygoods sendiri (Tambah Transaksi / Tambah Karyawan IFS). Kalau admin
+mengubah station seorang karyawan lewat **Data Karyawan** (panel admin umum, bukan form khusus
+Drygoods) — SAAT APLIKASI SUDAH BERJALAN — station baru itu **tidak pernah ditambahkan** ke daftar
+tab tersebut. Semua 11 mekanisme refresh yang saya bangun di update-update sebelumnya (polling 5
+detik, event bus, pengamatan DOM, dsb.) sudah **benar** memperbarui variabel penguncian station di
+belakang layar — tapi karena tab station-nya sendiri tidak pernah dibuat, tidak ada apa pun yang
+bisa diklik user untuk melihatnya. Persis seperti "station-nya berubah tapi tidak kelihatan" —
+karena secara harfiah tab-nya tidak ada.
+
+### Perbaikan
+- File: `js/drygoods.js`.
+- Setiap kali station seorang User-DRG berhasil dibaca dari data karyawan (di 3 titik kode yang
+  melakukan pembacaan ini), sekarang station itu **otomatis didaftarkan** ke `dgData.stations` kalau
+  belum ada di sana (asalkan station itu valid/terdaftar di Bank Data Station) — sehingga tab untuk
+  station tersebut **selalu muncul**, tidak peduli lewat form mana admin mengubahnya.
+
+### Hasil pengujian
+- **164 dari 164 test otomatis lulus** (termasuk 7 skenario baru yang meniru persis kasus Anda:
+  login → cek lock awal, admin ganti station → cek via panggilan langsung, via event bus, via
+  polling latar belakang murni tanpa navigasi, hapus-lalu-buat-ulang karyawan dengan station
+  berbeda, dan kepekaan huruf besar/kecil pada username).
+- Sebelum perbaikan: 5 dari 164 gagal — persis pada skenario "tab station tidak muncul setelah
+  station diubah". Sesudah perbaikan: semua lulus.
+- Sebagai bonus temuan sampingan: 1 test lama (`cloudConfig`) ternyata menguji asumsi yang sudah
+  usang dari sebelum migrasi Supabase→Firebase — sudah diperbarui supaya sesuai arsitektur saat ini.
+
+### Catatan jujur soal keterbatasan pengujian ini
+Tes ini memvalidasi **seluruh logika di sisi browser/kode** secara menyeluruh dan nyata (bukan
+simulasi/tebakan) — ini yang selama ini paling sering jadi sumber bug. Yang TIDAK bisa diuji di
+lingkungan ini adalah lapisan sinkronisasi cloud (Firebase) itu sendiri, karena tidak ada akses
+jaringan ke Firebase dari lingkungan kerja saya. Kalau setelah update ini kasus Elyn (atau kasus
+serupa) masih terjadi, itu artinya akar masalahnya kemungkinan besar sudah bergeser ke lapisan
+konfigurasi/koneksi cloud sync, bukan lagi logika kode — silakan cek indikator status sync di
+Settings saat Elyn login, seperti yang saya sarankan di update sebelumnya.
+
+---
+
+## Update 13: Hapus tab IFS Station (Drygoods) + putuskan semua tautan terkait
+
+### Yang dihapus
+Tab **Drygoods → IFS Station** dihapus sepenuhnya beserta semua yang terhubung dengannya:
+- Tombol sidebar "IFS Station" — dihapus.
+- Section/halaman tab itu sendiri (tabel data karyawan per station) — dihapus dari `index.html`.
+- Pengaturan hak akses "Drygoods – IFS Station" di halaman **Atur Akses Role** — otomatis hilang
+  (halaman itu dibuat otomatis dari daftar fitur, jadi tidak perlu diedit manual).
+- `js/ifs-station-viewonly.js` — file ini isinya HANYA logika read-only untuk tab IFS Station,
+  jadi sekarang jadi file mati. Sudah dihapus sepenuhnya beserta referensinya di `index.html`.
+- Referensi ke tab ini di `js/drygoods-tab-watch.js` (pengamat DOM & event bus) dan
+  `js/drygoods.js` (listener event `sjn:tab-changed`) — dilepas.
+- Baris di `js/auth.js` yang mengizinkan role "User" mengakses tab ini secara langsung — dilepas.
+
+### Yang SENGAJA tidak diutak-atik
+- **Data karyawan itu sendiri** (`sjnam_karyawan_v1`) — tidak dihapus, tidak diubah. Data ini
+  dipakai bersama oleh banyak fitur lain (kunci station User-DRG, tab Admin → Data Karyawan, dll),
+  jadi menghapus tab IFS Station tidak menghapus satu pun data karyawan yang sudah ada.
+  Kalau butuh melihat/mengelola data karyawan per station, tetap bisa lewat **Admin → Data
+  Karyawan** — form dan tabelnya lebih lengkap dari yang ada di tab IFS Station.
+- Fungsi render internal (`renderDgEmployees`, dsb.) di `drygoods.js` sengaja **dibiarkan ada**
+  (bukan dihapus) tapi sudah tidak pernah terpanggil oleh apa pun — ini pilihan yang lebih aman
+  daripada membongkar fungsi tersebut, karena tidak menyentuh logika lain yang mungkin masih
+  bergantung padanya secara tidak langsung.
+
+### Verifikasi
+Dites ulang dengan seluruh 164 test otomatis dari Update 12 (termasuk 7 skenario deep-audit
+pengalihan station User-DRG) — **semua tetap lulus** setelah tab IFS Station dihapus, memastikan
+penghapusan ini tidak mematahkan logika kunci station yang sudah diperbaiki sebelumnya.
+
+---
+
+## Update 14: Role baru "User-STR" (Station Report)
+
+### Yang ditambahkan
+- Role baru **User-STR** — akses default HANYA ke 3 tab Station Report (Activity Report,
+  Check-In Report, First Bag Last Bag). Semua tab lain (Home, Drygoods, Admin, dst.) terkunci
+  secara default, sama seperti pola role kustom lain (User-SR, User-STCR, dst.).
+- Warna khas: cyan (badge `bg-cyan-100 text-cyan-700`), supaya mudah dibedakan dari role lain di
+  tabel & dropdown.
+- Muncul otomatis di semua tempat yang relevan: dropdown **Add Role** (Admin → Manajemen Role),
+  filter role di tabel akun, dropdown **Buat Akun Sekaligus** di form Data Karyawan, dan di halaman
+  **Atur Akses Role** (baris kolom baru otomatis muncul karena dibuat dari daftar fitur).
+- Nama "User-STR" saya pertahankan sesuai usulan Anda — sedikit mirip visual dengan "User-ST"
+  (Service Training) tapi cukup beda (3 huruf vs 2) dan langsung mencerminkan nama modul "Station
+  Report". Kalau ke depan terasa membingungkan di lapangan, gampang diganti ke nama lain (misalnya
+  "User-SREP") kapan saja lewat satu berkas ini saja.
+
+### Belum ditambahkan (opsional, beri tahu saya kalau perlu)
+- **Kunci per-station** seperti yang dimiliki User-DRG/User-SR/User-STCR/User-ST (di mana user hanya
+  bisa melihat/isi data untuk 1 station miliknya sendiri). Saat ini User-STR yang login bisa
+  isi/lihat data SEMUA station di ketiga tab Station Report. Kalau Anda mau setiap User-STR dikunci
+  ke 1 station saja (mis. staff Activity Report di Makassar cuma bisa isi data Makassar), ini fitur
+  tambahan yang bisa saya bangun terpisah — pola & seluruh infrastrukturnya sudah ada (dipakai
+  Drygoods), tinggal diterapkan ke modul Station Report.
+
+### Verifikasi
+Ditambahkan 2 test baru khusus role ini ke `tests/run-integration-smoke-test.js`, termasuk
+pengecekan **end-to-end nyata** (bukan cuma cek konfigurasi): login sebagai User-STR lalu benar-benar
+mencoba `switchTab` ke tab yang boleh (berhasil) dan yang tidak boleh (diblokir) lewat rantai
+`switchTab` sungguhan, plus cek visibilitas grup sidebar. **Total 195 dari 195 test lulus**
+(179 test lama + 2 baru untuk role ini + beberapa test lama yang saya sesuaikan jumlah role-nya).
+
 
 
 

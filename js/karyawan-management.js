@@ -537,7 +537,7 @@
       // SYARAT — sebelumnya hanya di-refresh via _selfUpdateDrgStation yang
       // cuma jalan kalau yang login adalah karyawan yang sama persis dengan
       // yang sedang diedit. Akibatnya kalau Admin mengedit station karyawan
-      // LAIN (kasus paling umum), tab Drygoods → IFS Station tetap
+      // LAIN (kasus paling umum), tab Drygoods tetap
       // menampilkan station lama sampai halaman di-refresh manual.
       if (typeof window.DRYGOODS?.renderAll === 'function') window.DRYGOODS.renderAll();
     };
@@ -719,7 +719,7 @@
       if (typeof auditLog === 'function') auditLog('delete', 'karyawan', delId, item?.nama || '');
       renderKaryawan();
       // [FIX] Sama seperti simpan/edit — refresh Drygoods agar karyawan yang
-      // dihapus juga hilang dari tabel IFS Station & tab station tanpa perlu reload.
+      // dihapus juga hilang dari data karyawan Drygoods tanpa perlu reload.
       if (typeof window.DRYGOODS?.renderAll === 'function') window.DRYGOODS.renderAll();
       showToast('Karyawan dihapus', 'success');
     }

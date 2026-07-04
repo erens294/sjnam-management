@@ -106,6 +106,25 @@
   function getActivityData() { return load(LS_ACT, []); }
   function saveActivityData(list) { persist(LS_ACT, list); }
 
+  function resetActivityByDay(date) {
+    var list = getActivityData().filter(function (r) { return r.tanggal !== date; });
+    var removed = getActivityData().length - list.length;
+    saveActivityData(list);
+    return removed;
+  }
+  function resetActivityByMonth(yyyymm) {
+    var before = getActivityData();
+    var list = before.filter(function (r) { return !r.tanggal || r.tanggal.slice(0, 7) !== yyyymm; });
+    var removed = before.length - list.length;
+    saveActivityData(list);
+    return removed;
+  }
+  function resetActivityAll() {
+    var removed = getActivityData().length;
+    saveActivityData([]);
+    return removed;
+  }
+
   function findActEntry(date, distrik) {
     var list = getActivityData();
     return list.find(function (r) { return r.tanggal === date && r.distrik === distrik; });
@@ -634,16 +653,23 @@
         var wb = XLSX.read(ev.target.result, { type: "binary", cellDates: true });
         var wsName = wb.SheetNames.find(function (n) { return /data/i.test(n); }) || wb.SheetNames[0];
         var ws = wb.Sheets[wsName];
-        var rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+        var rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
         if (!rows.length) return void ("function" == typeof window.showToast && window.showToast("File Excel kosong atau format tidak dikenali", "error"));
 
-        function col(row, names) {
+        function colExact(row, names) {
           var keys = Object.keys(row);
           for (var i = 0; i < names.length; i++) {
             var nl = names[i].toLowerCase();
             var exact = keys.find(function (k) { return k.trim().toLowerCase() === nl; });
             if (exact !== undefined) return row[exact];
           }
+          return undefined;
+        }
+
+        function col(row, names) {
+          var exact = colExact(row, names);
+          if (exact !== undefined) return exact;
+          var keys = Object.keys(row);
           for (var j = 0; j < names.length; j++) {
             var nl2 = names[j].toLowerCase();
             var partial = keys.find(function (k) { return k.trim().toLowerCase().includes(nl2); });
@@ -653,12 +679,13 @@
         }
 
         var added = 0, updated = 0, skipped = 0, newStations = [], errors = [];
+        var minDate = null, maxDate = null;
         var existing = getActivityData();
         rows.forEach(function (row, idx) {
           var rowNum = idx + 2;
           var vals = Object.values(row).map(function (v) { return String(v || "").trim(); }).filter(Boolean);
           if (!vals.length) return;
-          var dateRaw = col(row, ["tanggal", "tgl", "date"]);
+          var dateRaw = colExact(row, ["tanggal", "tgl", "date"]);
           var dateVal = parseActDate(dateRaw);
           var stationRaw = String(col(row, ["station", "distrik", "stasiun"]) || "").trim();
           var statusRaw = col(row, ["status"]);
@@ -679,6 +706,8 @@
             updatedBy: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || ""
           };
           if (idxExisting > -1) { existing[idxExisting] = entry; updated++; } else { existing.push(entry); added++; }
+          if (minDate === null || dateVal < minDate) minDate = dateVal;
+          if (maxDate === null || dateVal > maxDate) maxDate = dateVal;
         });
 
         if (!added && !updated) {
@@ -690,7 +719,9 @@
           return;
         }
 
-        var confirmMsg = "Akan menambahkan " + added + " data baru" + (updated ? " dan memperbarui " + updated + " data yang sudah ada" : "") + "." +
+        var confirmMsg = "Rentang tanggal terdeteksi di file: " + (minDate ? fmtDate(minDate) + " s/d " + fmtDate(maxDate) : "-") +
+          "\n(Periksa apakah rentang ini sesuai dengan yang Anda maksud sebelum melanjutkan.)\n\n" +
+          "Akan menambahkan " + added + " data baru" + (updated ? " dan memperbarui " + updated + " data yang sudah ada" : "") + "." +
           (skipped ? "\n⚠️ " + skipped + " baris dilewati (tidak valid)." : "") +
           (newStations.length ? "\n➕ " + newStations.length + " station baru akan ditambahkan ke daftar: " + newStations.join(", ") : "") +
           "\n\nLanjutkan?";
@@ -822,6 +853,37 @@
       if (file) importActivityExcel(file);
       e.target.value = "";
     });
+
+    document.getElementById("btnSrActResetDropdown")?.addEventListener("click", function (e) {
+      e.stopPropagation();
+      document.getElementById("srActResetMenu")?.classList.toggle("hidden");
+    });
+    document.addEventListener("click", function () { document.getElementById("srActResetMenu")?.classList.add("hidden"); });
+    document.getElementById("srActResetMenu")?.addEventListener("click", async function (e) {
+      var opt = e.target.closest("[data-sr-act-reset]")?.dataset.srActReset;
+      if (!opt) return;
+      document.getElementById("srActResetMenu")?.classList.add("hidden");
+      var date = document.getElementById("srActDate")?.value || todayStr();
+      if (opt === "day") {
+        if (!(window.showConfirm ? await window.showConfirm("Hapus Data Harian", "Hapus SEMUA data Activity Report untuk tanggal " + fmtDate(date) + "? Tindakan ini tidak dapat dibatalkan.") : confirm("Hapus data tanggal " + date + "?"))) return;
+        var n1 = resetActivityByDay(date);
+        renderActivityGrid(); rebuildActMonths(true); renderMonthSelect(); renderPulseStrip();
+        "function" == typeof window.showToast && window.showToast(n1 + " data tanggal " + fmtDate(date) + " dihapus", "success");
+      } else if (opt === "month") {
+        var yyyymm = date.slice(0, 7);
+        var monthLabel = MONTH_NAMES[parseInt(date.slice(5, 7), 10) - 1] + " " + date.slice(0, 4);
+        if (!(window.showConfirm ? await window.showConfirm("Hapus Data Bulanan", "Hapus SEMUA data Activity Report untuk bulan " + monthLabel + " (berdasarkan tanggal yang sedang dipilih)? Tindakan ini tidak dapat dibatalkan.") : confirm("Hapus data bulan " + yyyymm + "?"))) return;
+        var n2 = resetActivityByMonth(yyyymm);
+        renderActivityGrid(); rebuildActMonths(true); renderMonthSelect(); renderPulseStrip();
+        "function" == typeof window.showToast && window.showToast(n2 + " data bulan " + monthLabel + " dihapus", "success");
+      } else if (opt === "all") {
+        if (!(window.showConfirm ? await window.showConfirm("⚠️ Hapus Semua Data", "Hapus SEMUA data Activity Report (semua tanggal, semua station)? Daftar station tidak ikut terhapus. Tindakan ini tidak dapat dibatalkan.") : confirm("Hapus SEMUA data Activity Report?"))) return;
+        var n3 = resetActivityAll();
+        renderActivityGrid(); rebuildActMonths(true); renderMonthSelect(); renderPulseStrip();
+        "function" == typeof window.showToast && window.showToast(n3 + " data Activity Report dihapus", "success");
+      }
+    });
+
     document.getElementById("srActTableBody")?.addEventListener("click", async function (e) {
       var delName = e.target.closest("[data-sr-act-station-del]")?.dataset.srActStationDel;
       if (!delName) return;
