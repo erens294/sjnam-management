@@ -276,6 +276,110 @@ supaya rantai pembungkusnya makin pendek dan makin jarang punya titik rawan sepe
 - Tidak ada library baru yang ditambahkan — memakai jsPDF + jspdf-autotable + SheetJS (XLSX) yang
   sudah termuat di aplikasi ini.
 
+---
+
+## Update 7: Tombol "+ Tambah Station" "tidak berfungsi" — akar masalahnya cache browser, bukan bug kode
+
+### Diagnosis
+Screenshot yang dikirim menunjukkan teks **"0 / 28 distrik sudah diisi..."** — padahal di Update 6
+teks itu sudah diganti jadi **"station"**. Ini adalah tanda pasti bahwa file `js/station-report.js`
+yang benar-benar berjalan di browser masih versi **lama** (dari sebelum Update 6), bukan file yang
+sudah saya kirim. Saya cek ulang file yang saya kirim di Update 6 — teks & tombolnya sudah benar
+(sudah saya verifikasi ulang: 0 kemunculan teks "distrik" yang terlihat user, tombol
+`btnSrActAddStation` sudah tersambung ke fungsi `openAddStationModal`). Jadi bukan bug kode, tapi
+**file lama masih ter-cache** di browser atau server hosting belum menimpa file yang lama.
+
+### Perbaikan: cache-busting otomatis
+- File: `index.html`.
+- Semua tag `<script src="js/....js">` sekarang punya akhiran versi, contoh:
+  `<script src="js/station-report.js?v=20260704a">`. Setiap kali saya kirim update baru, versi ini
+  akan saya naikkan (misal jadi `?v=20260704b`) — begitu Anda mengganti `index.html` dengan versi
+  baru, browser **otomatis dipaksa mengambil ulang** semua file JS yang berubah, tidak mengandalkan
+  cache lama sama sekali. ini menutup celah "kode sudah benar tapi browser masih pakai versi lama"
+  yang sepertinya jadi penyebab beberapa laporan bug beberapa waktu terakhir.
+
+### Yang perlu dilakukan di sisi Anda
+1. Timpa **seluruh isi folder `dist/`** (jangan cuma file yang "kelihatan berubah") dengan yang saya
+   kirim, termasuk `index.html` yang baru ini.
+2. Setelah upload, lakukan **hard refresh** di browser (Ctrl+Shift+R / Cmd+Shift+R) satu kali saja
+   untuk memastikan `index.html` versi terbaru (dengan tag `?v=...` baru) benar-benar termuat.
+   Setelah itu, `?v=...` akan otomatis menjaga cache tetap segar setiap kali ada update selanjutnya
+   — tidak perlu hard refresh manual lagi ke depannya.
+3. Kalau memakai CDN/proxy caching di depan hosting (Cloudflare, dsb.), pastikan juga cache di sana
+   di-*purge* setelah upload, karena cache-busting di sisi browser tidak menembus cache di layer itu.
+
+### Semua group tab lain
+Sudah saya cek ulang seluruh grup tab (Service Recovery, Stretchercase & POB, Service Training,
+Admin, Drygoods, Station Report) — tidak ada bug tambahan yang ditemukan di kode. Perbaikan
+cache-busting di atas berlaku untuk SEMUA file JS aplikasi ini sekaligus, jadi kalau ada tab lain
+yang juga terasa "nyangkut di versi lama", perbaikan ini akan ikut menyelesaikannya.
+
+---
+
+## Update 8: Sidebar tidak bisa di-minimize, refresh page reset data, import Excel, dan investigasi lanjutan kasus Elyn
+
+### Bug ditemukan & diperbaiki: grup "STATION REPORT" tidak bisa di-minimize
+- File: `index.html`.
+- Saat menambahkan grup sidebar "Station Report" di update sebelumnya, saya menambahkan tombol &
+  event click-nya, tapi **lupa mendaftarkan ID kontainernya (`#stationReportMenuContent`) ke 3 baris
+  CSS** yang mengatur animasi collapse/expand (yang sudah ada sejak awal untuk grup Admin, Service
+  Recovery, STCR, Training, Drygoods). Akibatnya class `.collapsed` yang di-toggle oleh JavaScript
+  tidak punya efek visual apa pun — klik pada header grup terlihat tidak merespon. Sudah diperbaiki,
+  ke-3 baris CSS itu sekarang ikut menyertakan `#stationReportMenuContent`.
+
+### Bug ditemukan & diperbaiki: refresh resets filter Dashboard Service Recovery
+- File: `js/service-recovery.js`.
+- Kode inisialisasi filter tanggal Dashboard (Service Recovery) selalu **memaksa reset ke "7 hari
+  terakhir"** setiap kali halaman dimuat ulang — tidak peduli filter tanggal/airline apa yang
+  sebelumnya Anda pilih. Ini yang menyebabkan kesan "pindah halaman" & "data ter-reset" setelah
+  refresh: Anda tetap di tab Dashboard yang benar, tapi tampilan KPI/grafik berubah total karena
+  filter tanggalnya diam-diam kembali ke default.
+- Diperbaiki: filter tanggal & airline sekarang **disimpan ke localStorage** setiap kali diubah
+  (baik lewat input tanggal manual maupun tombol preset 7 Hari/30 Hari/Semua), dan **dipulihkan**
+  saat halaman dimuat ulang. Kalau belum pernah diatur sebelumnya, baru default ke 7 hari terakhir
+  seperti semula.
+
+### Bug ditemukan & diperbaiki: refresh listener station Drygoods yang salah nama fungsi
+- File: `js/service-recovery.js`.
+- Ditemukan saat menelusuri kasus Elyn lebih dalam: ada kode yang seharusnya menyegarkan tampilan
+  Drygoods saat browser tab kembali terlihat (misal setelah pindah tab lalu balik lagi, atau laptop
+  bangun dari sleep) — tapi kode itu memanggil nama fungsi yang **tidak pernah benar-benar dibuat
+  global** (`buildStationTabs` — yang benar diekspos dengan nama `buildDgStationTabs`). Akibatnya
+  bagian refresh tab-station (dimming, status "+Station" terkunci, dsb.) diam-diam gagal jalan di
+  jalur ini, meski jalur lain (polling 5 detik, event tab-changed) tetap berjalan. Sudah diganti
+  memakai `DRYGOODS.renderAll()` yang benar dan mencakup semua bagian (lock, tab, tabel, dashboard).
+- File: `js/shared-utils.js` — pembersihan kode serupa yang tidak berbahaya (karena
+  `DRYGOODS.renderAll()` di baris setelahnya sudah mencakup itu) tapi membingungkan untuk dibaca.
+
+### Kasus Elyn (station tidak berubah) — status investigasi
+Dengan perbaikan di atas + seluruh perbaikan Update 1–7 sebelumnya, sekarang ada **6 mekanisme
+independen** yang saling menopang untuk menjaga station Drygoods selalu sesuai data karyawan
+terbaru: refresh di dalam `cloudPull()`, hook di `patch-arsitektur-v3.js`, polling lokal 5 detik,
+pengamatan DOM tab-aktif (`drygoods-tab-watch.js`), event bus `sjn:tab-changed`, dan sekarang
+refresh saat tab browser kembali terlihat. Kalau setelah update ini (dan hard-refresh + hapus cache)
+Elyn **masih** tidak berubah, kemungkinan besar akar masalahnya bukan lagi di kode, melainkan:
+- **Cloud sync (Firebase) belum benar-benar terhubung** untuk device/browser Elyn — cek indikator
+  status sync di tab Settings saat Elyn login (harus hijau "Terhubung", bukan abu-abu).
+- **Elyn & Admin memakai device/browser yang benar-benar berbeda** dan belum ada satu pun proses
+  sync yang berhasil jalan sejak perubahan dibuat — minta Elyn logout lalu login ulang (bukan cuma
+  refresh) untuk memaksa pull data terbaru saat proses login.
+- Kalau kedua hal di atas sudah dipastikan oke tapi tetap gagal, mohon info: apakah Elyn login di
+  device/browser yang sama dengan Admin, atau benar-benar berbeda? Ini akan menentukan apakah
+  masalahnya di sisi cloud sync atau ada hal lain yang perlu ditelusuri lebih jauh.
+
+### Fitur baru: Import Excel di Activity Report → Input Data
+- File: `index.html`, `js/station-report.js`.
+- Tombol **📥 Import Excel** baru di sub-tab Input Data (sebelah tombol Tambah Station & Export
+  Excel). Mendukung file dengan struktur seperti `Distrik_Activity_Dashboard2.xlsx` yang dilampirkan
+  sebelumnya — kolom dikenali secara fleksibel: **Tanggal** (atau Tgl/Date), **Station** (atau
+  Distrik/Stasiun), **Status** (Lapor/Tidak Lapor/Tutup — juga menerima singkatan L/TL/T), dan
+  **Keterangan** (opsional, atau Catatan/Note).
+- Kalau ada nama station di file Excel yang belum ada di daftar aplikasi, akan **otomatis
+  ditambahkan** ke daftar station (dengan konfirmasi sebelum disimpan).
+- Data tanggal & station yang sama akan **diperbarui**, bukan diduplikasi — sama seperti aturan
+  input manual. Ada ringkasan hasil import (berapa data baru, berapa diperbarui, berapa baris
+  dilewati beserta alasannya).
+
 
 
 

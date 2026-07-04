@@ -590,6 +590,126 @@
     doc.save("Rekap_Bulanan_Station_" + srActRekapYear + (srActRekapMode === "count" ? "_JumlahLapor" : "_Kepatuhan") + ".pdf");
   }
 
+  function parseActDate(raw) {
+    if (!raw || String(raw).trim() === "") return "";
+    var s = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if (raw instanceof Date && !isNaN(raw)) return raw.toISOString().slice(0, 10);
+    if (!isNaN(Number(s)) && Number(s) > 20000 && Number(s) < 90000 && window.XLSX && XLSX.SSF) {
+      try {
+        var d0 = XLSX.SSF.parse_date_code(Number(s));
+        if (d0 && d0.y && d0.m && d0.d) return d0.y + "-" + String(d0.m).padStart(2, "0") + "-" + String(d0.d).padStart(2, "0");
+      } catch (e) {}
+    }
+    var m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (m) {
+      var d = parseInt(m[1], 10), mo = parseInt(m[2], 10), yr = m[3].length === 2 ? "20" + m[3] : m[3];
+      if (mo > 12 && d <= 12) { var t = d; d = mo; mo = t; }
+      return yr + "-" + String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+    }
+    var dt = new Date(s);
+    if (!isNaN(dt) && dt.getFullYear() > 2000 && dt.getFullYear() < 2100) return dt.toISOString().slice(0, 10);
+    return "";
+  }
+
+  function normalizeActStatus(raw) {
+    var s = String(raw || "").trim().toLowerCase();
+    if (!s) return "";
+    if (s === "l" || s === "lapor" || s === "yes" || s === "y" || s === "1") return "Lapor";
+    if (s === "tl" || s === "tidak lapor" || s === "no" || s === "n" || s === "0" || s === "tidaklapor") return "Tidak Lapor";
+    if (s === "t" || s === "tutup" || s === "closed" || s === "close") return "Tutup";
+    return "";
+  }
+
+  function importActivityExcel(file) {
+    if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("Library XLSX belum termuat", "error"));
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      try {
+        var wb = XLSX.read(ev.target.result, { type: "binary", cellDates: true });
+        var wsName = wb.SheetNames.find(function (n) { return /data/i.test(n); }) || wb.SheetNames[0];
+        var ws = wb.Sheets[wsName];
+        var rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+        if (!rows.length) return void ("function" == typeof window.showToast && window.showToast("File Excel kosong atau format tidak dikenali", "error"));
+
+        function col(row, names) {
+          var keys = Object.keys(row);
+          for (var i = 0; i < names.length; i++) {
+            var nl = names[i].toLowerCase();
+            var exact = keys.find(function (k) { return k.trim().toLowerCase() === nl; });
+            if (exact !== undefined) return row[exact];
+          }
+          for (var j = 0; j < names.length; j++) {
+            var nl2 = names[j].toLowerCase();
+            var partial = keys.find(function (k) { return k.trim().toLowerCase().includes(nl2); });
+            if (partial !== undefined) return row[partial];
+          }
+          return "";
+        }
+
+        var added = 0, updated = 0, skipped = 0, newStations = [], errors = [];
+        var existing = getActivityData();
+        rows.forEach(function (row, idx) {
+          var rowNum = idx + 2;
+          var vals = Object.values(row).map(function (v) { return String(v || "").trim(); }).filter(Boolean);
+          if (!vals.length) return;
+          var dateRaw = col(row, ["tanggal", "tgl", "date"]);
+          var dateVal = parseActDate(dateRaw);
+          var stationRaw = String(col(row, ["station", "distrik", "stasiun"]) || "").trim();
+          var statusRaw = col(row, ["status"]);
+          var status = normalizeActStatus(statusRaw);
+          var keterangan = String(col(row, ["keterangan", "catatan", "note", "remark"]) || "").trim();
+          if (!dateVal) { errors.push("Baris " + rowNum + ": tanggal tidak valid (\"" + dateRaw + "\")"); skipped++; return; }
+          if (!stationRaw) { errors.push("Baris " + rowNum + ": station/distrik kosong"); skipped++; return; }
+          if (!status) { errors.push("Baris " + rowNum + ": status harus Lapor/Tidak Lapor/Tutup (ditemukan: \"" + statusRaw + "\")"); skipped++; return; }
+          if (!STATION_LIST.some(function (s) { return s.toLowerCase() === stationRaw.toLowerCase(); })) {
+            STATION_LIST.push(stationRaw);
+            newStations.push(stationRaw);
+          }
+          var idxExisting = existing.findIndex(function (r) { return r.tanggal === dateVal && r.distrik === stationRaw; });
+          var entry = {
+            id: idxExisting > -1 ? existing[idxExisting].id : genId("act"),
+            tanggal: dateVal, distrik: stationRaw, status: status, keterangan: keterangan,
+            updatedAt: new Date().toISOString(),
+            updatedBy: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || ""
+          };
+          if (idxExisting > -1) { existing[idxExisting] = entry; updated++; } else { existing.push(entry); added++; }
+        });
+
+        if (!added && !updated) {
+          var msg = "Import gagal: " + skipped + " baris dilewati.";
+          if (errors.length) msg += "\n\nDetail:\n" + errors.slice(0, 8).join("\n") + (errors.length > 8 ? "\n... dan " + (errors.length - 8) + " baris lainnya" : "");
+          msg += "\n\n💡 Format kolom yang dikenali: Tanggal, Station/Distrik, Status (Lapor/Tidak Lapor/Tutup), Keterangan (opsional).";
+          "function" == typeof window.showToast && window.showToast("Import gagal — lihat detail", "error");
+          setTimeout(function () { alert(msg); }, 100);
+          return;
+        }
+
+        var confirmMsg = "Akan menambahkan " + added + " data baru" + (updated ? " dan memperbarui " + updated + " data yang sudah ada" : "") + "." +
+          (skipped ? "\n⚠️ " + skipped + " baris dilewati (tidak valid)." : "") +
+          (newStations.length ? "\n➕ " + newStations.length + " station baru akan ditambahkan ke daftar: " + newStations.join(", ") : "") +
+          "\n\nLanjutkan?";
+        (window.showConfirm ? window.showConfirm("Import Excel Activity Report", confirmMsg) : Promise.resolve(confirm(confirmMsg))).then(function (ok) {
+          if (!ok) { STATION_LIST = STATION_LIST.filter(function (s) { return newStations.indexOf(s) === -1; }); return; }
+          saveActivityData(existing);
+          if (newStations.length) { STATION_LIST.sort(function (a, b) { return a.localeCompare(b); }); saveStationList(); }
+          renderActivityGrid();
+          rebuildActMonths(true);
+          renderMonthSelect();
+          renderPulseStrip();
+          var successMsg = "✅ Import berhasil: " + added + " data baru" + (updated ? ", " + updated + " diperbarui" : "");
+          if (skipped) successMsg += ", " + skipped + " baris tidak valid";
+          "function" == typeof window.showToast && window.showToast(successMsg, "success");
+          if (errors.length) console.warn("[Activity Import] Baris tidak valid:\n", errors.join("\n"));
+        });
+      } catch (err) {
+        "function" == typeof window.showToast && window.showToast("Gagal membaca file Excel: " + err.message, "error");
+        console.error("[Activity Import]", err);
+      }
+    };
+    reader.readAsBinaryString(file);
+  }
+
   function initActivityReportEvents() {
     ensureActivityStyles();
     rebuildActMonths(false);
@@ -676,6 +796,11 @@
     });
 
     document.getElementById("btnSrActAddStation")?.addEventListener("click", openAddStationModal);
+    document.getElementById("srActImportExcelInput")?.addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      if (file) importActivityExcel(file);
+      e.target.value = "";
+    });
     document.getElementById("srActTableBody")?.addEventListener("click", async function (e) {
       var delName = e.target.closest("[data-sr-act-station-del]")?.dataset.srActStationDel;
       if (!delName) return;
