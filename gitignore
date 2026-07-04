@@ -1,0 +1,28 @@
+# ================================================================
+# SJNAM — .gitignore
+# ================================================================
+
+# Konfigurasi khusus environment (Firebase project ID, dsb).
+# Ini BUKAN rahasia (config Firebase Web App memang didesain publik),
+# tapi environment-specific — jangan sampai project ID dev/staging
+# menimpa punya production atau sebaliknya.
+# Commit "config_example.js" sebagai template, bukan file ini.
+dist/js/config.js
+
+# Dependencies untuk menjalankan tests/run-integration-smoke-test.js
+# (dibuat otomatis oleh `npm install`, tinggal install ulang kapan
+# saja dari package.json — tidak perlu & tidak boleh di-commit)
+node_modules/
+
+# File sampah OS
+.DS_Store
+Thumbs.db
+
+# File sampah editor
+.vscode/
+.idea/
+*.swp
+
+# Log & file sementara
+*.log
+.cache/
