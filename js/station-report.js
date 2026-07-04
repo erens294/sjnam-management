@@ -101,7 +101,7 @@
 
   /* ============================== ACTIVITY REPORT ============================== */
   var MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-  var CAT_COLOR = { Better: "#17A673", Middle: "#D9970B", Worst: "#DC3A45", Tutup: "#94A0B4" };
+  var CAT_COLOR = { Better: "#17A673", Middle: "#D9970B", Worst: "#DC3A45", Tutup: "#94A0B4", Belum: "#CBD5E1" };
 
   function getActivityData() { return load(LS_ACT, []); }
   function saveActivityData(list) { persist(LS_ACT, list); }
@@ -131,13 +131,18 @@
   function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
 
   function computeDistrikMonth(distrik, y, m) {
+    var now = new Date();
+    var isFuture = y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth() + 1);
+    if (isFuture) return { lapor: 0, tutup: 0, pct: null, cat: "Belum" };
     var mm = String(m).padStart(2, "0"), prefix = y + "-" + mm;
     var lapor = 0, tutup = 0;
     getActivityData().forEach(function (r) {
       if (r.distrik !== distrik || !r.tanggal || r.tanggal.slice(0, 7) !== prefix) return;
       if (r.status === "Lapor") lapor++; else if (r.status === "Tutup") tutup++;
     });
-    var dim = daysInMonth(y, m), eff = dim - tutup, pct = eff <= 0 ? null : lapor / eff, cat = "Tutup";
+    var isCurrentMonth = y === now.getFullYear() && m === now.getMonth() + 1;
+    var dim = isCurrentMonth ? now.getDate() : daysInMonth(y, m);
+    var eff = dim - tutup, pct = eff <= 0 ? null : lapor / eff, cat = "Tutup";
     if (pct !== null) cat = pct >= 0.87 ? "Better" : pct >= 0.53 ? "Middle" : "Worst";
     return { lapor: lapor, tutup: tutup, pct: pct, cat: cat };
   }
@@ -166,7 +171,7 @@
       ".sr-act-tbl-scroll tbody td{padding:7px 10px;border-bottom:1px solid var(--card-border,rgba(0,0,0,.08));color:var(--text-primary,#0f172a)}" +
       ".sr-act-tbl-scroll tbody tr:hover{background:rgba(59,130,246,.07)}" +
       ".sr-act-badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700}" +
-      ".sr-act-badge.Better{background:#E4F7EF;color:#17A673}.sr-act-badge.Middle{background:#FDF3DF;color:#D9970B}.sr-act-badge.Worst{background:#FCE6E7;color:#DC3A45}.sr-act-badge.Tutup{background:#EEF0F4;color:#6B7688}" +
+      ".sr-act-badge.Better{background:#E4F7EF;color:#17A673}.sr-act-badge.Middle{background:#FDF3DF;color:#D9970B}.sr-act-badge.Worst{background:#FCE6E7;color:#DC3A45}.sr-act-badge.Tutup{background:#EEF0F4;color:#6B7688}.sr-act-badge.Belum{background:#F1F5F9;color:#64748B}" +
       ".sr-act-pulse{display:flex;gap:2px;align-items:center}.sr-act-pulse .dot{width:6px;height:15px;border-radius:2px;opacity:.9}" +
       ".sr-act-monthpicker{display:flex;align-items:center;gap:6px;background:var(--input-bg,#f8fafc);border:1px solid var(--input-border,#e2e8f0);border-radius:8px;padding:5px 6px}" +
       ".sr-act-monthpicker select{border:none;background:transparent;font-weight:600;font-size:12.5px;color:var(--text-primary,#0f172a);outline:0;cursor:pointer}" +
