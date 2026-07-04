@@ -636,8 +636,13 @@
     });
   }
 
-  /* ============================== INIT / HOOK KE switchTab ============================== */
+/* ============================== INIT / DETEKSI TAB AKTIF (independen dari window.switchTab) ============================== */
   var initedAct = false, initedCi = false, initedFlb = false;
+  var TAB_SECTION_MAP = {
+    "tab-station-activity": "station-activity",
+    "tab-station-checkin": "station-checkin",
+    "tab-station-bagreport": "station-bagreport"
+  };
 
   function onTabOpen(tab) {
     if (tab === "station-activity") {
@@ -662,23 +667,49 @@
     }
   }
 
-  function hookSwitchTab() {
-    var orig = window.switchTab;
-    if (typeof orig !== "function" || orig._srHooked) return false;
-    window.switchTab = function (tab) {
-      var r = orig.apply(this, arguments);
-      onTabOpen(tab);
-      return r;
-    };
-    window.switchTab._srHooked = true;
+  // Sistem switchTab di aplikasi ini dibungkus berlapis-lapis oleh banyak
+  // file (drygoods.js, patch, dsb). Alih-alih menggantungkan aktivasi tab
+  // Station Report pada rantai window.switchTab yang rapuh itu, kita amati
+  // langsung DOM: begitu section tab-pane terkait mendapat class "active",
+  // baru kita jalankan inisialisasi/refresh. Ini bekerja terlepas dari
+  // bagaimana switchTab dibungkus di file lain.
+  function watchTabSections() {
+    var sections = Object.keys(TAB_SECTION_MAP).map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    if (!sections.length) return false;
+    sections.forEach(function (sec) {
+      if (sec._srObserved) return;
+      sec._srObserved = true;
+      if (sec.classList.contains("active")) onTabOpen(TAB_SECTION_MAP[sec.id]);
+      new MutationObserver(function () {
+        if (sec.classList.contains("active")) onTabOpen(TAB_SECTION_MAP[sec.id]);
+      }).observe(sec, { attributes: true, attributeFilter: ["class"] });
+    });
     return true;
+  }
+
+  // Jalur cepat tambahan: klik langsung pada tombol sidebar Station Report.
+  // Bersifat redundan/aman untuk dipanggil berkali-kali (semua fungsi render
+  // di modul ini idempotent, cukup baca ulang dari localStorage).
+  function bindSidebarShortcuts() {
+    Object.keys(TAB_SECTION_MAP).forEach(function (secId) {
+      var tab = TAB_SECTION_MAP[secId];
+      document.querySelectorAll('[data-tab="' + tab + '"]').forEach(function (btn) {
+        if (btn._srBoundClick) return;
+        btn._srBoundClick = true;
+        btn.addEventListener("click", function () {
+          setTimeout(function () { onTabOpen(tab); }, 0);
+        });
+      });
+    });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     var tries = 0;
     var iv = setInterval(function () {
       tries++;
-      if (hookSwitchTab() || tries > 60) clearInterval(iv);
+      var ok = watchTabSections();
+      bindSidebarShortcuts();
+      if (ok || tries > 60) clearInterval(iv);
     }, 250);
 
     // Jika tab Station Report sedang aktif saat reload/restore session

@@ -123,4 +123,45 @@
 - Data & skema penyimpanan **tidak berubah** — masih pakai data Input Data yang sama, jadi tidak
   ada migrasi/kehilangan data.
 
+---
+
+## Update 4: Perbaikan akar masalah sesungguhnya — rantai `switchTab` yang rapuh
+
+Setelah ditelusuri lebih dalam, ternyata Update 1–3 sudah benar secara logika, tapi **tidak
+pernah sempat jalan** untuk kasus tab Station Report yang baru & untuk refresh station Drygoods,
+karena ada bug struktural yang sudah ada sejak lama di aplikasi ini (bukan bagian yang saya
+tambahkan sebelumnya):
+
+### Apa yang terjadi
+Aplikasi ini punya banyak file (`service-recovery.js`, `auth.js`, `drygoods.js`, dst.) yang saling
+"membungkus" fungsi global `window.switchTab` — setiap file menyimpan versi sebelumnya lalu
+menambahkan perilaku baru di atasnya, lalu memanggil versi sebelumnya di dalamnya. Ternyata di titik
+paling awal (antara `service-recovery.js` dan `auth.js`), pembungkusan itu terputus: `window.switchTab`
+belum sempat diisi nilai apa pun sampai `drygoods.js` memaksanya diisi ulang **tanpa memanggil
+versi sebelumnya**. Akibatnya, sebagian efek "begitu tab X dibuka, jalankan Y" — termasuk mekanisme
+saya sebelumnya yang menyalakan Dashboard Activity Report & yang menyegarkan station lock Drygoods
+— **tidak selalu terpanggil**, tergantung urutan & timing loading skrip. Ini juga menjelaskan kenapa
+tab Dashboard/Input Data/Rekap Bulanan terlihat tapi tidak responsif (CSS & event listener-nya
+memang belum sempat dipasang).
+
+### Perbaikan
+Alih-alih ikut menambah satu lapis pembungkus lagi ke rantai yang sudah rapuh itu (yang berisiko
+menambah bug baru), pendekatannya diubah total: **tidak lagi bergantung pada `window.switchTab`
+sama sekali** untuk 2 hal ini. Sebagai gantinya:
+- `js/station-report.js` — sekarang mengamati langsung perubahan tampilan (DOM) pada section tab
+  Activity Report / Check-In Report / First Bag Last Bag. Begitu section itu terlihat aktif di
+  layar (dengan cara apa pun itu terjadi), modul ini otomatis menyalakan dirinya sendiri — memasang
+  CSS, event listener sub-tab, dan mengisi data dashboard. Ditambah juga listener klik langsung di
+  tombol sidebar sebagai jalur cepat cadangan.
+- `js/drygoods-tab-watch.js` (**file baru**) — pola yang sama diterapkan untuk tab Drygoods (Data
+  Stok, IFS Station, Dashboard, Bank Item): begitu salah satu tab itu terlihat aktif, station-lock
+  & seluruh tampilan Drygoods otomatis disegarkan ulang dari data karyawan terbaru. Ini memastikan
+  kasus seperti Elyn (station diubah di Admin ke SUB) langsung tercermin begitu tab Data Stok/IFS
+  Station dibuka atau di-refresh — tidak lagi bergantung pada rantai `switchTab` yang rapuh.
+
+Perbaikan Update 1–3 (lookup NIP, auto-sync berkala, dsb.) **tetap dipertahankan** sebagai lapis
+tambahan — sekarang total ada 5 mekanisme berbeda yang saling menopang, dan yang paling menentukan
+(pengamatan DOM langsung) tidak lagi bisa gagal karena masalah urutan loading skrip.
+
+
 
