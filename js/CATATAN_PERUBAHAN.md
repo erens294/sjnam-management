@@ -953,6 +953,75 @@ cuma diam-diam lewat). Mock Firestore juga ditingkatkan supaya benar-benar mensi
 `updateMask` asli, bukan sekadar menerima parameternya tanpa memvalidasi efeknya.
 **Total 235 dari 235 test lulus.**
 
+---
+
+## Update 22: Penggabungan otomatis per-bagian untuk Atur Akses Role, Sertifikat & Preferensi Tampilan
+
+Lanjutan langsung dari batasan yang saya sebutkan di Update 21 — ternyata bisa diterapkan sekarang
+tanpa perlu infrastruktur baru yang rumit, jadi langsung dikerjakan.
+
+### Cara kerjanya
+- File: `js/shared-utils.js`.
+- Sistem sekarang menyimpan "cuplikan terakhir yang diketahui tersinkron" (baseline) untuk 3
+  bucket "blok utuh" (Atur Akses Role, Pengaturan Sertifikat, Preferensi Tampilan).
+- Saat menyimpan dan terdeteksi ada perubahan dari device lain, sistem membandingkan 3 sisi:
+  **baseline** (terakhir diketahui sama), **lokal** (device ini sekarang), dan **cloud** (device
+  lain sekarang) — per bagian/key, bukan per keseluruhan dokumen.
+  - Kalau cuma SATU sisi yang berubah dari baseline untuk suatu bagian → pakai perubahan itu (jadi
+    perubahan sisi lain tidak ikut hilang).
+  - Kalau KEDUA sisi berubah untuk bagian YANG SAMA dengan hasil berbeda → itu baru benar-benar
+    bentrok — dimenangkan oleh device yang sedang menyimpan, dan **dicatat jelas** sebagai konflik
+    nyata (bukan diam-diam).
+- **Hasil gabungan langsung ditulis balik ke tampilan device yang menyimpan** — tidak perlu
+  menunggu "Tarik Data dari Cloud" berikutnya untuk melihat gabungan lengkapnya.
+
+### Contoh nyata
+Admin A mengubah izin akses tab Drygoods untuk User-STR, di saat yang hampir sama Admin B (di
+device lain) mengubah izin akses tab STCR untuk User-DRG. Sebelum update ini: siapa pun yang
+menyimpan LEBIH DULU perubahannya akan hilang tertimpa yang menyimpan belakangan. Sekarang: KEDUA
+perubahan tetap tersimpan, karena keduanya mengubah bagian yang berbeda.
+
+### Verifikasi
+Ditambahkan 2 test baru yang membuktikan langsung: (1) dua device mengubah baris izin akses yang
+BERBEDA — kedua perubahan sama-sama selamat; (2) dua device mengubah baris yang SAMA — device yang
+menyimpan menang untuk baris itu, dan tercatat sebagai konflik nyata. **Total 238 dari 238 test
+lulus.**
 
 
 
+
+
+---
+
+## Update 23: Audit mendalam — 2 bug ditemukan & diperbaiki di sistem sync yang baru dibangun
+
+Karena beberapa update terakhir (struktur granular, version field, penggabungan 3-arah) adalah
+kode yang paling baru dan paling berisiko di seluruh aplikasi, saya fokuskan audit kali ini di
+situ. Ketemu 2 bug nyata:
+
+### Bug #1: Field internal ikut dianggap "konflik" di Pengaturan Sertifikat
+- File: `js/shared-utils.js`.
+- Penggabungan 3-arah untuk `cert_config` ikut membandingkan field internal sistem (`_version`,
+  `_pushedBy`, `_pushedAt`) sebagai kalau itu bagian dari pengaturan yang perlu digabung — padahal
+  field ini SELALU beda di tiap penyimpanan (bukan bagian isi yang sebenarnya). Akibatnya, hampir
+  setiap kali ada penggabungan, sistem akan salah melaporkan "3 bagian bentrok" padahal sebenarnya
+  tidak ada satu pun pengaturan sertifikat yang benar-benar bentrok.
+- **Sudah diperbaiki:** field internal (berawalan `_`) sekarang dilewati sepenuhnya dari
+  perbandingan penggabungan.
+
+### Bug #2 (lebih serius): Penulisan balik ke lokal bisa membatalkan hasil resolusi konflik yang benar
+- File: `js/shared-utils.js`.
+- Fitur "tulis balik hasil gabungan ke tampilan lokal" dari Update 22 ternyata bisa memicu proses
+  penggabungan KEDUA yang tidak disengaja untuk data berbentuk daftar (Karyawan, User, Training,
+  STCR, Drygoods). Proses kedua ini membaca ULANG data lokal yang MASIH LAMA dan bisa membuatnya
+  menang mengalahkan hasil gabungan yang SUDAH BENAR sebelumnya — berpotensi membatalkan resolusi
+  konflik yang seharusnya dimenangkan oleh perubahan yang lebih baru dari device lain.
+- **Sudah diperbaiki:** penulisan balik langsung ke tampilan lokal sekarang HANYA berlaku untuk 3
+  pengaturan blok-utuh (Atur Akses Role, Sertifikat, Preferensi Tampilan) yang memang aman ditulis
+  ulang langsung. Untuk data berbentuk daftar, device akan tetap melihat hasil gabungan lengkap
+  lewat "Tarik Data dari Cloud" seperti biasa — lebih aman daripada berisiko membatalkan resolusi
+  konflik yang sudah benar.
+
+### Verifikasi
+Ditambahkan 2 test baru yang secara khusus mereproduksi kedua bug di atas dan membuktikan
+perbaikannya bekerja. **Total 241 dari 241 test lulus.**

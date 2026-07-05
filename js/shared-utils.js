@@ -409,11 +409,12 @@ function() {
     window._BUCKET_VERSION_KEY = "sjnam_bucket_version_v1";
 
     // [Langkah 6] Bucket "blob utuh" ini TIDAK punya penggabungan per-record
-    // (tidak seperti users/karyawan/dst yang sudah digabung per-ID) — kalau 2
-    // admin sama-sama menyimpan hampir bersamaan, salah satu akan menimpa
-    // yang lain sepenuhnya. Field _version dipakai supaya kejadian ini
-    // TERDETEKSI DAN DIBERITAHUKAN dengan jelas, bukan diam-diam hilang.
+    // (tidak seperti users/karyawan/dst yang sudah digabung per-ID). Untuk
+    // bucket ini dipakai PENGGABUNGAN 3-ARAH per-key (base vs local vs cloud)
+    // — lihat _threeWayMergeObject di bawah — supaya perubahan 2 admin ke
+    // BAGIAN BERBEDA dari pengaturan yang sama tidak saling menghapus.
     const WHOLE_BLOB_BUCKETS = ["role_perms", "cert_config", "settings"];
+    window._BUCKET_BASE_KEY = "sjnam_bucket_base_v1";
 
     function _loadBucketTS() {
         try { return JSON.parse(localStorage.getItem(window._BUCKET_TS_KEY) || "{}") } catch (e) { return {} }
@@ -433,8 +434,48 @@ function() {
     function _saveBucketVersion(obj) {
         try { localStorage.setItem(window._BUCKET_VERSION_KEY, JSON.stringify(obj)) } catch (e) {}
     }
+    function _loadBucketBase() {
+        try { return JSON.parse(localStorage.getItem(window._BUCKET_BASE_KEY) || "{}") } catch (e) { return {} }
+    }
+    function _saveBucketBase(obj) {
+        try { localStorage.setItem(window._BUCKET_BASE_KEY, JSON.stringify(obj)) } catch (e) {}
+    }
 
-    window._realtimeChannel = null, window._bucketTS = _loadBucketTS(), window._bucketHash = _loadBucketHash(), window._bucketVersion = _loadBucketVersion(), window._autoSyncTimer = null, window._cloudPullInProgress = !1;
+    // Penggabungan 3-arah generik di level key teratas dari sebuah objek:
+    // base   = keadaan terakhir yang diketahui tersinkron (sebelum SIAPA PUN mengubah)
+    // local  = keadaan saat ini di device ini
+    // cloud  = keadaan saat ini di Firestore (mungkin diubah device lain)
+    // Untuk tiap key: kalau hanya salah satu sisi yang berubah dari base,
+    // pakai sisi yang berubah itu (jadi perubahan sisi LAIN tidak ikut
+    // terhapus). Kalau KEDUANYA berubah dari base dengan hasil yang beda,
+    // baru itu konflik sungguhan — dimenangkan oleh LOCAL (device yang
+    // sedang menyimpan), sama seperti filosofi resolusi konflik yang sudah
+    // dipakai di tempat lain pada aplikasi ini.
+    function _threeWayMergeObject(base, local, cloud) {
+        base = base && typeof base === "object" ? base : {};
+        local = local && typeof local === "object" ? local : {};
+        cloud = cloud && typeof cloud === "object" ? cloud : {};
+        const allKeys = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(cloud)]);
+        const result = {};
+        const conflictKeys = [];
+        allKeys.forEach(k => {
+            // Field internal (_pushedBy, _pushedAt, _version, dsb.) sengaja
+            // dilewati di sini — field ini SELALU beda di setiap push/pull
+            // (bukan bagian dari "isi" yang sebenarnya perlu digabung), dan
+            // ditulis ulang terpisah oleh cloudPush setelah merge selesai.
+            // Kalau ikut dibandingkan, field ini akan SELALU tampak "bentrok"
+            // padahal tidak ada yang benar-benar bentrok secara isi.
+            if (k.charAt(0) === "_") return;
+            const b = JSON.stringify(base[k]), l = JSON.stringify(local[k]), c = JSON.stringify(cloud[k]);
+            if (l === c) { result[k] = local[k]; return }
+            if (l === b) { result[k] = cloud[k]; return }
+            if (c === b) { result[k] = local[k]; return }
+            result[k] = local[k], conflictKeys.push(k)
+        });
+        return { merged: result, conflictKeys: conflictKeys }
+    }
+
+    window._realtimeChannel = null, window._bucketTS = _loadBucketTS(), window._bucketHash = _loadBucketHash(), window._bucketVersion = _loadBucketVersion(), window._bucketBase = _loadBucketBase(), window._autoSyncTimer = null, window._cloudPullInProgress = !1;
     const _dirtyModules = new Set;
     const _offlineQueue = function() {
         const STORE = "queue";
@@ -777,10 +818,28 @@ function() {
                     tsChanged && _saveTombstones(localTS);
                     merged.deletedTombstones = _loadTombstones()
                 }
+            } else if (WHOLE_BLOB_BUCKETS.indexOf(bucketId) > -1) {
+                // [Langkah 6 lanjutan] Penggabungan 3-arah per-key, bukan
+                // sekadar overwrite penuh. Kalau 2 admin mengubah BAGIAN
+                // BERBEDA dari pengaturan yang sama (mis. Admin A mengubah
+                // izin tab Drygoods, Admin B mengubah izin tab STCR), KEDUA
+                // perubahan tetap tersimpan — tidak ada yang tertimpa.
+                const base = window._bucketBase[bucketId] || {};
+                if (bucketId === "cert_config") {
+                    const { merged: mergedFields, conflictKeys } = _threeWayMergeObject(base, localBucketPayload, cloudBucketPayload);
+                    merged = { ...merged, ...mergedFields };
+                    merged._realConflictKeys = conflictKeys
+                } else {
+                    // "role_perms" dan "settings": data sesungguhnya ada di dalam
+                    // sub-objek bernama sama (rolePerms / settings).
+                    const subKey = bucketId === "role_perms" ? "rolePerms" : "settings";
+                    const { merged: mergedSub, conflictKeys } = _threeWayMergeObject(base[subKey], localBucketPayload[subKey], cloudBucketPayload[subKey]);
+                    merged[subKey] = mergedSub;
+                    merged._realConflictKeys = conflictKeys
+                }
             }
-            // role_perms, cert_config, settings: tidak ada merge per-item di
-            // sistem lama (selalu overwrite oleh device yang push terakhir) —
-            // perilaku dipertahankan sama persis di sini.
+            // role_perms, cert_config, settings: digabung per-key 3-arah di atas
+            // (lihat _threeWayMergeObject) — bukan lagi overwrite penuh.
         } catch (bugfixErr) {
             console.warn("[cloudPush merge bucket=" + bucketId + "]", bugfixErr)
         }
@@ -810,31 +869,47 @@ function() {
                 let mergedPayload = localBucketPayload;
                 if (cloudRow && cloudRowUpdatedAt && (!window._bucketTS[bucketId] || cloudRowUpdatedAt > window._bucketTS[bucketId])) {
                     mergedPayload = _mergeBucketPayload(bucketId, localBucketPayload, cloudRow.payload || {}, dirtyHint);
-                    if (WHOLE_BLOB_BUCKETS.indexOf(bucketId) > -1 && knownVersion > 0 && cloudVersion > knownVersion) {
-                        // [Langkah 6] Konflik versi pada bucket yang tidak punya
-                        // merge per-record — beri tahu dengan jelas, jangan
-                        // diam-diam menimpa. Perubahan device INI tetap
-                        // disimpan (konsisten dengan filosofi aplikasi ini:
-                        // auto-lanjut + catat, bukan blokir total), tapi admin
-                        // diberi tahu supaya bisa cek ulang kalau perlu.
-                        cloudLog("⚠️ [" + bucketId + "] Versi cloud (v" + cloudVersion + ") lebih baru dari yang terakhir diketahui device ini (v" + knownVersion + ") — kemungkinan ada perubahan dari device lain di antara waktu itu. Perubahan Anda tetap disimpan.", "info");
-                        silent || showToast("⚠️ " + bucketId + " sempat diubah device lain — perubahan Anda tetap tersimpan, mohon cek kembali", "info")
+                    if (WHOLE_BLOB_BUCKETS.indexOf(bucketId) > -1) {
+                        const realConflicts = mergedPayload._realConflictKeys || [];
+                        delete mergedPayload._realConflictKeys;
+                        if (realConflicts.length) {
+                            cloudLog("⚠️ [" + bucketId + "] " + realConflicts.length + " bagian benar-benar diubah 2 device sekaligus (" + realConflicts.join(", ") + ") — versi device ini yang dipakai untuk bagian tsb. Bagian lain yang tidak sama-sama diubah berhasil digabung otomatis dari kedua device.", "info"), silent || showToast("⚠️ " + bucketId + ": " + realConflicts.length + " bagian bentrok (dipakai versi Anda), sisanya digabung otomatis", "info")
+                        } else {
+                            cloudLog("🔀 [" + bucketId + "] Digabung otomatis per-bagian — tidak ada bagian yang benar-benar bentrok, perubahan dari kedua device tetap tersimpan", "info"), silent || showToast("🔀 " + bucketId + ": digabung otomatis, tidak ada yang hilang", "info")
+                        }
                     } else {
                         cloudLog("🔀 [" + bucketId + "] Konflik terdeteksi — data digabung otomatis (merge)", "info");
                         await auditLog("merge", dirtyHint || bucketId, "", "Merge bucket " + bucketId + " dari cloud");
                         silent || showToast("🔀 Merge: data " + bucketId + " dari 2 device digabung otomatis", "info")
+                    }
+                    // Tulis balik hasil merge ke local storage device INI juga —
+                    // TAPI HANYA untuk bucket "blob utuh" (role_perms/
+                    // cert_config/settings), yang penerapannya di
+                    // _applyBucketPull adalah overwrite langsung/aman.
+                    // Bucket berbasis daftar (karyawan/users/training/stcr/
+                    // drygoods) SENGAJA TIDAK dipanggil di sini — penerapannya
+                    // di _applyBucketPull membaca ULANG local storage saat ini
+                    // dan menggabungkannya lagi secara naif ("local menang"),
+                    // yang justru bisa MEMBATALKAN hasil resolusi konflik yang
+                    // baru saja dilakukan dengan benar oleh _mergeBucketPayload
+                    // di atas. Untuk bucket itu, device ini akan melihat hasil
+                    // gabungan lengkap lewat pull berikutnya seperti biasa.
+                    if (WHOLE_BLOB_BUCKETS.indexOf(bucketId) > -1) {
+                        if (bucketId === "role_perms") window._rolePermsLocalDirty = !1;
+                        try { _applyBucketPull(bucketId, mergedPayload) } catch (applyErr) { console.warn("[cloudPush writeback bucket=" + bucketId + "]", applyErr) }
                     }
                 }
                 mergedPayload._pushedBy = getDeviceId(), mergedPayload._pushedAt = (new Date).toISOString(), mergedPayload._version = Math.max(cloudVersion, knownVersion) + 1;
                 const upsertResult = await neonUpsert("sjnam_sync", bucketId, { payload: mergedPayload, updated_at: (new Date).toISOString() });
                 const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || mergedPayload._pushedAt;
                 window._bucketHash[bucketId] = _hashPayload(mergedPayload), window._bucketTS[bucketId] = serverUpdatedAt, window._bucketVersion[bucketId] = mergedPayload._version;
+                if (WHOLE_BLOB_BUCKETS.indexOf(bucketId) > -1) window._bucketBase[bucketId] = JSON.parse(JSON.stringify(mergedPayload));
                 anyPushed = true, totalPushed++
             } catch (err) {
                 anyError = err, console.warn("[cloudPush bucket=" + bucketId + "]", err)
             }
         }
-        _saveBucketHash(window._bucketHash), _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion);
+        _saveBucketHash(window._bucketHash), _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion), _saveBucketBase(window._bucketBase);
         if (anyError && !anyPushed) return updateSyncStatus("error"), cloudLog("❌ Gagal upload: " + anyError.message, "error"), silent || showToast("Sync gagal: " + anyError.message, "error"), !1;
         if (!anyPushed) return cloudLog("⏭️ Smart Push: tidak ada perubahan data, skip upload", "info"), updateSyncStatus("connected"), !0;
         return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil (" + totalPushed + " bucket)"), window._rolePermsLocalDirty = !1, window._drygoodsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Firestore (" + totalPushed + " bucket diperbarui)", "success"), silent || showToast("⚡ Firestore Sync berhasil! (" + totalPushed + " bucket)", "success"), !0
@@ -985,9 +1060,9 @@ function() {
                 newerBuckets.sort((a, b) => (a.id === "tombstones" ? -1 : b.id === "tombstones" ? 1 : 0));
                 for (const nb of newerBuckets) {
                     const rec = nb.doc.payload || {};
-                    _applyBucketPull(nb.id, rec), window._bucketTS[nb.id] = nb.docUpdatedAt, typeof rec._version === "number" && (window._bucketVersion[nb.id] = rec._version), appliedCount++
+                    _applyBucketPull(nb.id, rec), window._bucketTS[nb.id] = nb.docUpdatedAt, typeof rec._version === "number" && (window._bucketVersion[nb.id] = rec._version), WHOLE_BLOB_BUCKETS.indexOf(nb.id) > -1 && (window._bucketBase[nb.id] = JSON.parse(JSON.stringify(rec))), appliedCount++
                 }
-                _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion);
+                _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion), _saveBucketBase(window._bucketBase);
                 const fullLocalAfter = getAllCloudData();
                 newerBuckets.forEach(nb => { window._bucketHash[nb.id] = _hashPayload(pickBucketPayload(nb.id, fullLocalAfter)) }), _saveBucketHash(window._bucketHash)
             } finally {
