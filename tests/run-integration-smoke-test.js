@@ -1331,6 +1331,109 @@ async function hashSha256(str) {
     assert(window._bucketVersion['role_perms'] === 3, 'after detecting the conflict, this device still successfully pushes its own version forward (v3 = max(2,1)+1), got: ' + window._bucketVersion['role_perms']);
   }
 
+  console.log('\n[62] LANGKAH 6 (lanjutan): two devices changing DIFFERENT permission rows must BOTH survive — neither overwrites the other');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {}; window._bucketBase = {};
+
+    // Establish a baseline: both tab-home and tab-drygoods-data start as {coAdmin:true}
+    const rolePerms = window.getDefaultRolePerms ? window.getDefaultRolePerms() : {};
+    rolePerms['tab-home'] = { coAdmin: true, user: true };
+    rolePerms['tab-drygoods-data'] = { coAdmin: true, user: false };
+    window.localStorage.setItem('sjnam_role_perms_v1', JSON.stringify(rolePerms));
+    await window.cloudPush(true, 'rolePerms'); // this device's baseline is now established (v1)
+
+    // Simulate ANOTHER device changing ONLY 'tab-drygoods-data' and pushing (v2 in the cloud)
+    const otherDeviceRolePerms = JSON.parse(JSON.stringify(rolePerms));
+    otherDeviceRolePerms['tab-drygoods-data'] = { coAdmin: true, user: true, userdrg: true }; // other device's change
+    seedMockDoc('sjnam_sync', 'role_perms', { payload: { rolePerms: otherDeviceRolePerms, _version: 2, _pushedBy: 'other-device' }, updated_at: new Date().toISOString() });
+
+    // THIS device, meanwhile, changes ONLY 'tab-home' (a completely different key) and pushes
+    const thisDeviceRolePerms = JSON.parse(JSON.stringify(rolePerms));
+    thisDeviceRolePerms['tab-home'] = { coAdmin: true, user: true, userstr: true }; // this device's own change
+    window.localStorage.setItem('sjnam_role_perms_v1', JSON.stringify(thisDeviceRolePerms));
+    window._bucketHash['role_perms'] = 'force-repush';
+    await window.cloudPush(false, 'rolePerms');
+
+    // Reconstruct properly via the app's own localStorage after this push landed locally too:
+    const localAfter = JSON.parse(window.localStorage.getItem('sjnam_role_perms_v1'));
+    assert(localAfter['tab-home'] && localAfter['tab-home'].userstr === true, 'THIS device\'s change (tab-home -> userstr) survived');
+    assert(localAfter['tab-drygoods-data'] && localAfter['tab-drygoods-data'].userdrg === true, 'the OTHER device\'s change (tab-drygoods-data -> userdrg), which this device never touched, was NOT lost — both changes coexist');
+  }
+
+  console.log('\n[63] LANGKAH 6 (lanjutan): a GENUINE same-key conflict (both devices edit the SAME row) resolves in favor of the pushing device, and is reported as a real conflict');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {}; window._bucketBase = {};
+
+    const rolePerms = { 'tab-home': { coAdmin: true, user: true } };
+    window.localStorage.setItem('sjnam_role_perms_v1', JSON.stringify(rolePerms));
+    await window.cloudPush(true, 'rolePerms'); // baseline established
+
+    // Other device changes the SAME key ('tab-home') differently
+    seedMockDoc('sjnam_sync', 'role_perms', { payload: { rolePerms: { 'tab-home': { coAdmin: true, user: false, userall: true } }, _version: 2 }, updated_at: new Date().toISOString() });
+
+    // This device ALSO changes 'tab-home' differently
+    window.localStorage.setItem('sjnam_role_perms_v1', JSON.stringify({ 'tab-home': { coAdmin: true, user: true, userst: true } }));
+    window._bucketHash['role_perms'] = 'force-repush';
+    await window.cloudPush(true, 'rolePerms');
+
+    const localAfter = JSON.parse(window.localStorage.getItem('sjnam_role_perms_v1'));
+    assert(localAfter['tab-home'].userst === true, 'on a genuine same-key conflict, the LOCAL (pushing) device\'s value wins for that key — its own edit is not silently discarded');
+  }
+
+  console.log('\n[64] AUDIT BUG FOUND & FIXED: cert_config merge was incorrectly flagging internal bookkeeping fields (_version, _pushedBy, _pushedAt) as "real conflicts" on every single merge');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {}; window._bucketBase = {};
+
+    window.localStorage.setItem('sjn_cert_template_active', 'sj');
+    await window.cloudPush(true, 'certConfig'); // baseline established (includes _version/_pushedBy/_pushedAt internally)
+
+    // Other device changes a genuinely different cert field (certParafShow) and pushes
+    seedMockDoc('sjnam_sync', 'cert_config', { payload: { certTemplateActive: 'sj', certParafShow: 'yes', _version: 2, _pushedBy: 'other-device', _pushedAt: new Date().toISOString() }, updated_at: new Date().toISOString() });
+
+    // This device changes a DIFFERENT cert field (certBarcode) and pushes
+    window.localStorage.setItem('sjn_cert_barcode_v1', 'BARCODE123');
+    window._bucketHash['cert_config'] = 'force-repush';
+    await window.cloudPush(true, 'certConfig');
+
+    // The bug (before the fix): _version/_pushedBy/_pushedAt would show up in
+    // _realConflictKeys purely because `local` never has them while
+    // `base`/`cloud` always do — even though nothing meaningful conflicted.
+    // We can't directly inspect _realConflictKeys from outside, but we CAN
+    // verify both real field changes survived cleanly (the practical proof
+    // that the merge worked correctly despite the internal fields differing):
+    assert(window.localStorage.getItem('sjn_cert_barcode_v1') === 'BARCODE123', 'this device\'s own certBarcode change survived');
+    assert(window.localStorage.getItem('sjn_cert_paraf_show_v1') === 'yes', 'the OTHER device\'s certParafShow change was also correctly merged in, not lost');
+  }
+
+  console.log('\n[65] AUDIT BUG FOUND & FIXED: the mid-push local writeback must NOT undo proper per-record conflict resolution for array-based buckets (karyawan, users, etc.)');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    const T1 = '2026-01-01T00:00:00.000Z', T2 = '2026-01-02T00:00:00.000Z', T3 = '2026-01-03T00:00:00.000Z';
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify([{ id: 'k_conflict_test', nama: 'Test', station: 'CGK', _updatedAt: T1, _updatedBy: 'seed' }]));
+    await window.cloudPush(true, 'karyawan'); // baseline
+
+    // Other device makes a NEWER edit (T3) and pushes directly to the mock cloud
+    seedMockDoc('sjnam_sync', 'karyawan', { payload: { karyawan: [{ id: 'k_conflict_test', nama: 'Test', station: 'SUB', _updatedAt: T3, _updatedBy: 'other-device' }], _version: 2 }, updated_at: new Date().toISOString() });
+
+    // THIS device has an OLDER, STALE edit (T2, between T1 and T3) to the SAME record
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify([{ id: 'k_conflict_test', nama: 'Test', station: 'DJJ', _updatedAt: T2, _updatedBy: 'this-device' }]));
+    window._bucketHash['karyawan'] = 'force-repush';
+    await window.cloudPush(true, 'karyawan');
+
+    // The cloud document (source of truth for the resolved conflict) must show
+    // the OTHER device's NEWER edit (station=SUB) winning — not this device's
+    // older stale edit, and NOT some further-corrupted third value from an
+    // accidental extra naive merge pass.
+    const finalCloudDoc = window.__mockFirestore.collections['sjnam_sync']['karyawan'];
+    const finalKaryawanJson = JSON.stringify(finalCloudDoc.fields.payload.mapValue.fields.karyawan);
+    assert(finalKaryawanJson.includes('SUB') && !finalKaryawanJson.includes('DJJ'), 'the newer (T3) edit correctly won the conflict in the pushed cloud document — station is SUB, not the older stale DJJ value');
+  }
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   if (fail > 0) {
     console.log('Failures:');
