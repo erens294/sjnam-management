@@ -909,6 +909,50 @@ granular.
 ### Verifikasi
 Ditambahkan 1 test baru khusus bug ini. **Total 230 dari 230 test lulus.**
 
+---
+
+## Update 21: Field `version` untuk anti-konflik + `update()`/`merge:true`
+
+### Langkah 3 — Semua penulisan ke Firestore sekarang pakai `updateMask` (setara `update()`)
+- File: `js/shared-utils.js`.
+- Sebelumnya, menulis ke Firestore (`neonUpsert`) menimpa SELURUH isi dokumen dengan field yang
+  kita kirim — kalau suatu saat ada field lain yang tidak kita kenali di dokumen itu, field itu
+  bisa ikut terhapus tanpa sengaja.
+- Sekarang setiap penulisan menyertakan `updateMask.fieldPaths` — persis seperti `update()` di
+  Firebase SDK resmi. Hanya field yang benar-benar kita tulis yang tersentuh; field lain di
+  dokumen (kalau ada) dijamin aman tidak ikut terhapus.
+
+### Langkah 6 — Field `_version` untuk deteksi konflik
+- File: `js/shared-utils.js`.
+- Setiap dokumen bucket sekarang punya penomoran versi (`_version`, naik 1 setiap kali disimpan).
+- Untuk bucket yang berupa **daftar record** (Karyawan, User, Drygoods, dst.) — konflik memang
+  sudah otomatis digabung per-baris data sejak update sebelumnya; `_version` di sini menambah
+  jejak audit (bisa dilihat versi ke berapa suatu data terakhir disimpan).
+- Untuk bucket yang berupa **satu blok pengaturan utuh tanpa penggabungan per-baris** — yaitu
+  **Atur Akses Role**, **Pengaturan Sertifikat**, dan **Preferensi Tampilan** — di sinilah
+  `_version` benar-benar berguna: kalau terdeteksi versi di cloud sudah lebih baru dari yang
+  terakhir diketahui device ini (tandanya ada admin lain yang menyimpan perubahan di sela-sela
+  waktu itu), sistem sekarang **memberi tahu dengan jelas** lewat log & notifikasi, bukan diam-diam
+  menimpa tanpa jejak. Perubahan Anda tetap tersimpan (konsisten dengan gaya aplikasi ini:
+  jalan terus + catat, bukan blokir total) — tapi sekarang ketahuan kalau itu terjadi, sehingga
+  bisa dicek ulang kalau perlu.
+
+### Kenapa tidak semua bucket diberi penggabungan per-field yang lebih canggih
+Untuk 3 bucket "blok utuh" di atas, penggabungan otomatis per-field (bukan cuma deteksi+catat)
+akan butuh melacak persis field mana yang baru saja diubah di tiap perubahan — informasi yang
+belum ada infrastrukturnya saat ini. Deteksi + pemberitahuan jelas adalah langkah yang jujur dan
+bermanfaat tanpa membangun sistem pelacakan baru yang lebih rumit dan berisiko. Kalau ke depan
+ternyata konflik di 3 area ini sering terjadi di lapangan, penggabungan per-field bisa dibangun
+sebagai langkah lanjutan.
+
+### Verifikasi
+Ditambahkan 3 test baru yang menguji langsung terhadap Firestore tiruan: memastikan field lain di
+dokumen benar-benar selamat dari penulisan (updateMask bekerja), versi naik dengan benar di setiap
+penyimpanan, dan konflik versi pada bucket "blok utuh" benar-benar terdeteksi & tercatat (bukan
+cuma diam-diam lewat). Mock Firestore juga ditingkatkan supaya benar-benar mensimulasikan perilaku
+`updateMask` asli, bukan sekadar menerima parameternya tanpa memvalidasi efeknya.
+**Total 235 dari 235 test lulus.**
+
 
 
 

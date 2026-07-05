@@ -225,7 +225,14 @@ function() {
     async function neonUpsert(collection, docId, dataObj) {
         const fields = {};
         for (const k in dataObj) fields[k] = toFirestoreValue(dataObj[k]);
-        const doc = await firestoreFetch("/" + collection + "/" + docId, {
+        // [Langkah 3] Selalu pakai updateMask (setara update()/merge:true) —
+        // PATCH tanpa updateMask akan MENIMPA SELURUH dokumen dengan field
+        // yang kita kirim, berisiko menghapus field lain yang mungkin ada di
+        // dokumen tapi tidak kita ketahui/sertakan. Dengan updateMask, hanya
+        // field yang benar-benar kita tulis yang tersentuh — field lain di
+        // dokumen (kalau ada) tetap aman tidak terpengaruh.
+        const maskParams = Object.keys(fields).map(k => "updateMask.fieldPaths=" + encodeURIComponent(k)).join("&");
+        const doc = await firestoreFetch("/" + collection + "/" + docId + "?" + maskParams, {
             method: "PATCH",
             body: JSON.stringify({
                 fields: fields
@@ -399,6 +406,14 @@ function() {
 
     window._BUCKET_TS_KEY = "sjnam_bucket_ts_v1";
     window._BUCKET_HASH_KEY = "sjnam_bucket_hash_v1";
+    window._BUCKET_VERSION_KEY = "sjnam_bucket_version_v1";
+
+    // [Langkah 6] Bucket "blob utuh" ini TIDAK punya penggabungan per-record
+    // (tidak seperti users/karyawan/dst yang sudah digabung per-ID) — kalau 2
+    // admin sama-sama menyimpan hampir bersamaan, salah satu akan menimpa
+    // yang lain sepenuhnya. Field _version dipakai supaya kejadian ini
+    // TERDETEKSI DAN DIBERITAHUKAN dengan jelas, bukan diam-diam hilang.
+    const WHOLE_BLOB_BUCKETS = ["role_perms", "cert_config", "settings"];
 
     function _loadBucketTS() {
         try { return JSON.parse(localStorage.getItem(window._BUCKET_TS_KEY) || "{}") } catch (e) { return {} }
@@ -412,8 +427,14 @@ function() {
     function _saveBucketHash(obj) {
         try { localStorage.setItem(window._BUCKET_HASH_KEY, JSON.stringify(obj)) } catch (e) {}
     }
+    function _loadBucketVersion() {
+        try { return JSON.parse(localStorage.getItem(window._BUCKET_VERSION_KEY) || "{}") } catch (e) { return {} }
+    }
+    function _saveBucketVersion(obj) {
+        try { localStorage.setItem(window._BUCKET_VERSION_KEY, JSON.stringify(obj)) } catch (e) {}
+    }
 
-    window._realtimeChannel = null, window._bucketTS = _loadBucketTS(), window._bucketHash = _loadBucketHash(), window._autoSyncTimer = null, window._cloudPullInProgress = !1;
+    window._realtimeChannel = null, window._bucketTS = _loadBucketTS(), window._bucketHash = _loadBucketHash(), window._bucketVersion = _loadBucketVersion(), window._autoSyncTimer = null, window._cloudPullInProgress = !1;
     const _dirtyModules = new Set;
     const _offlineQueue = function() {
         const STORE = "queue";
@@ -784,23 +805,36 @@ function() {
             try {
                 const cloudRow = await neonSelectOne("sjnam_sync", bucketId);
                 const cloudRowUpdatedAt = cloudRow ? (cloudRow._firestoreUpdateTime || cloudRow.updated_at) : null;
+                const cloudVersion = cloudRow && cloudRow.payload && typeof cloudRow.payload._version === "number" ? cloudRow.payload._version : 0;
+                const knownVersion = window._bucketVersion[bucketId] || 0;
                 let mergedPayload = localBucketPayload;
                 if (cloudRow && cloudRowUpdatedAt && (!window._bucketTS[bucketId] || cloudRowUpdatedAt > window._bucketTS[bucketId])) {
                     mergedPayload = _mergeBucketPayload(bucketId, localBucketPayload, cloudRow.payload || {}, dirtyHint);
-                    cloudLog("🔀 [" + bucketId + "] Konflik terdeteksi — data digabung otomatis (merge)", "info");
-                    await auditLog("merge", dirtyHint || bucketId, "", "Merge bucket " + bucketId + " dari cloud");
-                    silent || showToast("🔀 Merge: data " + bucketId + " dari 2 device digabung otomatis", "info")
+                    if (WHOLE_BLOB_BUCKETS.indexOf(bucketId) > -1 && knownVersion > 0 && cloudVersion > knownVersion) {
+                        // [Langkah 6] Konflik versi pada bucket yang tidak punya
+                        // merge per-record — beri tahu dengan jelas, jangan
+                        // diam-diam menimpa. Perubahan device INI tetap
+                        // disimpan (konsisten dengan filosofi aplikasi ini:
+                        // auto-lanjut + catat, bukan blokir total), tapi admin
+                        // diberi tahu supaya bisa cek ulang kalau perlu.
+                        cloudLog("⚠️ [" + bucketId + "] Versi cloud (v" + cloudVersion + ") lebih baru dari yang terakhir diketahui device ini (v" + knownVersion + ") — kemungkinan ada perubahan dari device lain di antara waktu itu. Perubahan Anda tetap disimpan.", "info");
+                        silent || showToast("⚠️ " + bucketId + " sempat diubah device lain — perubahan Anda tetap tersimpan, mohon cek kembali", "info")
+                    } else {
+                        cloudLog("🔀 [" + bucketId + "] Konflik terdeteksi — data digabung otomatis (merge)", "info");
+                        await auditLog("merge", dirtyHint || bucketId, "", "Merge bucket " + bucketId + " dari cloud");
+                        silent || showToast("🔀 Merge: data " + bucketId + " dari 2 device digabung otomatis", "info")
+                    }
                 }
-                mergedPayload._pushedBy = getDeviceId(), mergedPayload._pushedAt = (new Date).toISOString();
+                mergedPayload._pushedBy = getDeviceId(), mergedPayload._pushedAt = (new Date).toISOString(), mergedPayload._version = Math.max(cloudVersion, knownVersion) + 1;
                 const upsertResult = await neonUpsert("sjnam_sync", bucketId, { payload: mergedPayload, updated_at: (new Date).toISOString() });
                 const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || mergedPayload._pushedAt;
-                window._bucketHash[bucketId] = _hashPayload(mergedPayload), window._bucketTS[bucketId] = serverUpdatedAt;
+                window._bucketHash[bucketId] = _hashPayload(mergedPayload), window._bucketTS[bucketId] = serverUpdatedAt, window._bucketVersion[bucketId] = mergedPayload._version;
                 anyPushed = true, totalPushed++
             } catch (err) {
                 anyError = err, console.warn("[cloudPush bucket=" + bucketId + "]", err)
             }
         }
-        _saveBucketHash(window._bucketHash), _saveBucketTS(window._bucketTS);
+        _saveBucketHash(window._bucketHash), _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion);
         if (anyError && !anyPushed) return updateSyncStatus("error"), cloudLog("❌ Gagal upload: " + anyError.message, "error"), silent || showToast("Sync gagal: " + anyError.message, "error"), !1;
         if (!anyPushed) return cloudLog("⏭️ Smart Push: tidak ada perubahan data, skip upload", "info"), updateSyncStatus("connected"), !0;
         return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil (" + totalPushed + " bucket)"), window._rolePermsLocalDirty = !1, window._drygoodsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Firestore (" + totalPushed + " bucket diperbarui)", "success"), silent || showToast("⚡ Firestore Sync berhasil! (" + totalPushed + " bucket)", "success"), !0
@@ -915,7 +949,7 @@ function() {
         const newDocs = listedDocs.slice();
         for (const bucket of CLOUD_BUCKETS) {
             const bucketPayload = pickBucketPayload(bucket.id, legacyPayload);
-            bucketPayload._pushedBy = getDeviceId(), bucketPayload._pushedAt = (new Date).toISOString(), bucketPayload._migratedFrom = "sjnam_main";
+            bucketPayload._pushedBy = getDeviceId(), bucketPayload._pushedAt = (new Date).toISOString(), bucketPayload._migratedFrom = "sjnam_main", bucketPayload._version = 1;
             try {
                 const upsertResult = await neonUpsert("sjnam_sync", bucket.id, { payload: bucketPayload, updated_at: (new Date).toISOString() });
                 newDocs.push({ _docId: bucket.id, payload: bucketPayload, _firestoreUpdateTime: upsertResult?._firestoreUpdateTime || upsertResult?.updated_at })
@@ -951,9 +985,9 @@ function() {
                 newerBuckets.sort((a, b) => (a.id === "tombstones" ? -1 : b.id === "tombstones" ? 1 : 0));
                 for (const nb of newerBuckets) {
                     const rec = nb.doc.payload || {};
-                    _applyBucketPull(nb.id, rec), window._bucketTS[nb.id] = nb.docUpdatedAt, appliedCount++
+                    _applyBucketPull(nb.id, rec), window._bucketTS[nb.id] = nb.docUpdatedAt, typeof rec._version === "number" && (window._bucketVersion[nb.id] = rec._version), appliedCount++
                 }
-                _saveBucketTS(window._bucketTS);
+                _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion);
                 const fullLocalAfter = getAllCloudData();
                 newerBuckets.forEach(nb => { window._bucketHash[nb.id] = _hashPayload(pickBucketPayload(nb.id, fullLocalAfter)) }), _saveBucketHash(window._bucketHash)
             } finally {
