@@ -1493,6 +1493,42 @@ async function hashSha256(str) {
     assert(JSON.parse(window.localStorage.getItem('home_logo_nam_size_v1')).w === 200, 'this device\'s own NAM logo size change survived');
   }
 
+  console.log('\n[68] EXACT BUG FROM LATEST USER REPORT: historical local data (entered before a bucket existed) must get pushed automatically, without needing a manual edit');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    // Simulate Admin's exact situation: real Activity Report data already sitting
+    // in local storage (entered long before this bucket was added), but NEVER
+    // pushed — window._bucketTS['station_report'] has no entry at all.
+    const historicalActivity = [
+      { id: 'act_hist_1', tanggal: '2026-06-01', distrik: 'Nabire (NBX)', status: 'L', updatedAt: '2026-06-01T00:00:00.000Z' },
+      { id: 'act_hist_2', tanggal: '2026-06-02', distrik: 'Jayapura (DJJ)', status: 'TL', updatedAt: '2026-06-02T00:00:00.000Z' },
+    ];
+    window.localStorage.setItem('sjnam_station_activity_v1', JSON.stringify(historicalActivity));
+    assert(!window._bucketTS['station_report'], 'sanity: this bucket has never been synced from this device');
+
+    // Run the same one-time sweep that fires automatically after login
+    await window._sweepUnsyncedBucketsOnce();
+
+    const ids = mockDocIds();
+    assert(ids.includes('station_report'), 'the sweep pushed the historical data to Firestore even though nothing was freshly edited, got buckets: ' + JSON.stringify(ids));
+    const pushedDoc = window.__mockFirestore.collections['sjnam_sync']['station_report'];
+    assert(JSON.stringify(pushedDoc).includes('act_hist_1') && JSON.stringify(pushedDoc).includes('act_hist_2'), 'the actual historical records made it into the pushed document');
+  }
+
+  console.log('\n[69] The sweep must NOT re-push a bucket that has no real content (avoid noise/empty writes on fresh installs)');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+    window.localStorage.removeItem('sjnam_station_activity_v1');
+    window.localStorage.setItem('sjnam_station_activity_v1', JSON.stringify([]));
+
+    await window._sweepUnsyncedBucketsOnce();
+    const ids = mockDocIds();
+    assert(!ids.includes('station_report'), 'an empty bucket is correctly skipped by the sweep, not pushed as noise');
+  }
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   if (fail > 0) {
     console.log('Failures:');
