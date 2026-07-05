@@ -1263,19 +1263,26 @@ async function hashSha256(str) {
     assert(idsAfter === idsBefore, 'pulling again after migration already happened does not create duplicate documents, count stayed at: ' + idsAfter);
   }
 
-  console.log('\n[58] BUG FOUND WHILE ANSWERING USER QUESTION: an unrecognized dirtyHint (e.g. station-report.js passing its raw localStorage key) must NOT create a stray empty document');
+  console.log('\n[58] BUG FOUND WHILE ANSWERING USER QUESTION: an unrecognized dirtyHint must NOT create a stray empty document, and safely falls back to a full push');
   {
     resetMockFirestore();
     window._bucketTS = {}; window._bucketHash = {};
-    // This mirrors exactly what station-report.js's persist() helper does:
-    // triggerAutoSync(key) where key is a raw localStorage key string that
-    // was never part of the tracked bucket list (Station Report data has
-    // never actually been cloud-synced).
-    const ok = await window.cloudPush(true, 'sjnam_station_activity_v1');
+    const ok = await window.cloudPush(true, 'some_totally_unrecognized_hint_xyz');
     assert(ok === true, 'push resolves true even with an unrecognized hint');
     const ids = mockDocIds();
-    assert(!ids.includes('sjnam_station_activity_v1'), 'NO stray document named after the unrecognized hint was created, got docs: ' + JSON.stringify(ids));
+    assert(!ids.includes('some_totally_unrecognized_hint_xyz'), 'NO stray document named after the unrecognized hint was created, got docs: ' + JSON.stringify(ids));
     assert(ids.length === window._CLOUD_BUCKETS.length, 'instead, it safely fell back to a full push across all real buckets, got: ' + ids.length);
+  }
+
+  console.log('\n[58b] FIX FOR THE ACTUAL REPORTED BUG: station-report.js\'s raw localStorage key now correctly routes to the "station_report" bucket alone (not a full push, not a stray doc)');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+    // This mirrors exactly what station-report.js's persist() helper does.
+    const ok = await window.cloudPush(true, 'sjnam_station_activity_v1');
+    assert(ok === true, 'push resolves true');
+    const ids = mockDocIds();
+    assert(ids.length === 1 && ids[0] === 'station_report', 'ONLY the "station_report" bucket document was written, got: ' + JSON.stringify(ids));
   }
 
   console.log('\n[59] LANGKAH 3 (update()/merge:true): writing to a bucket now uses updateMask, so an unrelated field on the same document survives untouched');
@@ -1432,6 +1439,58 @@ async function hashSha256(str) {
     const finalCloudDoc = window.__mockFirestore.collections['sjnam_sync']['karyawan'];
     const finalKaryawanJson = JSON.stringify(finalCloudDoc.fields.payload.mapValue.fields.karyawan);
     assert(finalKaryawanJson.includes('SUB') && !finalKaryawanJson.includes('DJJ'), 'the newer (T3) edit correctly won the conflict in the pushed cloud document — station is SUB, not the older stale DJJ value');
+  }
+
+  console.log('\n[66] EXACT BUG FROM USER REPORT: Admin and Vera on different devices, each entering different Activity Report data, must see a MERGED combined view — not isolated data');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    // Admin's device: enters activity data for a set of stations
+    window.currentUser = { username: 'integrationtest', role: 'Admin', name: 'Integration Test' };
+    const adminActivity = [
+      { id: 'act_1', tanggal: '2026-06-01', distrik: 'Nabire (NBX)', status: 'L', keterangan: '', updatedAt: '2026-06-01T01:00:00.000Z' },
+      { id: 'act_2', tanggal: '2026-06-01', distrik: 'Jayapura (DJJ)', status: 'L', keterangan: '', updatedAt: '2026-06-01T01:00:00.000Z' },
+    ];
+    window.localStorage.setItem('sjnam_station_activity_v1', JSON.stringify(adminActivity));
+    await window.cloudPush(true, 'sjnam_station_activity_v1');
+
+    // Vera's device (simulated as a separate cloud push from "another device"):
+    // she entered activity for a DIFFERENT set of stations that Admin never touched.
+    const veraActivity = [
+      { id: 'act_3', tanggal: '2026-06-01', distrik: 'Yogyakarta (YIA)', status: 'L', keterangan: '', updatedAt: '2026-06-01T02:00:00.000Z' },
+      { id: 'act_4', tanggal: '2026-06-01', distrik: 'Surabaya (SUB)', status: 'TL', keterangan: '', updatedAt: '2026-06-01T02:00:00.000Z' },
+    ];
+    seedMockDoc('sjnam_sync', 'station_report', { payload: { srActivityData: veraActivity, _version: 2, _pushedBy: 'vera-device' }, updated_at: new Date().toISOString() });
+
+    // Admin now pulls — should see BOTH his own data AND Vera's, merged together.
+    await window.cloudPull(true);
+    const localAfterPull = JSON.parse(window.localStorage.getItem('sjnam_station_activity_v1') || '[]');
+    const distriks = localAfterPull.map(r => r.distrik).sort();
+    assert(distriks.includes('Nabire (NBX)') && distriks.includes('Jayapura (DJJ)'), 'Admin\'s own entries survived the pull');
+    assert(distriks.includes('Yogyakarta (YIA)') && distriks.includes('Surabaya (SUB)'), 'Vera\'s entries (from a completely different device) are now visible to Admin — this is the exact bug reported, now fixed');
+    assert(localAfterPull.length === 4, 'exactly 4 combined records, nothing duplicated or lost, got: ' + localAfterPull.length);
+  }
+
+  console.log('\n[67] AUDIT GAP FOUND & FIXED: Home tab background/logo customization was never synced at all — now it is');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {}; window._bucketBase = {};
+
+    window.localStorage.setItem('home_bg_v1', 'data:image/png;base64,ADMINBG');
+    await window.cloudPush(true, 'homeEditor');
+    const ids = mockDocIds();
+    assert(ids.length === 1 && ids[0] === 'home_editor', 'ONLY the home_editor bucket was written, got: ' + JSON.stringify(ids));
+
+    // Another device sets a different logo (a different field) around the same time
+    seedMockDoc('sjnam_sync', 'home_editor', { payload: { bg: 'data:image/png;base64,ADMINBG', logoSj: 'data:image/png;base64,SJLOGO', _version: 2 }, updated_at: new Date().toISOString() });
+
+    window.localStorage.setItem('home_logo_nam_size_v1', JSON.stringify({ w: 200, h: 120 }));
+    window._bucketHash['home_editor'] = 'force-repush';
+    await window.cloudPush(true, 'homeEditor');
+
+    assert(window.localStorage.getItem('home_logo_sj_v1') === 'data:image/png;base64,SJLOGO', 'the OTHER device\'s SJ logo change was correctly merged in, not lost');
+    assert(JSON.parse(window.localStorage.getItem('home_logo_nam_size_v1')).w === 200, 'this device\'s own NAM logo size change survived');
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
