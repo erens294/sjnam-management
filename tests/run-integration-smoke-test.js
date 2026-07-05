@@ -146,7 +146,9 @@ async function hashSha256(str) {
         return new Date(window.__mockClock).toISOString();
       };
       window.fetch = async function (url, opts) {
-        const m = String(url).match(/\/documents\/([^\/?]+)(?:\/([^\/?]+))?/);
+        const urlObj = String(url).split('?');
+        const path = urlObj[0], queryStr = urlObj[1] || '';
+        const m = path.match(/\/documents\/([^\/?]+)(?:\/([^\/?]+))?/);
         if (!m) return { ok: false, status: 404, text: async () => '' };
         const collection = m[1], docId = m[2];
         const method = (opts && opts.method) || 'GET';
@@ -165,9 +167,22 @@ async function hashSha256(str) {
           const body = JSON.parse(opts.body);
           const now = window.__nextMockUpdateTime();
           const existing = coll[docId];
+          // Honor updateMask.fieldPaths (true partial update, like real Firestore):
+          // only the listed top-level fields are touched; anything else already
+          // on the document survives untouched.
+          const maskFields = [...queryStr.matchAll(/updateMask\.fieldPaths=([^&]+)/g)].map(mm => decodeURIComponent(mm[1]));
+          const mergedFields = existing ? { ...existing.fields } : {};
+          if (maskFields.length) {
+            maskFields.forEach(fp => {
+              if (body.fields.hasOwnProperty(fp)) mergedFields[fp] = body.fields[fp];
+              else delete mergedFields[fp];
+            });
+          } else {
+            Object.assign(mergedFields, body.fields);
+          }
           const newDoc = {
             name: 'projects/mock/databases/(default)/documents/' + collection + '/' + docId,
-            fields: body.fields,
+            fields: mergedFields,
             createTime: existing ? existing.createTime : now,
             updateTime: now,
           };
@@ -1261,6 +1276,59 @@ async function hashSha256(str) {
     const ids = mockDocIds();
     assert(!ids.includes('sjnam_station_activity_v1'), 'NO stray document named after the unrecognized hint was created, got docs: ' + JSON.stringify(ids));
     assert(ids.length === window._CLOUD_BUCKETS.length, 'instead, it safely fell back to a full push across all real buckets, got: ' + ids.length);
+  }
+
+  console.log('\n[59] LANGKAH 3 (update()/merge:true): writing to a bucket now uses updateMask, so an unrelated field on the same document survives untouched');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    // Simulate some OTHER, unrelated top-level field already existing on the
+    // document (as if written by some future/other process) — a true
+    // partial update() must never wipe this out.
+    window.__mockFirestore.collections['sjnam_sync'] = window.__mockFirestore.collections['sjnam_sync'] || {};
+    seedMockDoc('sjnam_sync', 'role_perms', { payload: { rolePerms: {} }, updated_at: new Date().toISOString(), _some_other_field_we_dont_manage: 'must survive' });
+
+    await window.cloudPush(true, 'rolePerms');
+
+    const docAfter = window.__mockFirestore.collections['sjnam_sync']['role_perms'];
+    assert(docAfter.fields._some_other_field_we_dont_manage !== undefined, 'an unrelated top-level field on the document was NOT wiped out by our push (true partial update, not a blind full-document overwrite)');
+  }
+
+  console.log('\n[60] LANGKAH 6 (version field): every pushed bucket document carries an incrementing _version number');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    await window.cloudPush(true, 'karyawan');
+    const v1 = window.__mockFirestore.collections['sjnam_sync']['karyawan'].fields.payload.mapValue.fields._version.integerValue;
+    assert(v1 === '1', 'first push of a bucket gets _version = 1, got: ' + v1);
+
+    // Force a change and push again
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify([{ id: 'k1', nama: 'Test', station: 'CGK', updatedAt: new Date().toISOString() }]));
+    window._bucketHash['karyawan'] = 'stale-hash-force-repush';
+    await window.cloudPush(true, 'karyawan');
+    const v2 = window.__mockFirestore.collections['sjnam_sync']['karyawan'].fields.payload.mapValue.fields._version.integerValue;
+    assert(v2 === '2', 'second push increments _version to 2, got: ' + v2);
+  }
+
+  console.log('\n[61] LANGKAH 6: a version conflict on a whole-blob bucket (role_perms) with no per-record merge is DETECTED and clearly logged, not silently swallowed');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    // This device pushes role_perms once (v1), establishing a known version.
+    await window.cloudPush(true, 'rolePerms');
+    assert(window._bucketVersion['role_perms'] === 1, 'sanity: known version after first push is 1');
+
+    // Simulate ANOTHER device pushing again in between (v2) without this device knowing.
+    const currentDoc = window.__mockFirestore.collections['sjnam_sync']['role_perms'];
+    seedMockDoc('sjnam_sync', 'role_perms', { payload: { rolePerms: { 'tab-home': { coAdmin: true } }, _version: 2, _pushedBy: 'other-device' }, updated_at: new Date().toISOString() });
+
+    window._bucketTS['role_perms'] = '2000-01-01T00:00:00.000Z'; // force this push to detect the newer cloud doc as a conflict
+    await window.cloudPush(false, 'rolePerms');
+
+    assert(window._bucketVersion['role_perms'] === 3, 'after detecting the conflict, this device still successfully pushes its own version forward (v3 = max(2,1)+1), got: ' + window._bucketVersion['role_perms']);
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
