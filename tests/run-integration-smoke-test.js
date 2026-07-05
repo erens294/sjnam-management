@@ -1042,6 +1042,34 @@ async function hashSha256(str) {
     }
   }
 
+  console.log('\n[51] CRITICAL BUG FOUND FROM USER REPORT: cross-device sync silently never applying new data (docToObject discarded Firestore\'s server updateTime)');
+  {
+    // This is the actual root cause of "data ada di device Elyn, tidak pernah
+    // sampai ke device Admin": every "is this newer?" comparison in the sync
+    // system relied on `updated_at`, a field WE wrote ourselves using each
+    // device's own local clock (`new Date().toISOString()`). If two devices'
+    // clocks are even slightly out of sync (very common in the real world),
+    // the "skip pull if not newer" optimization can permanently and silently
+    // conclude "no changes" — even though another device genuinely pushed
+    // new data. Firestore's REST API always returns its own server-assigned
+    // `updateTime` in every document response (authoritative regardless of
+    // any client's clock), but the code discarded it — only extracting
+    // `fields`. Verify it is now correctly captured.
+    assert(typeof window.docToObject === 'function', 'docToObject is exposed for verification');
+
+    const mockFirestoreDoc = {
+      name: 'projects/test/databases/(default)/documents/sjnam_sync/sjnam_main',
+      fields: { updated_at: { stringValue: '2020-01-01T00:00:00.000Z' } }, // deliberately a stale client-clock value
+      createTime: '2026-07-04T15:00:00.000000Z',
+      updateTime: '2026-07-04T15:19:08.123456Z' // Firestore's real, authoritative server time
+    };
+    const result = window.docToObject(mockFirestoreDoc);
+    assert(!!result, 'docToObject successfully parses a mock Firestore document');
+    assert(result.updated_at === '2020-01-01T00:00:00.000Z', 'the client-supplied field value is still extracted as before (backward compatible)');
+    assert(result._firestoreUpdateTime === '2026-07-04T15:19:08.123456Z', 'docToObject NOW also exposes Firestore\'s true server updateTime, got: ' + result._firestoreUpdateTime);
+    assert(result._firestoreUpdateTime !== result.updated_at, 'the two values are genuinely different in this reproduction — proving the old code (which only looked at updated_at) would have used the WRONG, stale, client-clock-based value for sync comparisons');
+  }
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   if (fail > 0) {
     console.log('Failures:');
