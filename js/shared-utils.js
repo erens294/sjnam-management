@@ -167,6 +167,12 @@ function() {
         if (!doc || !doc.fields) return null;
         const out = {};
         for (const k in doc.fields) out[k] = fromFirestoreValue(doc.fields[k]);
+        // Firestore's REST API always returns its own server-assigned updateTime
+        // alongside `fields` — this is authoritative regardless of any client's
+        // local clock. Expose it separately so callers can use IT (not the
+        // client-supplied `updated_at` field we happened to write ourselves)
+        // for cross-device "is this newer?" comparisons.
+        out._firestoreUpdateTime = doc.updateTime || null;
         return out
     }
 
@@ -321,6 +327,17 @@ function() {
             return null
         }
     }
+    // [FIX] Sebelum perbaikan ini, _lastCloudUpdatedAt tersimpan dari nilai
+    // `updated_at` yang kita tulis sendiri (jam perangkat masing-masing client
+    // — bisa meleset antar device). Sekarang memakai `updateTime` asli dari
+    // server Firestore (format sedikit berbeda, presisi lebih tinggi).
+    // Buang cache lama SEKALI saja supaya perbandingan pertama setelah update
+    // ini tidak membandingkan dua format berbeda — device akan selalu
+    // menarik data lengkap sekali di awal, lalu perbandingan berikutnya
+    // konsisten memakai format baru.
+    try {
+        localStorage.getItem("sjnam_sync_ts_migrated_v1") || (localStorage.removeItem(window._LAST_PULL_TS_KEY), localStorage.setItem("sjnam_sync_ts_migrated_v1", "1"))
+    } catch (e) {}
     window._realtimeChannel = null, window._lastCloudUpdatedAt = function() {
         try {
             return localStorage.getItem(window._LAST_PULL_TS_KEY) || null
@@ -618,7 +635,8 @@ function() {
         try {
             let mergedPayload = localPayload;
             const cloudRow = await neonSelectOne("sjnam_sync", "sjnam_main");
-            if (cloudRow && cloudRow.updated_at && (!_lastCloudUpdatedAt || cloudRow.updated_at > _lastCloudUpdatedAt)) {
+            const cloudRowUpdatedAt = cloudRow ? (cloudRow._firestoreUpdateTime || cloudRow.updated_at) : null;
+            if (cloudRow && cloudRowUpdatedAt && (!_lastCloudUpdatedAt || cloudRowUpdatedAt > _lastCloudUpdatedAt)) {
                 const cloudPayload = cloudRow.payload || {},
                     byIdOrKey = r => r.id || r["App Service & Tehnik"] || JSON.stringify(r),
                     pesertaKeyFn = r => r.id || r.username || JSON.stringify(r),
@@ -676,7 +694,7 @@ function() {
                 payload: mergedPayload,
                 updated_at: (new Date).toISOString()
             });
-            const serverUpdatedAt = upsertResult?.updated_at || mergedPayload._pushedAt;
+            const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || mergedPayload._pushedAt;
             window._lastPushedHash = _hashPayload(mergedPayload), window._lastCloudUpdatedAt = serverUpdatedAt;
             try {
                 localStorage.setItem(window._LAST_PULL_TS_KEY, window._lastCloudUpdatedAt)
@@ -692,7 +710,7 @@ function() {
         try {
             const meta = await neonSelectOne("sjnam_sync", "sjnam_main");
             if (!meta) throw new Error("Data tidak ditemukan di Firestore");
-            const cloudUpdatedAt = meta.updated_at;
+            const cloudUpdatedAt = meta._firestoreUpdateTime || meta.updated_at;
             if (_lastCloudUpdatedAt && cloudUpdatedAt && cloudUpdatedAt <= _lastCloudUpdatedAt) return cloudLog("⏭️ Smart Pull: tidak ada perubahan data antar device, skip pull (payload tidak diunduh)", "info"), updateSyncStatus("connected"), void (silent || showToast("Data sudah paling baru — tidak ada perubahan dari device lain", "info"));
             const row = await neonSelectOne("sjnam_sync", "sjnam_main");
             if (!row) throw new Error("Data tidak ditemukan di Firestore");
@@ -930,7 +948,7 @@ function() {
         if (neonConfigured()) try {
             auditLog(action, moduleName, "", (Array.isArray(items) ? items.length : 1) + " record(s)")
         } catch (e) {}
-    }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
+    }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.docToObject = docToObject, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
         _cloudPullInProgress || neonConfigured() && (clearTimeout(_autoSyncTimer), window._autoSyncTimer = setTimeout(async () => {
             if (_cloudPullInProgress) return;
             const currentHash = _hashPayload(getAllCloudData());

@@ -720,6 +720,111 @@ Dijalankan ulang seluruh 199 test otomatis setelah perubahan di atas — semua t
 dipastikan tidak ada lagi kode yang mencoba menulis ke tabel "Peringkat Kepatuhan Station" yang
 sudah dihapus (yang bisa menyebabkan error diam-diam di versi lama).
 
+---
+
+## Update 17: Angka/persentase di grafik ditampilkan + persistensi state di seluruh aplikasi
+
+### Angka/persentase ditampilkan di grafik Dashboard
+- File: `js/station-report.js`.
+- Grafik **Distribusi Kategori** (pie) sekarang menampilkan jumlah + persentase langsung di tiap
+  irisan (contoh: "3 (25%)").
+- Grafik **Kepatuhan % per Station** (bar) sekarang menampilkan angka persentase di ujung tiap
+  batang, jadi tidak perlu menebak-nebak dari panjang batang saja.
+
+### Persistensi state — refresh halaman tidak lagi mengubah tab/sub-tab/filter yang sedang dilihat
+Ini permintaan besar, jadi saya audit modul demi modul dan menambahkan penyimpanan otomatis
+(localStorage) untuk setiap pilihan yang sebelumnya reset saat refresh:
+
+- **Activity Report** (paling lengkap dibenahi): sub-tab aktif (Dashboard/Input Data/Rekap
+  Bulanan), bulan yang dipilih di Dashboard, mode Rekap (Kepatuhan % / Jumlah Hari Lapor), tahun
+  yang dipilih di Rekap, dan tanggal yang dipilih di Input Data — semuanya sekarang tersimpan
+  otomatis begitu diubah, dan dipulihkan tepat seperti semula saat halaman di-refresh.
+- **Check-In Report & First/Last Bag Report**: tanggal yang dipilih di form input sekarang
+  tersimpan & dipulihkan (sebelumnya selalu reset ke hari ini).
+- **Soal Training**: sub-tab aktif (Bank Soal/Bank Data Peserta/Bank Station) sekarang tersimpan &
+  dipulihkan — sebelumnya tidak ada penyimpanan sama sekali untuk ini.
+- **Drygoods**: tab station yang sedang dipilih (mis. CGK, DJJ, dst.) sekarang tersimpan &
+  dipulihkan untuk user yang tidak dikunci ke 1 station (Admin, User-All, dsb). User-DRG yang
+  memang dikunci ke station tertentu tidak terpengaruh — mereka tetap otomatis diarahkan ke
+  station mereka sendiri seperti biasa.
+- **Admin (Data Karyawan/Kelola Akun/Atur Akses Role)** dan **Dashboard Service Recovery**:
+  sudah punya penyimpanan serupa dari update-update sebelumnya — dicek ulang, masih berfungsi
+  normal.
+
+### Kenapa belum 100% "semua tab tanpa kecuali"
+Aplikasi ini punya banyak sekali filter kecil di berbagai tab (kolom pencarian, filter status,
+dsb.) yang tersebar di puluhan ribu baris kode. Saya prioritaskan yang paling terasa dampaknya
+kalau reset (pilihan tanggal, sub-tab, station) di atas — bukan filter pencarian teks bebas (yang
+secara UX memang lebih wajar kosong lagi saat reload, mirip kotak pencarian di kebanyakan aplikasi
+web). Kalau ada filter spesifik lain yang menurut Anda penting untuk ikut disimpan, beri tahu saya
+tab & nama filternya, nanti saya tambahkan secara terarah.
+
+### Untuk tab baru di masa depan
+Pola yang saya pakai di sini (satu key localStorage per grup state, disimpan tiap kali user
+mengubah pilihan, dipulihkan saat modul pertama kali dibuka) adalah pola yang sudah konsisten
+dipakai di banyak tempat lain di aplikasi ini sejak awal — jadi kalau saya (atau siapa pun)
+menambahkan tab baru nanti mengikuti pola yang sama, otomatis ikut mendapat perilaku "tidak reset
+saat refresh" ini tanpa perlu membangun sistem baru dari nol.
+
+### Verifikasi
+Ditambahkan 3 test baru yang mensimulasikan skenario nyata "ubah pilihan → simulasikan reload →
+pastikan pilihan tadi masih ada", bukan cuma mengecek nilai tersimpan di localStorage. **Total 206
+dari 206 test lulus.**
+
+---
+
+## Update 18: Bug KRITIS ditemukan — sinkronisasi antar-device bisa diam-diam gagal selamanya
+
+Ini yang menjelaskan laporan Anda: "data di-upload Elyn, tidak pernah muncul di device Admin,
+padahal status Cloud Sync sama-sama 'Terhubung'."
+
+### Akar masalah
+Setiap kali aplikasi menyimpan data ke Firestore, ia mencatat waktu "terakhir diperbarui"
+memakai **jam komputer/HP perangkat itu sendiri** (`new Date().toISOString()`) — bukan jam
+server Firestore. Lalu setiap kali menarik data (pull), sistem membandingkan "apakah cloud lebih
+baru dari yang terakhir saya tahu?" — kalau tidak, **dilewati** supaya hemat kuota (fitur
+"Smart-Sync" yang terlihat di Settings).
+
+Masalahnya: kalau jam 2 device tidak presis sama (sangat umum terjadi — beda beberapa menit,
+beda zona waktu yang salah, dsb.), perbandingan ini bisa salah selamanya. Contoh nyata: kalau jam
+di HP/komputer Admin sedikit lebih maju dari jam di device Elyn, maka SETIAP push dari Elyn akan
+selalu tampak "lebih lama" menurut jam Admin — sehingga Admin **tidak akan pernah** menarik data
+baru dari Elyn, walau status tetap menunjukkan "Terhubung" dan tidak ada pesan error sama sekali.
+Ini persis menjelaskan log yang Anda tunjukkan: berkali-kali "Smart Pull: tidak ada perubahan...
+skip pull" padahal Elyn baru saja mengupload data.
+
+### Perbaikan
+- File: `js/shared-utils.js`.
+- Firestore sebenarnya **selalu** mengirimkan balik waktu "terakhir diubah" versi SERVER-nya
+  sendiri di setiap respons (`updateTime`) — ini otoritatif, tidak peduli jam device siapa pun.
+  Kode sebelumnya membuang informasi ini begitu saja dan hanya memakai jam milik masing-masing
+  device. Sekarang sistem memakai waktu resmi dari server Firestore ini untuk SEMUA keputusan
+  "apakah perlu pull/push data", di 3 titik: perbandingan sebelum pull, perbandingan konflik
+  sebelum push, dan pencatatan setelah push berhasil.
+- Ditambahkan juga migrasi satu kali: cache waktu lama (dari sebelum perbaikan ini, yang formatnya
+  beda) dibuang sekali saat pertama kali membuka versi baru ini, supaya perbandingan pertama tidak
+  membandingkan dua format berbeda — device akan menarik data lengkap sekali di awal, lalu
+  berjalan normal seterusnya.
+
+### Kenapa ini baru ketahuan sekarang
+Bug ini sudah ada sejak sistem Cloud Sync pertama kali dibangun — bukan sesuatu yang saya
+sebabkan di update-update sebelumnya. Butuh laporan konkret dengan 2 device nyata (screenshot
+Anda) untuk bisa terlihat, karena di lingkungan pengujian otomatis saya (satu "device" virtual)
+gejala ini tidak pernah muncul — inilah kenapa audit menyeluruh saja tidak cukup untuk menemukan
+bug seperti ini; butuh laporan nyata dari pemakaian sungguhan seperti yang Anda berikan.
+
+### Verifikasi
+Ditambahkan test yang membuktikan secara langsung: sebelum perbaikan, sistem hanya melihat waktu
+versi device sendiri (dan akan salah kalau device lain punya waktu "lebih lama" secara keliru);
+sesudah perbaikan, sistem benar-benar mengambil `updateTime` asli dari server Firestore. **Total
+211 dari 211 test lulus.**
+
+### Yang perlu Anda lakukan
+Upload `index.html` dan `js/shared-utils.js` yang baru ke kedua sisi (Elyn & Admin), lalu hard
+refresh sekali di kedua browser. Setelah itu, coba minta Elyn push data baru lagi (atau klik
+**"Push Sekarang"** di Settings miliknya), lalu di sisi Admin klik **"Tarik Data dari Cloud"** —
+seharusnya kali ini datanya benar-benar tertarik, bukan lagi "skip" terus-menerus.
+
 
 
 
