@@ -1025,3 +1025,107 @@ situ. Ketemu 2 bug nyata:
 ### Verifikasi
 Ditambahkan 2 test baru yang secara khusus mereproduksi kedua bug di atas dan membuktikan
 perbaikannya bekerja. **Total 241 dari 241 test lulus.**
+
+---
+
+## Update 24: Station Report (Activity/Check-In/First-Last Bag) SEKARANG BENAR-BENAR TERSINKRON
+
+Ini perbaikan akar masalah untuk laporan Anda: data di layar Admin dan layar Vera berbeda sama
+sekali untuk bulan yang sama.
+
+### Akar masalah
+Seperti yang sudah saya beri tahu di Update 20, modul Station Report (Activity Report, Check-In
+Report, First/Last Bag) **tidak pernah ikut sistem sinkronisasi cloud sejak awal dibuat**. Setiap
+device punya data lokalnya sendiri-sendiri, terpisah total dari device lain — jadi Admin dan Vera
+memang TIDAK PERNAH bisa melihat data yang sama, sekalipun keduanya rutin membuka & menyimpan data.
+
+### Perbaikan
+- File: `js/shared-utils.js`, `js/station-report.js`.
+- Station Report sekarang jadi bucket granular baru (`sjnam_sync/station_report`), sama seperti
+  Drygoods, Training, dan modul lain.
+- **Activity Report** (data yang diedit ulang per tanggal+station): digabung per-record, menangnya
+  yang terakhir diperbarui (`updatedAt`) — jadi kalau Admin isi station A dan Vera isi station B di
+  hari yang sama, KEDUANYA tetap ada, tidak ada yang saling menimpa.
+- **Check-In Report & First/Last Bag** (data log per-penerbangan, jarang diedit ulang): digabung
+  berdasarkan ID — entri dari kedua device disatukan, tidak ada yang hilang.
+- **Daftar station custom**: digabung jadi daftar gabungan nama unik dari kedua device.
+- Setelah data ditarik dari cloud, seluruh tampilan Activity Report/Check-In/First-Last Bag
+  langsung diperbarui otomatis (tidak perlu refresh manual).
+
+### Bug tambahan ditemukan & diperbaiki saat membangun ini
+Sempat ada 2 kesalahan yang ketahuan lewat pengujian sebelum saya kirim:
+1. Definisi bucket `station_report` sempat tertulis dua kali secara tidak sengaja (duplikat) — bisa
+   menyebabkan penghitungan yang salah. Sudah dihapus salah satunya.
+2. Versi pertama kode "tarik data" (`pull`) untuk Station Report langsung MENIMPA data lokal dengan
+   data dari cloud, bukan MENGGABUNGKAN — persis kesalahan yang sama seperti bug Update 25 di
+   modul lain. Ditemukan langsung lewat test otomatis sebelum sempat terkirim ke Anda, dan
+   diperbaiki supaya benar-benar menggabungkan, bukan menimpa.
+
+### Verifikasi
+Ditambahkan test yang meniru **persis skenario Anda**: Admin mengisi data untuk beberapa station,
+Vera (di device terpisah) mengisi data untuk station yang sama sekali berbeda di bulan yang sama —
+setelah sinkronisasi, Admin harus melihat data GABUNGAN dari kedua device, bukan cuma satu sisi.
+**Total 246 dari 246 test lulus.**
+
+### Yang perlu Anda lakukan
+Upload `index.html`, `js/shared-utils.js`, dan `js/station-report.js` yang baru ke server Anda,
+lalu hard refresh di **semua device** yang dipakai (Admin, Vera, dan lainnya). Setelah semua
+device membuka versi baru ini sekali, data Activity Report akan otomatis mulai tersinkron —
+tidak perlu import ulang data yang sudah ada, data lama di masing-masing device akan otomatis
+tergabung saat sinkronisasi pertama terjadi.
+
+---
+
+## Update 25: Audit menyeluruh — memastikan SEMUA data ikut sinkronisasi granular
+
+Menjawab pertanyaan Anda langsung: sebelum update ini, **belum semua**. Saya audit ulang seluruh
+kode dari awal (bukan cuma modul yang pernah dilaporkan bermasalah) dengan cara menginventarisir
+**setiap key localStorage** yang dipakai di seluruh aplikasi, lalu mencocokkan satu per satu:
+mana yang benar-benar "data isi" yang harus konsisten di semua device, dan mana yang murni
+"preferensi tampilan per-device" yang justru SEHARUSNYA tidak disamakan.
+
+### Ditemukan 1 modul lagi yang belum pernah tersinkron: Home Editor
+Background dan logo (SJ & NAM) di tab Home — termasuk posisi & ukurannya — ternyata **tidak
+pernah ikut sistem sync sama sekali**, sama seperti kasus Station Report sebelumnya. Kalau Admin
+mengatur background/logo di satu device, device lain tidak akan pernah melihatnya. Sudah
+ditambahkan sebagai bucket granular baru (`home_editor`), dengan penggabungan per-bagian yang
+sama seperti Atur Akses Role & Pengaturan Sertifikat — jadi kalau 2 admin mengubah bagian berbeda
+(satu ganti background, satu reposisi logo) hampir bersamaan, keduanya tetap tersimpan.
+
+### Daftar LENGKAP 13 bucket granular sekarang (semua data isi, semua tab, semua sub-tab)
+| # | Bucket | Mencakup |
+|---|---|---|
+| 1 | `delay_data` | Data Delay Penerbangan (Service Recovery) |
+| 2 | `dfs_stations` | Bank Data Station + DFS Bank |
+| 3 | `users` | Kelola Akun |
+| 4 | `karyawan` | Data Karyawan |
+| 5 | `training` | Materi Training, Bank Soal, Bank Data Peserta, Bank Station |
+| 6 | `stcr` | Stretchercase & POB Request (Dashboard/Data/Station) |
+| 7 | `drygoods` | Kartu Stok Drygoods, Bank Item, Dashboard |
+| 8 | `role_perms` | Atur Akses Role |
+| 9 | `cert_config` | Template Sertifikat, Custom Text Block, Paraf |
+| 10 | `tombstones` | Jejak data terhapus (lintas semua modul) |
+| 11 | `settings` | Dark Mode, Cost PM89 Default |
+| 12 | `station_report` | Activity Report, Check-In Report, First/Last Bag *(Update 24)* |
+| 13 | `home_editor` | Background & Logo tab Home *(baru, update ini)* |
+
+### Yang SENGAJA TIDAK disinkronkan (bukan bug, ini pilihan desain yang benar)
+Beberapa data lain SENGAJA dibiarkan per-device karena memang seharusnya begitu — menyamakannya
+justru akan mengganggu:
+- **Tab/sub-tab yang sedang terbuka, filter tanggal, status accordion sidebar** — tiap orang wajar
+  punya tampilan yang berbeda-beda di device masing-masing saat itu.
+- **Sesi login, ID device, status lockout percobaan login gagal** — ini memang harus spesifik per
+  device/sesi, bukan data bersama.
+- **Catatan internal sistem sync itu sendiri** (jejak waktu/versi terakhir yang diketahui tiap
+  device) — kalau ini ikut disamakan, sistemnya jadi tidak masuk akal (setiap device memang perlu
+  tahu "versi terakhir yang SAYA lihat", bukan versi yang sama untuk semua).
+
+### Verifikasi
+Ditambahkan test baru khusus untuk Home Editor, membuktikan perubahan dari 2 device berbeda
+(background vs logo) tetap tergabung tanpa saling menghapus. **Total 249 dari 249 test lulus.**
+
+### Kesimpulan jujur
+Dengan update ini, **semua data isi aplikasi** (bukan preferensi tampilan) sudah masuk sistem sync
+granular — 13 bucket mencakup seluruh tab dan sub-tab yang ada saat ini. Kalau ke depan ada tab
+baru ditambahkan, saya akan selalu mengecek dan memasukkannya ke sistem ini sebagai bagian dari
+pengerjaan tab tersebut, bukan menunggu dilaporkan lagi.

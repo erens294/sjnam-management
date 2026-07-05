@@ -1215,7 +1215,19 @@
     getCheckinData: getCiData,
     getBagReportData: getFlbData,
     MASTER_DISTRIK: MASTER_DISTRIK,
-    getStationList: function () { return STATION_LIST.slice(); }
+    getStationList: function () { return STATION_LIST.slice(); },
+    setStationListFromCloud: function (list) { if (Array.isArray(list)) STATION_LIST = list.slice(); },
+    refreshAll: function () {
+      try {
+        rebuildActMonths(true);
+        renderMonthSelect();
+        renderPulseStrip();
+        renderDashboard();
+        renderActivityGrid();
+        renderCiTable();
+        renderFlbTable();
+      } catch (e) { console.warn("[STATION_REPORT.refreshAll]", e); }
+    }
   };
 
   console.info("%c[SJNAM] Station Report module loaded: Activity / Check-In / First-Last Bag", "color:#16a34a;font-weight:bold;font-size:11px");

@@ -369,7 +369,14 @@ function() {
         { id: "role_perms", dirtyHints: ["rolePerms"] },
         { id: "cert_config", dirtyHints: ["certConfig", "cert"] },
         { id: "tombstones", dirtyHints: ["tombstones"] },
-        { id: "settings", dirtyHints: ["settings"] }
+        { id: "settings", dirtyHints: ["settings"] },
+        // station-report.js's persist() memanggil triggerAutoSync() dengan NAMA
+        // KEY LOCALSTORAGE MENTAH sebagai dirtyHint (bukan nama modul biasa) —
+        // dicocokkan langsung di sini supaya tidak perlu ubah station-report.js
+        // sama sekali. Sebelumnya modul ini TIDAK PERNAH benar-benar tersinkron
+        // ke cloud (lihat Update 20) — inilah perbaikannya.
+        { id: "station_report", dirtyHints: ["sjnam_station_activity_v1", "sjnam_station_activity_master_v1", "sjnam_station_checkin_v1", "sjnam_station_bagreport_v1", "stationReport"] },
+        { id: "home_editor", dirtyHints: ["homeEditor"] }
     ];
     window._CLOUD_BUCKETS = CLOUD_BUCKETS;
 
@@ -400,6 +407,8 @@ function() {
             };
             case "tombstones": return { deletedTombstones: full.deletedTombstones };
             case "settings": return { settings: full.settings };
+            case "station_report": return { srActivityData: full.srActivityData, srActivityStationList: full.srActivityStationList, srCiData: full.srCiData, srFlbData: full.srFlbData };
+            case "home_editor": return { ...full.homeEditor };
             default: return {}
         }
     }
@@ -413,7 +422,7 @@ function() {
     // bucket ini dipakai PENGGABUNGAN 3-ARAH per-key (base vs local vs cloud)
     // — lihat _threeWayMergeObject di bawah — supaya perubahan 2 admin ke
     // BAGIAN BERBEDA dari pengaturan yang sama tidak saling menghapus.
-    const WHOLE_BLOB_BUCKETS = ["role_perms", "cert_config", "settings"];
+    const WHOLE_BLOB_BUCKETS = ["role_perms", "cert_config", "settings", "home_editor"];
     window._BUCKET_BASE_KEY = "sjnam_bucket_base_v1";
 
     function _loadBucketTS() {
@@ -680,6 +689,37 @@ function() {
         try {
             stcrData = JSON.parse(localStorage.getItem("sjnam_stcr_data_v1") || "null")
         } catch (e) {}
+        // [Station Report] Activity/Check-In/First-Last-Bag — sebelumnya TIDAK
+        // PERNAH ikut sistem sync (bug ditemukan: 2 device menunjukkan data
+        // yang sama sekali berbeda karena masing-masing hanya punya data lokal
+        // sendiri). Sekarang disertakan seperti modul lain.
+        let srActivityData = null;
+        try {
+            srActivityData = JSON.parse(localStorage.getItem("sjnam_station_activity_v1") || "null")
+        } catch (e) {}
+        let srActivityStationList = null;
+        try {
+            srActivityStationList = JSON.parse(localStorage.getItem("sjnam_station_activity_master_v1") || "null")
+        } catch (e) {}
+        let srCiData = null;
+        try {
+            srCiData = JSON.parse(localStorage.getItem("sjnam_station_checkin_v1") || "null")
+        } catch (e) {}
+        let srFlbData = null;
+        try {
+            srFlbData = JSON.parse(localStorage.getItem("sjnam_station_bagreport_v1") || "null")
+        } catch (e) {}
+        // [Home Editor] Background & logo tampilan Home — juga TIDAK PERNAH
+        // ikut sync sebelumnya (ditemukan saat audit menyeluruh).
+        const homeEditor = {
+            bg: localStorage.getItem("home_bg_v1") || null,
+            logoSj: localStorage.getItem("home_logo_sj_v1") || null,
+            logoNam: localStorage.getItem("home_logo_nam_v1") || null,
+            logoSjPos: localStorage.getItem("home_logo_sj_pos_v1") || null,
+            logoNamPos: localStorage.getItem("home_logo_nam_pos_v1") || null,
+            logoSjSize: localStorage.getItem("home_logo_sj_size_v1") || null,
+            logoNamSize: localStorage.getItem("home_logo_nam_size_v1") || null
+        };
         let drygoodsData = null;
         try {
             drygoodsData = JSON.parse(localStorage.getItem("sjnam_drygoods_v1") || "null")
@@ -732,6 +772,11 @@ function() {
             users: users,
             karyawan: karyawan,
             stcrData: stcrData,
+            srActivityData: srActivityData,
+            srActivityStationList: srActivityStationList,
+            srCiData: srCiData,
+            srFlbData: srFlbData,
+            homeEditor: homeEditor,
             drygoodsData: drygoodsData,
             rolePerms: rolePerms,
             certTemplate1: certTemplate1,
@@ -805,6 +850,42 @@ function() {
                         merged.drygoodsData.bankItems = _mergeWithConflict(cloudBucketPayload.drygoodsData.bankItems, localBucketPayload.drygoodsData.bankItems, dgTrxKeyFn)
                     }
                 }
+            } else if (bucketId === "station_report") {
+                // Activity Report: upsert-style data (sama tanggal+station bisa
+                // diedit ulang) — gabung per id, menangnya yang updatedAt lebih baru.
+                if (Array.isArray(localBucketPayload.srActivityData) || Array.isArray(cloudBucketPayload.srActivityData)) {
+                    const cloudArr = Array.isArray(cloudBucketPayload.srActivityData) ? cloudBucketPayload.srActivityData : [];
+                    const localArr = Array.isArray(localBucketPayload.srActivityData) ? localBucketPayload.srActivityData : [];
+                    const map = new Map;
+                    cloudArr.forEach(item => { if (item && item.id) map.set(item.id, item) });
+                    localArr.forEach(item => {
+                        if (!item || !item.id) return;
+                        const existing = map.get(item.id);
+                        if (!existing) return void map.set(item.id, item);
+                        const lt = new Date(item.updatedAt || 0).getTime(), rt = new Date(existing.updatedAt || 0).getTime();
+                        map.set(item.id, lt >= rt ? item : existing)
+                    });
+                    merged.srActivityData = Array.from(map.values())
+                }
+                // Check-In & First/Last Bag: log per-flight, jarang diedit ulang —
+                // cukup gabung berdasarkan id (kedua sisi disatukan, tidak ada yang hilang).
+                ["srCiData", "srFlbData"].forEach(field => {
+                    if (Array.isArray(localBucketPayload[field]) || Array.isArray(cloudBucketPayload[field])) {
+                        const cloudArr = Array.isArray(cloudBucketPayload[field]) ? cloudBucketPayload[field] : [];
+                        const localArr = Array.isArray(localBucketPayload[field]) ? localBucketPayload[field] : [];
+                        const map = new Map;
+                        cloudArr.forEach(item => { if (item && item.id) map.set(item.id, item) });
+                        localArr.forEach(item => { if (item && item.id) map.set(item.id, item) });
+                        merged[field] = Array.from(map.values())
+                    }
+                });
+                // Daftar station custom: gabung nama unik dari kedua device —
+                // supaya station yang ditambahkan salah satu device tidak hilang.
+                if (Array.isArray(localBucketPayload.srActivityStationList) || Array.isArray(cloudBucketPayload.srActivityStationList)) {
+                    const cloudArr = Array.isArray(cloudBucketPayload.srActivityStationList) ? cloudBucketPayload.srActivityStationList : [];
+                    const localArr = Array.isArray(localBucketPayload.srActivityStationList) ? localBucketPayload.srActivityStationList : [];
+                    merged.srActivityStationList = Array.from(new Set([...cloudArr, ...localArr])).sort()
+                }
             } else if (bucketId === "tombstones") {
                 if (cloudBucketPayload.deletedTombstones && typeof cloudBucketPayload.deletedTombstones === "object") {
                     const localTS = _loadTombstones();
@@ -825,7 +906,7 @@ function() {
                 // izin tab Drygoods, Admin B mengubah izin tab STCR), KEDUA
                 // perubahan tetap tersimpan — tidak ada yang tertimpa.
                 const base = window._bucketBase[bucketId] || {};
-                if (bucketId === "cert_config") {
+                if (bucketId === "cert_config" || bucketId === "home_editor") {
                     const { merged: mergedFields, conflictKeys } = _threeWayMergeObject(base, localBucketPayload, cloudBucketPayload);
                     merged = { ...merged, ...mergedFields };
                     merged._realConflictKeys = conflictKeys
@@ -915,6 +996,48 @@ function() {
         return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil (" + totalPushed + " bucket)"), window._rolePermsLocalDirty = !1, window._drygoodsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Firestore (" + totalPushed + " bucket diperbarui)", "success"), silent || showToast("⚡ Firestore Sync berhasil! (" + totalPushed + " bucket)", "success"), !0
     }
     function _applyBucketPull(bucketId, rec) {
+        if (bucketId === "station_report") {
+            let srChanged = false;
+            if (Array.isArray(rec.srActivityData)) {
+                const _localAct = function () { try { return JSON.parse(localStorage.getItem("sjnam_station_activity_v1") || "null") } catch (e) { return null } }();
+                let _mergedAct = rec.srActivityData;
+                if (Array.isArray(_localAct)) {
+                    const map = new Map;
+                    rec.srActivityData.forEach(item => { if (item && item.id) map.set(item.id, item) });
+                    _localAct.forEach(item => {
+                        if (!item || !item.id) return;
+                        const existing = map.get(item.id);
+                        if (!existing) return void map.set(item.id, item);
+                        const lt = new Date(item.updatedAt || 0).getTime(), rt = new Date(existing.updatedAt || 0).getTime();
+                        map.set(item.id, lt >= rt ? item : existing)
+                    });
+                    _mergedAct = Array.from(map.values())
+                }
+                localStorage.setItem("sjnam_station_activity_v1", JSON.stringify(_mergedAct)); srChanged = true
+            }
+            if (Array.isArray(rec.srActivityStationList)) {
+                const _localList = function () { try { return JSON.parse(localStorage.getItem("sjnam_station_activity_master_v1") || "null") } catch (e) { return null } }();
+                const _mergedList = Array.isArray(_localList) ? Array.from(new Set([...rec.srActivityStationList, ..._localList])).sort() : rec.srActivityStationList;
+                localStorage.setItem("sjnam_station_activity_master_v1", JSON.stringify(_mergedList));
+                window.STATION_REPORT && typeof window.STATION_REPORT.setStationListFromCloud === "function" && window.STATION_REPORT.setStationListFromCloud(_mergedList);
+                srChanged = true
+            }
+            ["srCiData", "srFlbData"].forEach(field => {
+                if (!Array.isArray(rec[field])) return;
+                const lsKey = field === "srCiData" ? "sjnam_station_checkin_v1" : "sjnam_station_bagreport_v1";
+                const _localArr = function () { try { return JSON.parse(localStorage.getItem(lsKey) || "null") } catch (e) { return null } }();
+                let _mergedArr = rec[field];
+                if (Array.isArray(_localArr)) {
+                    const map = new Map;
+                    rec[field].forEach(item => { if (item && item.id) map.set(item.id, item) });
+                    _localArr.forEach(item => { if (item && item.id) map.set(item.id, item) });
+                    _mergedArr = Array.from(map.values())
+                }
+                localStorage.setItem(lsKey, JSON.stringify(_mergedArr)); srChanged = true
+            });
+            srChanged && window.STATION_REPORT && typeof window.STATION_REPORT.refreshAll === "function" && window.STATION_REPORT.refreshAll();
+            return
+        }
         if (bucketId === "tombstones") {
             if (rec.deletedTombstones && typeof rec.deletedTombstones === "object") {
                 const localTS = _loadTombstones();
@@ -1007,6 +1130,18 @@ function() {
         if (bucketId === "cert_config") {
             let certChanged = !1;
             rec.certTemplate1 && (localStorage.setItem("sjn_cert_template_1", JSON.stringify(rec.certTemplate1)), certChanged = !0), rec.certTemplate2 && (localStorage.setItem("sjn_cert_template_2", JSON.stringify(rec.certTemplate2)), certChanged = !0), rec.certTemplateActive && (localStorage.setItem("sjn_cert_template_active", rec.certTemplateActive), certChanged = !0), rec.certPositions && (localStorage.setItem("sjn_cert_positions_v1", JSON.stringify(rec.certPositions)), certChanged = !0), void 0 !== rec.certBarcode && null !== rec.certBarcode && (localStorage.setItem("sjn_cert_barcode_v1", rec.certBarcode), certChanged = !0), rec.certCustomTexts && (localStorage.setItem("sjn_cert_custom_texts_v1", JSON.stringify(rec.certCustomTexts)), certChanged = !0), rec.certCustomTextsSJ && (localStorage.setItem("sjn_cert_custom_texts_sj_v1", JSON.stringify(rec.certCustomTextsSJ)), certChanged = !0), rec.certCustomTextsNAM && (localStorage.setItem("sjn_cert_custom_texts_nam_v1", JSON.stringify(rec.certCustomTextsNAM)), certChanged = !0), rec.certCustomTextsBoth && (localStorage.setItem("sjn_cert_custom_texts_both_v1", JSON.stringify(rec.certCustomTextsBoth)), certChanged = !0), rec.certParaf && (localStorage.setItem("sjn_cert_paraf_v1", JSON.stringify(rec.certParaf)), certChanged = !0), void 0 !== rec.certParafShow && null !== rec.certParafShow && (localStorage.setItem("sjn_cert_paraf_show_v1", rec.certParafShow), certChanged = !0), certChanged && (typeof window.loadCertificateTemplate === "function" && window.loadCertificateTemplate(), typeof window.ctbRenderAll === "function" && window.ctbRenderAll())
+        }
+        if (bucketId === "home_editor") {
+            let heChanged = !1;
+            const setOrRemove = (lsKey, val) => { val ? (localStorage.setItem(lsKey, val), heChanged = !0) : localStorage.getItem(lsKey) && (localStorage.removeItem(lsKey), heChanged = !0) };
+            "bg" in rec && setOrRemove("home_bg_v1", rec.bg);
+            "logoSj" in rec && setOrRemove("home_logo_sj_v1", rec.logoSj);
+            "logoNam" in rec && setOrRemove("home_logo_nam_v1", rec.logoNam);
+            "logoSjPos" in rec && setOrRemove("home_logo_sj_pos_v1", rec.logoSjPos);
+            "logoNamPos" in rec && setOrRemove("home_logo_nam_pos_v1", rec.logoNamPos);
+            "logoSjSize" in rec && setOrRemove("home_logo_sj_size_v1", rec.logoSjSize);
+            "logoNamSize" in rec && setOrRemove("home_logo_nam_size_v1", rec.logoNamSize);
+            heChanged && typeof window.__refreshHomeEditorFromCloud === "function" && window.__refreshHomeEditorFromCloud()
         }
     }
 
