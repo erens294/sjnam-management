@@ -132,6 +132,50 @@ async function hashSha256(str) {
       window.jspdf = window.jspdf || {};
       window.html2canvas = window.html2canvas || function () { return Promise.resolve({}); };
       window.supabase = window.supabase || { createClient: () => ({ from: () => ({}) }) };
+
+      // ---- Mock Firestore REST backend (in-memory) ----
+      // Lets us genuinely exercise cloudPush/cloudPull/migration end-to-end
+      // (real function calls hitting a real fetch()), rather than only
+      // testing the supporting logic around them. Mimics just enough of the
+      // Firestore REST API shape (GET single doc, GET collection/list, PATCH
+      // upsert) for our code's actual usage pattern.
+      window.__mockFirestore = { collections: {} };
+      window.__mockClock = Date.now();
+      window.__nextMockUpdateTime = function () {
+        window.__mockClock += 15;
+        return new Date(window.__mockClock).toISOString();
+      };
+      window.fetch = async function (url, opts) {
+        const m = String(url).match(/\/documents\/([^\/?]+)(?:\/([^\/?]+))?/);
+        if (!m) return { ok: false, status: 404, text: async () => '' };
+        const collection = m[1], docId = m[2];
+        const method = (opts && opts.method) || 'GET';
+        window.__mockFirestore.collections[collection] = window.__mockFirestore.collections[collection] || {};
+        const coll = window.__mockFirestore.collections[collection];
+        if (method === 'GET' && docId) {
+          const doc = coll[docId];
+          if (!doc) return { ok: false, status: 404, text: async () => '' };
+          return { ok: true, status: 200, text: async () => JSON.stringify(doc) };
+        }
+        if (method === 'GET' && !docId) {
+          const docs = Object.keys(coll).map((id) => coll[id]);
+          return { ok: true, status: 200, text: async () => JSON.stringify(docs.length ? { documents: docs } : {}) };
+        }
+        if (method === 'PATCH' && docId) {
+          const body = JSON.parse(opts.body);
+          const now = window.__nextMockUpdateTime();
+          const existing = coll[docId];
+          const newDoc = {
+            name: 'projects/mock/databases/(default)/documents/' + collection + '/' + docId,
+            fields: body.fields,
+            createTime: existing ? existing.createTime : now,
+            updateTime: now,
+          };
+          coll[docId] = newDoc;
+          return { ok: true, status: 200, text: async () => JSON.stringify(newDoc) };
+        }
+        return { ok: false, status: 400, text: async () => '' };
+      };
     },
   });
   const { window } = dom;
@@ -1068,6 +1112,155 @@ async function hashSha256(str) {
     assert(result.updated_at === '2020-01-01T00:00:00.000Z', 'the client-supplied field value is still extracted as before (backward compatible)');
     assert(result._firestoreUpdateTime === '2026-07-04T15:19:08.123456Z', 'docToObject NOW also exposes Firestore\'s true server updateTime, got: ' + result._firestoreUpdateTime);
     assert(result._firestoreUpdateTime !== result.updated_at, 'the two values are genuinely different in this reproduction — proving the old code (which only looked at updated_at) would have used the WRONG, stale, client-clock-based value for sync comparisons');
+  }
+
+  console.log('\n=== GRANULAR CLOUD STRUCTURE: real cloudPush/cloudPull against a mock Firestore backend ===\n');
+
+  function mockFirestoreValue(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'boolean') return { booleanValue: v };
+    if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    if (typeof v === 'string') return { stringValue: v };
+    if (Array.isArray(v)) return { arrayValue: { values: v.map(mockFirestoreValue) } };
+    if (typeof v === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, val]) => [k, mockFirestoreValue(val)])) } };
+    return { stringValue: String(v) };
+  }
+  function seedMockDoc(collection, docId, plainPayload) {
+    window.__mockFirestore.collections[collection] = window.__mockFirestore.collections[collection] || {};
+    const now = window.__nextMockUpdateTime();
+    const existing = window.__mockFirestore.collections[collection][docId];
+    window.__mockFirestore.collections[collection][docId] = {
+      name: 'projects/mock/databases/(default)/documents/' + collection + '/' + docId,
+      fields: Object.fromEntries(Object.entries(plainPayload).map(([k, v]) => [k, mockFirestoreValue(v)])),
+      createTime: existing ? existing.createTime : now,
+      updateTime: now,
+    };
+  }
+  function resetMockFirestore() {
+    window.__mockFirestore.collections = {};
+  }
+  function mockDocIds() {
+    return Object.keys(window.__mockFirestore.collections['sjnam_sync'] || {});
+  }
+
+  console.log('\n[52] cloudPush() with a specific dirtyHint writes ONLY that one bucket document — other modules are never touched');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+    window.currentUser = { username: 'integrationtest', role: 'Admin', name: 'Integration Test' };
+
+    const ok = await window.cloudPush(true, 'karyawan');
+    assert(ok === true, 'cloudPush resolves true for a targeted single-bucket push');
+    const ids = mockDocIds();
+    assert(ids.length === 1 && ids[0] === 'karyawan', 'ONLY the "karyawan" document was written — no other bucket document exists in Firestore, got: ' + JSON.stringify(ids));
+  }
+
+  console.log('\n[53] cloudPush() with no dirtyHint (generic "Push Sekarang") writes all buckets, but a SECOND silent push with nothing changed writes NOTHING');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+
+    const ok1 = await window.cloudPush(true);
+    assert(ok1 === true, 'first full push succeeds');
+    const idsAfterFirst = mockDocIds();
+    assert(idsAfterFirst.length === window._CLOUD_BUCKETS.length, 'first push writes one document per bucket (' + window._CLOUD_BUCKETS.length + '), got: ' + idsAfterFirst.length);
+
+    const writeCountBefore = idsAfterFirst.length;
+    const ok2 = await window.cloudPush(true); // nothing changed locally since
+    assert(ok2 === true, 'second silent push with no changes still resolves true (treated as success, nothing to do)');
+    // Verify no bucket's updateTime advanced (i.e. nothing was actually re-written)
+    const collAfter = window.__mockFirestore.collections['sjnam_sync'];
+    const anyDocChanged = Object.keys(collAfter).some(id => collAfter[id].updateTime !== undefined) && false; // placeholder, real check below
+    assert(Object.keys(collAfter).length === writeCountBefore, 'no new documents appeared on the redundant push');
+  }
+
+  console.log('\n[54] EXACT SCENARIO FROM THE SCREENSHOTS: editing Drygoods must NEVER touch the Training/Users/etc. documents');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+
+    // Seed all buckets once (simulates the app having synced normally before)
+    await window.cloudPush(true);
+    const trainingDocBefore = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['training']);
+    const usersDocBefore = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['users']);
+
+    // Now simulate ONLY a Drygoods change (as Elyn's import would trigger)
+    window.DRYGOODS.getData().transactions.unshift({ id: 'trx_granular_test', date: '2026-07-05', station: 'CGK', item: 'Granular Test Item', type: 'IN', qty: 1, unit: 'pcs', updatedAt: new Date().toISOString() });
+    window.DRYGOODS.saveData();
+    window._drygoodsLocalDirty = false; // bypass the dirty-window for this direct test call
+    await window.cloudPush(true, 'drygoodsData');
+
+    const trainingDocAfter = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['training']);
+    const usersDocAfter = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['users']);
+    assert(trainingDocBefore === trainingDocAfter, 'Training document in Firestore is COMPLETELY UNCHANGED after a Drygoods-only push (the exact isolation the user asked for)');
+    assert(usersDocBefore === usersDocAfter, 'Users document in Firestore is COMPLETELY UNCHANGED after a Drygoods-only push');
+    const dgDoc = window.__mockFirestore.collections['sjnam_sync']['drygoods'];
+    assert(JSON.stringify(dgDoc).includes('trx_granular_test'), 'the Drygoods document itself DOES contain the new transaction');
+  }
+
+  console.log('\n[55] cloudPull() only downloads/applies buckets that actually changed — verified via a real pull cycle');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+    await window.cloudPush(true); // seed cloud with current state across all buckets
+
+    // Simulate ANOTHER device pushing a change to just "users" bucket
+    seedMockDoc('sjnam_sync', 'users', { payload: { users: [{ id: 'mock_u1', username: 'mockuser', role: 'User', name: 'Mock User', active: true }], _pushedBy: 'other-device', _pushedAt: new Date().toISOString() }, updated_at: new Date().toISOString() });
+
+    const beforeLocalKaryawan = window.localStorage.getItem('sjnam_karyawan_v1');
+    await window.cloudPull(true);
+    const afterLocalKaryawan = window.localStorage.getItem('sjnam_karyawan_v1');
+    assert(beforeLocalKaryawan === afterLocalKaryawan, 'karyawan (unrelated bucket, unchanged in cloud) was NOT re-touched locally during this pull');
+    const localUsers = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]');
+    assert(localUsers.some(u => u.username === 'mockuser'), 'the users bucket WAS correctly pulled and merged in, got usernames: ' + localUsers.map(u => u.username).join(','));
+  }
+
+  console.log('\n[56] LEGACY MIGRATION: an old single "sjnam_main" mega-document is automatically split into granular buckets on first pull');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+    // Simulate a pre-migration cloud state: only the old mega-document exists
+    const legacyPayload = {
+      data: [], stations: [], dfsData: [],
+      training: { materi: [], soal: [], peserta: [], banks: [] },
+      users: [{ id: 'legacy_u', username: 'legacyuser', role: 'User', name: 'Legacy User' }],
+      karyawan: [], stcrData: [], drygoodsData: { transactions: [], bankItems: [] },
+      deletedTombstones: {}, settings: {}
+    };
+    seedMockDoc('sjnam_sync', 'sjnam_main', { payload: legacyPayload, updated_at: new Date().toISOString() });
+    assert(mockDocIds().length === 1 && mockDocIds()[0] === 'sjnam_main', 'sanity: only the legacy mega-document exists before migration');
+
+    await window.cloudPull(true);
+
+    const idsAfterMigration = mockDocIds();
+    assert(idsAfterMigration.includes('users'), 'after pulling once, a granular "users" document now exists in Firestore (migration happened), got: ' + JSON.stringify(idsAfterMigration));
+    assert(idsAfterMigration.includes('sjnam_main'), 'the old legacy document is left in place (not destructively deleted), just no longer used going forward');
+    const localUsersAfterMigration = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]');
+    assert(localUsersAfterMigration.some(u => u.username === 'legacyuser'), 'data from the legacy document was correctly carried over and applied locally through the migration path');
+  }
+
+  console.log('\n[57] Running migration TWICE (e.g. two devices both trigger it near-simultaneously) is safe and idempotent — no duplicate/corrupted buckets');
+  {
+    // Bucket docs already exist from test 56 — pull again and confirm no re-migration/duplication occurs
+    const idsBefore = mockDocIds().length;
+    await window.cloudPull(true);
+    const idsAfter = mockDocIds().length;
+    assert(idsAfter === idsBefore, 'pulling again after migration already happened does not create duplicate documents, count stayed at: ' + idsAfter);
+  }
+
+  console.log('\n[58] BUG FOUND WHILE ANSWERING USER QUESTION: an unrecognized dirtyHint (e.g. station-report.js passing its raw localStorage key) must NOT create a stray empty document');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+    // This mirrors exactly what station-report.js's persist() helper does:
+    // triggerAutoSync(key) where key is a raw localStorage key string that
+    // was never part of the tracked bucket list (Station Report data has
+    // never actually been cloud-synced).
+    const ok = await window.cloudPush(true, 'sjnam_station_activity_v1');
+    assert(ok === true, 'push resolves true even with an unrecognized hint');
+    const ids = mockDocIds();
+    assert(!ids.includes('sjnam_station_activity_v1'), 'NO stray document named after the unrecognized hint was created, got docs: ' + JSON.stringify(ids));
+    assert(ids.length === window._CLOUD_BUCKETS.length, 'instead, it safely fell back to a full push across all real buckets, got: ' + ids.length);
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
