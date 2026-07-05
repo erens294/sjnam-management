@@ -825,6 +825,90 @@ refresh sekali di kedua browser. Setelah itu, coba minta Elyn push data baru lag
 **"Push Sekarang"** di Settings miliknya), lalu di sisi Admin klik **"Tarik Data dari Cloud"** —
 seharusnya kali ini datanya benar-benar tertarik, bukan lagi "skip" terus-menerus.
 
+---
+
+## Update 19: Struktur data granular — 1 dokumen besar dipecah jadi per-modul
+
+### Yang berubah
+- File: `js/shared-utils.js` (perombakan besar), `js/drygoods.js` (penyesuaian kecil).
+- Sebelumnya: SATU dokumen Firestore (`sjnam_sync/sjnam_main`) menyimpan SEMUA modul sekaligus
+  (data delay, Bank Station, DFS, Training, User, Karyawan, STCR, Drygoods, Atur Akses Role,
+  Sertifikat, Tombstone). Menyimpan perubahan di 1 modul menulis ulang SELURUH dokumen ini.
+- Sekarang: setiap modul punya dokumennya sendiri di collection yang sama
+  (`sjnam_sync/delay_data`, `sjnam_sync/users`, `sjnam_sync/karyawan`, `sjnam_sync/training`,
+  `sjnam_sync/stcr`, `sjnam_sync/drygoods`, `sjnam_sync/role_perms`, `sjnam_sync/cert_config`,
+  `sjnam_sync/tombstones`, `sjnam_sync/dfs_stations`, `sjnam_sync/settings`). Mengedit Drygoods
+  sekarang hanya menyentuh dokumen `drygoods` — modul lain (Training, User, dst.) sama sekali
+  tidak dibaca maupun ditulis ulang.
+- **Migrasi otomatis, sekali jalan, aman:** device pertama yang membuka versi ini akan otomatis
+  memecah dokumen lama jadi dokumen-dokumen baru di atas. Dokumen lama TIDAK dihapus (dibiarkan
+  sebagai arsip), jadi tidak ada risiko kehilangan data selama proses migrasi. Aman juga kalau
+  kebetulan 2 device memicu migrasi hampir bersamaan — hasilnya tetap konsisten (idempotent).
+- **Tarik data (pull) sekarang 1 kali panggilan** untuk mengecek SEMUA modul sekaligus (pakai
+  fitur "list semua dokumen" dari Firestore), lalu hanya modul yang benar-benar berubah yang
+  diunduh & diterapkan — modul lain tidak disentuh sama sekali, baik di sisi cloud maupun lokal.
+- Semua logika penggabungan otomatis (merge) yang sudah ada sebelumnya — deteksi konflik per
+  record, perlindungan tombstone, dirty-flag Drygoods & Atur Akses Role — **dipertahankan persis
+  sama**, hanya sekarang beroperasi per-modul, bukan atas satu dokumen besar.
+
+### Kenapa ini penting untuk kasus yang sudah Anda alami
+Bug "data Elyn tidak sampai ke Admin", bug "import lalu hilang", dan bug "jam device beda bikin
+sync gagal" — semuanya punya risiko lebih besar terjadi ketika satu dokumen dipakai bersama oleh
+semua modul. Dengan struktur granular ini, permukaan tabrakan antar-modul turun drastis: mengedit
+Drygoods di satu device tidak akan pernah bisa "menimpa" atau "tertimpa" oleh perubahan Training/
+User dari device lain, karena keduanya sekarang benar-benar dokumen terpisah.
+
+### Verifikasi — diuji dengan Firestore tiruan (mock), bukan cuma dibaca ulang
+Karena lingkungan kerja saya tidak punya akses jaringan ke Firebase asli, saya membangun **server
+Firestore tiruan di dalam memori** (meniru cara kerja Firestore REST API — simpan dokumen, ambil 1
+dokumen, ambil semua dokumen dalam 1 collection) di dalam test otomatis, lalu menjalankan fungsi
+`cloudPush`/`cloudPull`/migrasi yang SESUNGGUHNYA (bukan tiruan/simulasi kodenya) melawan server
+tiruan itu. Ini memungkinkan pengujian nyata untuk skenario yang sebelumnya mustahil diuji tanpa
+akses jaringan asli:
+- Push dengan target 1 modul spesifik benar-benar HANYA menulis 1 dokumen, tidak lebih.
+- Push ulang tanpa ada perubahan benar-benar tidak menulis apa pun (hemat kuota).
+- Mengedit Drygoods benar-benar TIDAK mengubah dokumen Training/User sedikit pun — dibuktikan
+  dengan membandingkan isi dokumen sebelum & sesudah persis sama.
+- Pull hanya mengunduh & menerapkan modul yang benar-benar berubah — modul lain di local storage
+  benar-benar tidak tersentuh.
+- Migrasi dari dokumen lama ke granular berhasil memindahkan data dengan benar, dan aman dijalankan
+  dua kali (tidak menghasilkan duplikat).
+
+**Total 227 dari 227 test lulus** (211 test lama + 6 test baru khusus struktur granular ini,
+termasuk yang menguji migrasi dan isolasi antar-modul secara langsung terhadap Firestore tiruan).
+
+### Langkah selanjutnya yang masih tersedia (belum dikerjakan, sesuai kesepakatan)
+Sesuai diskusi sebelumnya, langkah 4 (`serverTimestamp()` penuh) dan langkah 5 (`runTransaction()`
+untuk stok/counter) masih bisa dikerjakan terpisah kalau diperlukan — keduanya kini lebih mudah
+diterapkan karena struktur dokumennya sudah granular. Migrasi ke Firebase SDK resmi (real-time
+`onSnapshot()` + offline persistence bawaan) tetap jadi proyek terpisah sesuai kesepakatan.
+
+---
+
+## Update 20: Perbaikan kecil + 1 temuan penting soal Station Report
+
+### Bug kecil ditemukan & diperbaiki
+Saat mengecek semua file yang memanggil sistem sync (untuk menjawab pertanyaan Anda), ketahuan:
+`js/station-report.js` memanggil sinkronisasi pakai nama key localStorage mentahnya sendiri
+(bukan nama modul yang dikenali sistem granular). Kalau dibiarkan, ini akan membuat 1 dokumen
+kosong "nyasar" di Firestore setiap kali Activity Report/Check-in/First-Last Bag disimpan. Sudah
+diperbaiki: sinyal yang tidak dikenali sekarang otomatis jatuh ke "push semua bucket" (aman),
+bukan membuat dokumen nyasar.
+
+### Temuan penting: data Station Report TIDAK PERNAH benar-benar tersinkron ke cloud
+Ini bukan bug baru dari saya — ini kondisi yang **sudah begitu sejak awal modul Activity Report/
+Check-in/First-Last Bag dibuat** (Update 4 dulu). Datanya tersimpan di localStorage device
+masing-masing, tapi tidak pernah ikut terkirim ke Firestore — jadi kalau 2 device dipakai untuk
+input Activity Report yang berbeda, datanya **tidak akan saling muncul** di device lain. Saya
+sengaja belum menambahkan ini ke sistem cloud sync granular karena itu di luar permintaan Anda kali
+ini (struktur data granular) — tapi karena ini cukup penting, saya rasa perlu saya beri tahu
+sekarang. Kalau Anda mau Station Report juga ikut disinkronkan antar device, beri tahu saya dan
+saya tambahkan sebagai bucket baru — sekarang jauh lebih mudah dikerjakan karena strukturnya sudah
+granular.
+
+### Verifikasi
+Ditambahkan 1 test baru khusus bug ini. **Total 230 dari 230 test lulus.**
+
 
 
 

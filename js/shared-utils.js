@@ -205,6 +205,20 @@ function() {
         return doc ? docToObject(doc) : null
     }
 
+    // Ambil SEMUA dokumen dalam 1 collection sekaligus (1 request HTTP untuk
+    // semua bucket granular) — dipakai cloudPull supaya tidak perlu 1 request
+    // terpisah per bucket. Firestore mengembalikan {documents:[...]} untuk
+    // collection berisi data, atau {} (tanpa field documents) kalau kosong.
+    async function neonListCollection(collection) {
+        const res = await firestoreFetch("/" + collection);
+        if (!res || !Array.isArray(res.documents)) return [];
+        return res.documents.map(doc => {
+            const obj = docToObject(doc);
+            if (obj) obj._docId = doc.name.split("/").pop();
+            return obj
+        }).filter(Boolean)
+    }
+
     // Timpa (upsert) seluruh isi dokumen by ID — PATCH tanpa updateMask di
     // Firestore REST akan membuat dokumen baru kalau belum ada, atau
     // mengganti seluruh isinya kalau sudah ada (persis semantik "upsert").
@@ -327,24 +341,79 @@ function() {
             return null
         }
     }
-    // [FIX] Sebelum perbaikan ini, _lastCloudUpdatedAt tersimpan dari nilai
-    // `updated_at` yang kita tulis sendiri (jam perangkat masing-masing client
-    // — bisa meleset antar device). Sekarang memakai `updateTime` asli dari
-    // server Firestore (format sedikit berbeda, presisi lebih tinggi).
-    // Buang cache lama SEKALI saja supaya perbandingan pertama setelah update
-    // ini tidak membandingkan dua format berbeda — device akan selalu
-    // menarik data lengkap sekali di awal, lalu perbandingan berikutnya
-    // konsisten memakai format baru.
-    try {
-        localStorage.getItem("sjnam_sync_ts_migrated_v1") || (localStorage.removeItem(window._LAST_PULL_TS_KEY), localStorage.setItem("sjnam_sync_ts_migrated_v1", "1"))
-    } catch (e) {}
-    window._realtimeChannel = null, window._lastCloudUpdatedAt = function() {
-        try {
-            return localStorage.getItem(window._LAST_PULL_TS_KEY) || null
-        } catch (e) {
-            return null
+    // ============ STRUKTUR DATA GRANULAR (Update: pisah 1 dokumen besar jadi banyak) ============
+    // Sebelumnya: SATU dokumen (sjnam_sync/sjnam_main) berisi SEMUA modul
+    // sekaligus (users, karyawan, training, stcr, drygoods, dst). Konsekuensi:
+    // menyimpan perubahan di 1 modul menulis ulang SELURUH dokumen, termasuk
+    // modul lain yang mungkin sedang diedit device lain — permukaan tabrakan
+    // jauh lebih besar dari yang seharusnya.
+    // Sekarang: setiap modul punya dokumennya SENDIRI dalam collection yang
+    // sama (sjnam_sync/{bucket_id}). Mengedit Drygoods hanya menyentuh
+    // dokumen "drygoods" — modul lain sama sekali tidak tersentuh, tidak
+    // dibaca, tidak ditulis ulang.
+    const CLOUD_BUCKETS = [
+        { id: "delay_data", dirtyHints: ["data"] },
+        { id: "dfs_stations", dirtyHints: ["dfsData", "stations"] },
+        { id: "users", dirtyHints: ["users"] },
+        { id: "karyawan", dirtyHints: ["karyawan"] },
+        { id: "training", dirtyHints: ["training"] },
+        { id: "stcr", dirtyHints: ["stcrData", "stcr"] },
+        { id: "drygoods", dirtyHints: ["drygoodsData", "drygoods"] },
+        { id: "role_perms", dirtyHints: ["rolePerms"] },
+        { id: "cert_config", dirtyHints: ["certConfig", "cert"] },
+        { id: "tombstones", dirtyHints: ["tombstones"] },
+        { id: "settings", dirtyHints: ["settings"] }
+    ];
+    window._CLOUD_BUCKETS = CLOUD_BUCKETS;
+
+    function _bucketIdForHint(hint) {
+        if (!hint) return null;
+        const b = CLOUD_BUCKETS.find(function(x) { return x.dirtyHints.indexOf(hint) > -1 });
+        return b ? b.id : null
+    }
+
+    // Ambil potongan payload lokal yang relevan untuk 1 bucket saja, dari
+    // objek lengkap yang sudah dibangun getAllCloudData().
+    function pickBucketPayload(bucketId, full) {
+        switch (bucketId) {
+            case "delay_data": return { data: full.data };
+            case "dfs_stations": return { dfsData: full.dfsData, stations: full.stations };
+            case "users": return { users: full.users };
+            case "karyawan": return { karyawan: full.karyawan };
+            case "training": return { training: full.training };
+            case "stcr": return { stcrData: full.stcrData };
+            case "drygoods": return { drygoodsData: full.drygoodsData };
+            case "role_perms": return { rolePerms: full.rolePerms };
+            case "cert_config": return {
+                certTemplate1: full.certTemplate1, certTemplate2: full.certTemplate2,
+                certTemplateActive: full.certTemplateActive, certPositions: full.certPositions,
+                certBarcode: full.certBarcode, certCustomTexts: full.certCustomTexts,
+                certCustomTextsSJ: full.certCustomTextsSJ, certCustomTextsNAM: full.certCustomTextsNAM,
+                certCustomTextsBoth: full.certCustomTextsBoth, certParaf: full.certParaf, certParafShow: full.certParafShow
+            };
+            case "tombstones": return { deletedTombstones: full.deletedTombstones };
+            case "settings": return { settings: full.settings };
+            default: return {}
         }
-    }(), window._lastPushedHash = null, window._autoSyncTimer = null, window._cloudPullInProgress = !1;
+    }
+
+    window._BUCKET_TS_KEY = "sjnam_bucket_ts_v1";
+    window._BUCKET_HASH_KEY = "sjnam_bucket_hash_v1";
+
+    function _loadBucketTS() {
+        try { return JSON.parse(localStorage.getItem(window._BUCKET_TS_KEY) || "{}") } catch (e) { return {} }
+    }
+    function _saveBucketTS(obj) {
+        try { localStorage.setItem(window._BUCKET_TS_KEY, JSON.stringify(obj)) } catch (e) {}
+    }
+    function _loadBucketHash() {
+        try { return JSON.parse(localStorage.getItem(window._BUCKET_HASH_KEY) || "{}") } catch (e) { return {} }
+    }
+    function _saveBucketHash(obj) {
+        try { localStorage.setItem(window._BUCKET_HASH_KEY, JSON.stringify(obj)) } catch (e) {}
+    }
+
+    window._realtimeChannel = null, window._bucketTS = _loadBucketTS(), window._bucketHash = _loadBucketHash(), window._autoSyncTimer = null, window._cloudPullInProgress = !1;
     const _dirtyModules = new Set;
     const _offlineQueue = function() {
         const STORE = "queue";
@@ -421,16 +490,14 @@ function() {
         if (!neonConfigured()) return;
         const items = await _offlineQueue.getAll();
         if (items.length) {
-            console.log("[OfflineQueue] Flush", items.length, "item antrian..."), cloudLog("📶 Koneksi kembali — mengirim " + items.length + " perubahan yang tertunda...", "info");
-            for (const item of items) try {
-                await neonUpsert("sjnam_sync", "sjnam_main", {
-                    payload: item.payload,
-                    updated_at: (new Date).toISOString()
-                }), await _offlineQueue.remove(item.id), console.log("[OfflineQueue] Item", item.id, "berhasil dikirim")
+            console.log("[OfflineQueue] Flush", items.length, "item antrian — push ulang seluruh bucket dengan state lokal terkini...");
+            cloudLog("📶 Koneksi kembali — mengirim " + items.length + " perubahan yang tertunda...", "info");
+            try {
+                const ok = await cloudPush(!0);
+                ok && (await _offlineQueue.clear(), cloudLog("✅ Semua perubahan offline berhasil dikirim", "success"), showToast("📶 Sync offline berhasil — semua perubahan telah dikirim", "success"))
             } catch (e) {
-                console.warn("[OfflineQueue] Gagal kirim item", item.id, ":", e.message);
-                break
-            }(await _offlineQueue.getAll()).length || (cloudLog("✅ Semua perubahan offline berhasil dikirim", "success"), showToast("📶 Sync offline berhasil — semua perubahan telah dikirim", "success"))
+                console.warn("[OfflineQueue] Gagal flush:", e.message)
+            }
         }
     }
 
@@ -625,198 +692,274 @@ function() {
     function getDeviceId() {
         return localStorage.getItem("sjnam_device_id") || "unknown"
     }
+    function _mergeBucketPayload(bucketId, localBucketPayload, cloudBucketPayload, dirtyHint) {
+        const byIdOrKey = r => r.id || r["App Service & Tehnik"] || JSON.stringify(r),
+            pesertaKeyFn = r => r.id || r.username || JSON.stringify(r),
+            dgTrxKeyFn = r => r.id || JSON.stringify(r),
+            _mergeWithConflict = (cloudArr = [], localArr = [], keyFn) => {
+                const map = new Map;
+                return cloudArr.forEach(item => {
+                    const k = keyFn(item);
+                    k && map.set(k, item)
+                }), localArr.forEach(item => {
+                    const k = keyFn(item);
+                    if (!k) return void map.set(JSON.stringify(item), item);
+                    const existing = map.get(k);
+                    if (!existing) return void map.set(k, item);
+                    const { winner: winner, conflict: conflict } = detectConflict(item, existing);
+                    conflict && cloudLog("⚠️ Konflik record " + k + ": " + item._updatedBy + " vs " + existing._updatedBy + " — " + winner._updatedBy + " menang", "info"), map.set(k, winner)
+                }), Array.from(map.values())
+            };
+        let merged = { ...localBucketPayload };
+        try {
+            if (bucketId === "delay_data") {
+                merged.data = _mergeWithConflict(cloudBucketPayload.data, localBucketPayload.data, byIdOrKey)
+            } else if (bucketId === "dfs_stations") {
+                merged.dfsData = _mergeWithConflict(cloudBucketPayload.dfsData, localBucketPayload.dfsData, byIdOrKey)
+            } else if (bucketId === "stcr") {
+                merged.stcrData = _mergeWithConflict(cloudBucketPayload.stcrData, localBucketPayload.stcrData, byIdOrKey)
+            } else if (bucketId === "users") {
+                if (Array.isArray(cloudBucketPayload.users) || Array.isArray(localBucketPayload.users)) {
+                    merged.users = _filterTombstoned("users", _mergeWithConflict(cloudBucketPayload.users, localBucketPayload.users, u => u.id))
+                }
+            } else if (bucketId === "karyawan") {
+                if (Array.isArray(localBucketPayload.karyawan) && Array.isArray(cloudBucketPayload.karyawan)) {
+                    merged.karyawan = _filterTombstoned("karyawan", _mergeWithConflict(cloudBucketPayload.karyawan, localBucketPayload.karyawan, dgTrxKeyFn))
+                }
+            } else if (bucketId === "training") {
+                if (localBucketPayload.training && cloudBucketPayload.training) {
+                    merged.training = { ...localBucketPayload.training };
+                    if (Array.isArray(localBucketPayload.training.peserta) && Array.isArray(cloudBucketPayload.training.peserta)) {
+                        merged.training.peserta = _filterTombstoned("peserta", _mergeWithConflict(cloudBucketPayload.training.peserta, localBucketPayload.training.peserta, pesertaKeyFn))
+                    }
+                }
+            } else if (bucketId === "drygoods") {
+                if (localBucketPayload.drygoodsData && cloudBucketPayload.drygoodsData) {
+                    merged.drygoodsData = { ...localBucketPayload.drygoodsData };
+                    if (Array.isArray(localBucketPayload.drygoodsData.transactions) && Array.isArray(cloudBucketPayload.drygoodsData.transactions)) {
+                        merged.drygoodsData.transactions = _mergeWithConflict(cloudBucketPayload.drygoodsData.transactions, localBucketPayload.drygoodsData.transactions, dgTrxKeyFn)
+                    }
+                    if (Array.isArray(localBucketPayload.drygoodsData.bankItems) && Array.isArray(cloudBucketPayload.drygoodsData.bankItems)) {
+                        merged.drygoodsData.bankItems = _mergeWithConflict(cloudBucketPayload.drygoodsData.bankItems, localBucketPayload.drygoodsData.bankItems, dgTrxKeyFn)
+                    }
+                }
+            } else if (bucketId === "tombstones") {
+                if (cloudBucketPayload.deletedTombstones && typeof cloudBucketPayload.deletedTombstones === "object") {
+                    const localTS = _loadTombstones();
+                    let tsChanged = false;
+                    Object.keys(cloudBucketPayload.deletedTombstones).forEach(scope => {
+                        localTS[scope] = localTS[scope] || {};
+                        Object.keys(cloudBucketPayload.deletedTombstones[scope] || {}).forEach(id => {
+                            (!localTS[scope][id] || cloudBucketPayload.deletedTombstones[scope][id] > localTS[scope][id]) && (localTS[scope][id] = cloudBucketPayload.deletedTombstones[scope][id], tsChanged = true)
+                        })
+                    });
+                    tsChanged && _saveTombstones(localTS);
+                    merged.deletedTombstones = _loadTombstones()
+                }
+            }
+            // role_perms, cert_config, settings: tidak ada merge per-item di
+            // sistem lama (selalu overwrite oleh device yang push terakhir) —
+            // perilaku dipertahankan sama persis di sini.
+        } catch (bugfixErr) {
+            console.warn("[cloudPush merge bucket=" + bucketId + "]", bugfixErr)
+        }
+        return merged
+    }
+
     async function cloudPush(silent = !1, dirtyHint = null) {
         if (!neonConfigured()) return silent || showToast("Firebase belum dikonfigurasi (js/config.js)", "error"), !1;
-        const localPayload = getAllCloudData(),
-            currentHash = _hashPayload(localPayload);
-        if (silent && currentHash && currentHash === _lastPushedHash) return cloudLog("⏭️ Smart Push: tidak ada perubahan data, skip upload", "info"), !0;
-        if (!navigator.onLine) return await _offlineQueue.enqueue(localPayload), cloudLog("📴 Offline — perubahan disimpan ke antrian lokal (akan dikirim saat online)", "info"), silent || showToast("📴 Offline — perubahan akan dikirim saat koneksi kembali", "info"), window._lastPushedHash = currentHash, !0;
+        if (!navigator.onLine) {
+            const localPayload = getAllCloudData();
+            return await _offlineQueue.enqueue(localPayload), cloudLog("📴 Offline — perubahan disimpan ke antrian lokal (akan dikirim saat online)", "info"), silent || showToast("📴 Offline — perubahan akan dikirim saat koneksi kembali", "info"), !0
+        }
+        const mappedBucketId = dirtyHint ? _bucketIdForHint(dirtyHint) : null;
+        const targetBucketIds = mappedBucketId ? [mappedBucketId] : CLOUD_BUCKETS.map(b => b.id);
+        const fullLocal = getAllCloudData();
+        let anyPushed = false, anyError = null, totalPushed = 0;
         updateSyncStatus("syncing");
-        try {
-            let mergedPayload = localPayload;
-            const cloudRow = await neonSelectOne("sjnam_sync", "sjnam_main");
-            const cloudRowUpdatedAt = cloudRow ? (cloudRow._firestoreUpdateTime || cloudRow.updated_at) : null;
-            if (cloudRow && cloudRowUpdatedAt && (!_lastCloudUpdatedAt || cloudRowUpdatedAt > _lastCloudUpdatedAt)) {
-                const cloudPayload = cloudRow.payload || {},
-                    byIdOrKey = r => r.id || r["App Service & Tehnik"] || JSON.stringify(r),
-                    pesertaKeyFn = r => r.id || r.username || JSON.stringify(r),
-                    dgTrxKeyFn = r => r.id || JSON.stringify(r),
-                    _mergeWithConflict = (cloudArr = [], localArr = [], keyFn) => {
-                        const map = new Map;
-                        return cloudArr.forEach(item => {
-                            const k = keyFn(item);
-                            k && map.set(k, item)
-                        }), localArr.forEach(item => {
-                            const k = keyFn(item);
-                            if (!k) return void map.set(JSON.stringify(item), item);
-                            const existing = map.get(k);
-                            if (!existing) return void map.set(k, item);
-                            const {
-                                winner: winner,
-                                conflict: conflict
-                            } = detectConflict(item, existing);
-                            conflict && cloudLog("⚠️ Konflik record " + k + ": " + item._updatedBy + " vs " + existing._updatedBy + " — " + winner._updatedBy + " menang", "info"), map.set(k, winner)
-                        }), Array.from(map.values())
-                    };
-                mergedPayload = {
-                    ...localPayload,
-                    data: _mergeWithConflict(cloudPayload.data, localPayload.data, byIdOrKey),
-                    dfsData: _mergeWithConflict(cloudPayload.dfsData, localPayload.dfsData, byIdOrKey),
-                    stcrData: _mergeWithConflict(cloudPayload.stcrData, localPayload.stcrData, byIdOrKey)
-                }, Array.isArray(localPayload.karyawan) && Array.isArray(cloudPayload.karyawan) && (mergedPayload.karyawan = _mergeWithConflict(cloudPayload.karyawan, localPayload.karyawan, dgTrxKeyFn)), (function() {
-                    try {
-                        if (cloudPayload.deletedTombstones && "object" == typeof cloudPayload.deletedTombstones) {
-                            var localTS = _loadTombstones(),
-                                tsChanged = !1;
-                            Object.keys(cloudPayload.deletedTombstones).forEach(function(scope) {
-                                localTS[scope] = localTS[scope] || {}, Object.keys(cloudPayload.deletedTombstones[scope] || {}).forEach(function(id) {
-                                    (!localTS[scope][id] || cloudPayload.deletedTombstones[scope][id] > localTS[scope][id]) && (localTS[scope][id] = cloudPayload.deletedTombstones[scope][id], tsChanged = !0)
-                                })
-                            }), tsChanged && _saveTombstones(localTS)
-                        }
-                        if (Array.isArray(cloudPayload.users) || Array.isArray(localPayload.users)) {
-                            mergedPayload.users = _filterTombstoned("users", _mergeWithConflict(cloudPayload.users, localPayload.users, function(u) {
-                                return u.id
-                            }))
-                        }
-                        Array.isArray(mergedPayload.karyawan) && (mergedPayload.karyawan = _filterTombstoned("karyawan", mergedPayload.karyawan))
-                    } catch (bugfixErr) {
-                        console.warn("[cloudPush BUGFIX users/karyawan merge] Gagal:", bugfixErr)
-                    }
-                })(), localPayload.training && cloudPayload.training && (mergedPayload.training = {
-                    ...localPayload.training
-                }, Array.isArray(localPayload.training.peserta) && Array.isArray(cloudPayload.training.peserta) && (mergedPayload.training.peserta = _filterTombstoned("peserta", _mergeWithConflict(cloudPayload.training.peserta, localPayload.training.peserta, pesertaKeyFn)))), localPayload.drygoodsData && cloudPayload.drygoodsData && (mergedPayload.drygoodsData = {
-                    ...localPayload.drygoodsData
-                }, Array.isArray(localPayload.drygoodsData.transactions) && Array.isArray(cloudPayload.drygoodsData.transactions) && (mergedPayload.drygoodsData.transactions = _mergeWithConflict(cloudPayload.drygoodsData.transactions, localPayload.drygoodsData.transactions, dgTrxKeyFn)), Array.isArray(localPayload.drygoodsData.bankItems) && Array.isArray(cloudPayload.drygoodsData.bankItems) && (mergedPayload.drygoodsData.bankItems = _mergeWithConflict(cloudPayload.drygoodsData.bankItems, localPayload.drygoodsData.bankItems, dgTrxKeyFn))), cloudLog("🔀 Konflik terdeteksi — data digabung otomatis (merge). Cloud: " + cloudRow.updated_at, "info"), await auditLog("merge", dirtyHint || "all", "", "Merge dari cloud: " + cloudRow.updated_at), silent || showToast("🔀 Merge: data dari 2 device digabung otomatis", "info")
-            }
-            mergedPayload._pushedBy = getDeviceId(), mergedPayload._pushedAt = (new Date).toISOString(), dirtyHint && (mergedPayload._dirtyModule = dirtyHint);
-            const upsertResult = await neonUpsert("sjnam_sync", "sjnam_main", {
-                payload: mergedPayload,
-                updated_at: (new Date).toISOString()
-            });
-            const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || mergedPayload._pushedAt;
-            window._lastPushedHash = _hashPayload(mergedPayload), window._lastCloudUpdatedAt = serverUpdatedAt;
+        for (const bucketId of targetBucketIds) {
+            const localBucketPayload = pickBucketPayload(bucketId, fullLocal);
+            const bucketHash = _hashPayload(localBucketPayload);
+            if (silent && bucketHash && bucketHash === window._bucketHash[bucketId]) continue;
             try {
-                localStorage.setItem(window._LAST_PULL_TS_KEY, window._lastCloudUpdatedAt)
-            } catch (e) {}
-            return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil. Server ts: " + serverUpdatedAt), window._rolePermsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Firestore (" + window.data.length + " delay, " + window.dfsData.length + " DFS)", "success"), silent || showToast("⚡ Firestore Sync berhasil! (" + window.data.length + " records)", "success"), !0
-        } catch (err) {
-            return updateSyncStatus("error"), cloudLog("❌ Gagal upload: " + err.message, "error"), silent || showToast("Sync gagal: " + err.message, "error"), !1
+                const cloudRow = await neonSelectOne("sjnam_sync", bucketId);
+                const cloudRowUpdatedAt = cloudRow ? (cloudRow._firestoreUpdateTime || cloudRow.updated_at) : null;
+                let mergedPayload = localBucketPayload;
+                if (cloudRow && cloudRowUpdatedAt && (!window._bucketTS[bucketId] || cloudRowUpdatedAt > window._bucketTS[bucketId])) {
+                    mergedPayload = _mergeBucketPayload(bucketId, localBucketPayload, cloudRow.payload || {}, dirtyHint);
+                    cloudLog("🔀 [" + bucketId + "] Konflik terdeteksi — data digabung otomatis (merge)", "info");
+                    await auditLog("merge", dirtyHint || bucketId, "", "Merge bucket " + bucketId + " dari cloud");
+                    silent || showToast("🔀 Merge: data " + bucketId + " dari 2 device digabung otomatis", "info")
+                }
+                mergedPayload._pushedBy = getDeviceId(), mergedPayload._pushedAt = (new Date).toISOString();
+                const upsertResult = await neonUpsert("sjnam_sync", bucketId, { payload: mergedPayload, updated_at: (new Date).toISOString() });
+                const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || mergedPayload._pushedAt;
+                window._bucketHash[bucketId] = _hashPayload(mergedPayload), window._bucketTS[bucketId] = serverUpdatedAt;
+                anyPushed = true, totalPushed++
+            } catch (err) {
+                anyError = err, console.warn("[cloudPush bucket=" + bucketId + "]", err)
+            }
+        }
+        _saveBucketHash(window._bucketHash), _saveBucketTS(window._bucketTS);
+        if (anyError && !anyPushed) return updateSyncStatus("error"), cloudLog("❌ Gagal upload: " + anyError.message, "error"), silent || showToast("Sync gagal: " + anyError.message, "error"), !1;
+        if (!anyPushed) return cloudLog("⏭️ Smart Push: tidak ada perubahan data, skip upload", "info"), updateSyncStatus("connected"), !0;
+        return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil (" + totalPushed + " bucket)"), window._rolePermsLocalDirty = !1, window._drygoodsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Firestore (" + totalPushed + " bucket diperbarui)", "success"), silent || showToast("⚡ Firestore Sync berhasil! (" + totalPushed + " bucket)", "success"), !0
+    }
+    function _applyBucketPull(bucketId, rec) {
+        if (bucketId === "tombstones") {
+            if (rec.deletedTombstones && typeof rec.deletedTombstones === "object") {
+                const localTS = _loadTombstones();
+                let changed = false;
+                Object.keys(rec.deletedTombstones).forEach(scope => {
+                    localTS[scope] = localTS[scope] || {};
+                    Object.keys(rec.deletedTombstones[scope] || {}).forEach(id => {
+                        (!localTS[scope][id] || rec.deletedTombstones[scope][id] > localTS[scope][id]) && (localTS[scope][id] = rec.deletedTombstones[scope][id], changed = true)
+                    })
+                });
+                changed && _saveTombstones(localTS)
+            }
+            return
+        }
+        if (bucketId === "delay_data") {
+            if (Array.isArray(rec.data)) window.data = rec.data, localStorage.setItem(STORAGE_KEY, JSON.stringify(window.data));
+            return
+        }
+        if (bucketId === "dfs_stations") {
+            Array.isArray(rec.stations) && rec.stations.length > 0 && (window.stations = rec.stations, localStorage.setItem(STATIONS_KEY, JSON.stringify(window.stations)));
+            Array.isArray(rec.dfsData) && (window.dfsData = rec.dfsData, localStorage.setItem(DFS_KEY, JSON.stringify(window.dfsData)));
+            return
+        }
+        if (bucketId === "settings") {
+            rec.settings && (window.settings = { ...window.settings, ...rec.settings }, localStorage.setItem(SETTINGS_KEY, JSON.stringify(window.settings)), applyDarkMode());
+            return
+        }
+        if (bucketId === "training") {
+            if (rec.training) {
+                const _localTraining = function() { try { return JSON.parse(localStorage.getItem("sjn_training_v1") || "null") } catch (e) { return null } }(),
+                    _mergedTraining = _localTraining ? mergeTraining(_localTraining, rec.training) : rec.training;
+                localStorage.setItem("sjn_training_v1", JSON.stringify(_mergedTraining)), window.trainingData && Object.assign(window.trainingData, _mergedTraining)
+            }
+            return
+        }
+        if (bucketId === "users") {
+            if (Array.isArray(rec.users)) {
+                const _localUsers = function() { try { return JSON.parse(localStorage.getItem("sjnam_users_v1") || "null") } catch (e) { return null } }();
+                let _mergedUsers = rec.users;
+                if (_localUsers && Array.isArray(_localUsers)) {
+                    const _userMap = new Map;
+                    rec.users.forEach(u => { u.id && _userMap.set(u.id, u) }), _localUsers.forEach(u => { u.id && _userMap.set(u.id, u) }), _mergedUsers = Array.from(_userMap.values())
+                }
+                _mergedUsers = _filterTombstoned("users", _mergedUsers), localStorage.setItem("sjnam_users_v1", JSON.stringify(_mergedUsers)), window._userSelectedIds && window._userSelectedIds.clear(), typeof renderUserTable === "function" && renderUserTable()
+            }
+            return
+        }
+        if (bucketId === "karyawan") {
+            if (Array.isArray(rec.karyawan)) {
+                const _localKar = function() { try { return JSON.parse(localStorage.getItem("sjnam_karyawan_v1") || "null") } catch (e) { return null } }();
+                let _mergedKar = rec.karyawan;
+                if (_localKar && Array.isArray(_localKar)) {
+                    const _karMap = new Map;
+                    rec.karyawan.forEach(k => { k.id && _karMap.set(k.id, k) }), _localKar.forEach(k => { k.id && _karMap.set(k.id, k) }), _mergedKar = Array.from(_karMap.values())
+                }
+                _mergedKar = _filterTombstoned("karyawan", _mergedKar), localStorage.setItem("sjnam_karyawan_v1", JSON.stringify(_mergedKar)), typeof window.setKaryawanData === "function" && window.setKaryawanData(_mergedKar), typeof window.renderKaryawanUserOptions === "function" && window.renderKaryawanUserOptions();
+                (function() {
+                    try {
+                        var _cu = window.currentUser;
+                        if (!_cu || "User-DRG" !== _cu.role) return;
+                        var _myUser = (_cu.username || "").toLowerCase(),
+                            _found = _mergedKar.find(function(k) { return (k.username || "").toLowerCase() === _myUser || (k.nip || "").toLowerCase() === _myUser }),
+                            _newSt = _found && _found.station && "ALL" !== _found.station ? _found.station : null;
+                        if (window._userDrgStation === _newSt) return;
+                        window._userDrgStation = _newSt, window._userStationLock = _newSt, _cu && (_cu.station = _newSt), document.querySelectorAll("[data-dg-station]").forEach(function(t) {
+                            var ts = t.dataset.dgStation;
+                            ts && (_newSt && "ALL" !== _newSt ? ts === _newSt ? (t.style.opacity = "", t.style.pointerEvents = "", t.title = "") : (t.style.opacity = "0.35", t.style.pointerEvents = "none", t.title = "ALL" === ts ? "Akses terbatas" : "Akses terbatas ke station " + _newSt) : (t.style.opacity = "", t.style.pointerEvents = "", t.title = ""))
+                        }), "object" == typeof window.DRYGOODS && "function" == typeof window.DRYGOODS.renderAll && setTimeout(function() { window.DRYGOODS.renderAll() }, 50)
+                    } catch (ex) { console.warn("[DRG Cloud Station Refresh]", ex) }
+                })()
+            }
+            return
+        }
+        if (bucketId === "stcr") {
+            Array.isArray(rec.stcrData) && rec.stcrData.length > 0 && (localStorage.setItem("sjnam_stcr_data_v1", JSON.stringify(rec.stcrData)), window.STCR && typeof window.STCR.loadData === "function" && (window.STCR.loadData(), typeof window.STCR.applyFilters === "function" && window.STCR.applyFilters()));
+            return
+        }
+        if (bucketId === "drygoods") {
+            !window._drygoodsLocalDirty && rec.drygoodsData ? (localStorage.setItem("sjnam_drygoods_v1", JSON.stringify(rec.drygoodsData)), "object" == typeof window.DRYGOODS && typeof window.DRYGOODS.loadData === "function" && (window.DRYGOODS.loadData(), window.DRYGOODS.renderAll())) : window._drygoodsLocalDirty && rec.drygoodsData && cloudLog("⏭️ Pull: skip drygoodsData dari cloud — ada perubahan lokal yang belum ter-push", "info");
+            return
+        }
+        if (bucketId === "role_perms") {
+            if (rec.rolePerms) {
+                window._rolePermsLocalDirty ? (cloudLog("⏭️ Pull: skip rolePerms dari cloud — ada perubahan lokal yang belum ter-push", "info"), neonConfigured() && setTimeout(function() {
+                    cloudPush(!0, "rolePerms").then(function(ok) { ok && (window._rolePermsLocalDirty = !1) }).catch(function(e) { console.warn("[RolePerms push]", e) })
+                }, 200)) : (localStorage.setItem("sjnam_role_perms_v1", JSON.stringify(rec.rolePerms)), typeof window.renderPermTable === "function" && window.renderPermTable(), typeof window.applyPermissions === "function" ? window.applyPermissions() : typeof applyPermissions === "function" && applyPermissions())
+            }
+            return
+        }
+        if (bucketId === "cert_config") {
+            let certChanged = !1;
+            rec.certTemplate1 && (localStorage.setItem("sjn_cert_template_1", JSON.stringify(rec.certTemplate1)), certChanged = !0), rec.certTemplate2 && (localStorage.setItem("sjn_cert_template_2", JSON.stringify(rec.certTemplate2)), certChanged = !0), rec.certTemplateActive && (localStorage.setItem("sjn_cert_template_active", rec.certTemplateActive), certChanged = !0), rec.certPositions && (localStorage.setItem("sjn_cert_positions_v1", JSON.stringify(rec.certPositions)), certChanged = !0), void 0 !== rec.certBarcode && null !== rec.certBarcode && (localStorage.setItem("sjn_cert_barcode_v1", rec.certBarcode), certChanged = !0), rec.certCustomTexts && (localStorage.setItem("sjn_cert_custom_texts_v1", JSON.stringify(rec.certCustomTexts)), certChanged = !0), rec.certCustomTextsSJ && (localStorage.setItem("sjn_cert_custom_texts_sj_v1", JSON.stringify(rec.certCustomTextsSJ)), certChanged = !0), rec.certCustomTextsNAM && (localStorage.setItem("sjn_cert_custom_texts_nam_v1", JSON.stringify(rec.certCustomTextsNAM)), certChanged = !0), rec.certCustomTextsBoth && (localStorage.setItem("sjn_cert_custom_texts_both_v1", JSON.stringify(rec.certCustomTextsBoth)), certChanged = !0), rec.certParaf && (localStorage.setItem("sjn_cert_paraf_v1", JSON.stringify(rec.certParaf)), certChanged = !0), void 0 !== rec.certParafShow && null !== rec.certParafShow && (localStorage.setItem("sjn_cert_paraf_show_v1", rec.certParafShow), certChanged = !0), certChanged && (typeof window.loadCertificateTemplate === "function" && window.loadCertificateTemplate(), typeof window.ctbRenderAll === "function" && window.ctbRenderAll())
         }
     }
+
+    // Migrasi satu kali: dokumen lama "sjnam_main" (berisi SEMUA modul dalam
+    // satu blob) dipecah jadi dokumen granular per-modul. Aman dijalankan
+    // berkali-kali dari device manapun (upsert bersifat idempotent) — kalau
+    // device lain sudah lebih dulu migrasi, fungsi ini langsung skip.
+    async function _migrateLegacySyncDocIfNeeded(listedDocs) {
+        const legacy = listedDocs.find(d => d._docId === "sjnam_main");
+        if (!legacy || !legacy.payload) return listedDocs;
+        const alreadyGranular = CLOUD_BUCKETS.some(b => listedDocs.some(d => d._docId === b.id));
+        if (alreadyGranular) return listedDocs;
+        cloudLog("🔀 Migrasi struktur data granular — memisah dokumen lama jadi per-modul...", "info");
+        const legacyPayload = legacy.payload;
+        const newDocs = listedDocs.slice();
+        for (const bucket of CLOUD_BUCKETS) {
+            const bucketPayload = pickBucketPayload(bucket.id, legacyPayload);
+            bucketPayload._pushedBy = getDeviceId(), bucketPayload._pushedAt = (new Date).toISOString(), bucketPayload._migratedFrom = "sjnam_main";
+            try {
+                const upsertResult = await neonUpsert("sjnam_sync", bucket.id, { payload: bucketPayload, updated_at: (new Date).toISOString() });
+                newDocs.push({ _docId: bucket.id, payload: bucketPayload, _firestoreUpdateTime: upsertResult?._firestoreUpdateTime || upsertResult?.updated_at })
+            } catch (e) { console.warn("[Migrasi granular] gagal bucket=" + bucket.id, e) }
+        }
+        return cloudLog("✅ Migrasi struktur data granular selesai (" + CLOUD_BUCKETS.length + " modul dipisah)", "success"), newDocs
+    }
+
     async function cloudPull(silent = !1) {
         if (!neonConfigured()) return void (silent || showToast("Firebase belum dikonfigurasi (js/config.js)", "error"));
         updateSyncStatus("syncing");
         try {
-            const meta = await neonSelectOne("sjnam_sync", "sjnam_main");
-            if (!meta) throw new Error("Data tidak ditemukan di Firestore");
-            const cloudUpdatedAt = meta._firestoreUpdateTime || meta.updated_at;
-            if (_lastCloudUpdatedAt && cloudUpdatedAt && cloudUpdatedAt <= _lastCloudUpdatedAt) return cloudLog("⏭️ Smart Pull: tidak ada perubahan data antar device, skip pull (payload tidak diunduh)", "info"), updateSyncStatus("connected"), void (silent || showToast("Data sudah paling baru — tidak ada perubahan dari device lain", "info"));
-            const row = await neonSelectOne("sjnam_sync", "sjnam_main");
-            if (!row) throw new Error("Data tidak ditemukan di Firestore");
-            const rec = row.payload,
-                savedAt = cloudUpdatedAt ? new Date(cloudUpdatedAt).toLocaleString("id-ID") : "-";
-            if (!silent && !await showConfirm("⚡ Tarik Data dari Firestore", `Data cloud: ${(rec.data||[]).length} delay records, ${(rec.dfsData||[]).length} DFS, disimpan ${savedAt}.\n\nData lokal saat ini akan DIGANTI. Lanjutkan?`)) return void updateSyncStatus("connected");
+            let listedDocs = await neonListCollection("sjnam_sync");
+            if (!listedDocs.length) throw new Error("Data tidak ditemukan di Firestore");
+            listedDocs = await _migrateLegacySyncDocIfNeeded(listedDocs);
+            const newerBuckets = [];
+            for (const bucket of CLOUD_BUCKETS) {
+                const doc = listedDocs.find(d => d._docId === bucket.id);
+                if (!doc) continue;
+                const docUpdatedAt = doc._firestoreUpdateTime || doc.updated_at;
+                if (!docUpdatedAt) continue;
+                if (window._bucketTS[bucket.id] && docUpdatedAt <= window._bucketTS[bucket.id]) continue;
+                newerBuckets.push({ id: bucket.id, doc: doc, docUpdatedAt: docUpdatedAt })
+            }
+            if (!newerBuckets.length) return cloudLog("⏭️ Smart Pull: tidak ada perubahan data antar device, skip pull (payload tidak diunduh)", "info"), updateSyncStatus("connected"), void (silent || showToast("Data sudah paling baru — tidak ada perubahan dari device lain", "info"));
+            if (!silent) {
+                const namesLabel = newerBuckets.map(b => b.id).join(", ");
+                if (!await showConfirm("⚡ Tarik Data dari Firestore", `Modul dengan pembaruan dari device lain: ${namesLabel}.\n\nData lokal modul-modul ini akan diganti/digabung otomatis. Lanjutkan?`)) return void updateSyncStatus("connected")
+            }
             window._cloudPullInProgress = !0;
+            let appliedCount = 0;
             try {
-                if (rec.deletedTombstones && "object" == typeof rec.deletedTombstones) {
-                    const localTS = _loadTombstones();
-                    let changed = !1;
-                    Object.keys(rec.deletedTombstones).forEach(scope => {
-                        localTS[scope] || (localTS[scope] = {}), Object.keys(rec.deletedTombstones[scope] || {}).forEach(id => {
-                            (!localTS[scope][id] || rec.deletedTombstones[scope][id] > localTS[scope][id]) && (localTS[scope][id] = rec.deletedTombstones[scope][id], changed = !0)
-                        })
-                    }), changed && _saveTombstones(localTS)
+                newerBuckets.sort((a, b) => (a.id === "tombstones" ? -1 : b.id === "tombstones" ? 1 : 0));
+                for (const nb of newerBuckets) {
+                    const rec = nb.doc.payload || {};
+                    _applyBucketPull(nb.id, rec), window._bucketTS[nb.id] = nb.docUpdatedAt, appliedCount++
                 }
-                if (Array.isArray(rec.data) && (window.data = rec.data, localStorage.setItem(STORAGE_KEY, JSON.stringify(window.data))), Array.isArray(rec.stations) && rec.stations.length > 0 && (window.stations = rec.stations, localStorage.setItem(STATIONS_KEY, JSON.stringify(window.stations))), Array.isArray(rec.dfsData) && (window.dfsData = rec.dfsData, localStorage.setItem(DFS_KEY, JSON.stringify(window.dfsData))), rec.settings && (window.settings = {
-                        ...window.settings,
-                        ...rec.settings
-                    }, localStorage.setItem(SETTINGS_KEY, JSON.stringify(window.settings)), applyDarkMode()), rec.training) {
-                    const _localTraining = function() {
-                            try {
-                                return JSON.parse(localStorage.getItem("sjn_training_v1") || "null")
-                            } catch (e) {
-                                return null
-                            }
-                        }(),
-                        _mergedTraining = _localTraining ? mergeTraining(_localTraining, rec.training) : rec.training;
-                    localStorage.setItem("sjn_training_v1", JSON.stringify(_mergedTraining)), window.trainingData && Object.assign(window.trainingData, _mergedTraining)
-                }
-                if (Array.isArray(rec.users)) {
-                    const _localUsers = function() {
-                        try {
-                            return JSON.parse(localStorage.getItem("sjnam_users_v1") || "null")
-                        } catch (e) {
-                            return null
-                        }
-                    }();
-                    let _mergedUsers = rec.users;
-                    if (_localUsers && Array.isArray(_localUsers)) {
-                        const _userMap = new Map;
-                        rec.users.forEach(u => {
-                            u.id && _userMap.set(u.id, u)
-                        }), _localUsers.forEach(u => {
-                            u.id && _userMap.set(u.id, u)
-                        }), _mergedUsers = Array.from(_userMap.values())
-                    }
-                    _mergedUsers = _filterTombstoned("users", _mergedUsers), localStorage.setItem("sjnam_users_v1", JSON.stringify(_mergedUsers)), window._userSelectedIds && window._userSelectedIds.clear(), "function" == typeof renderUserTable && renderUserTable()
-                }
-                if (Array.isArray(rec.karyawan)) {
-                    const _localKar = function() {
-                        try {
-                            return JSON.parse(localStorage.getItem("sjnam_karyawan_v1") || "null")
-                        } catch (e) {
-                            return null
-                        }
-                    }();
-                    let _mergedKar = rec.karyawan;
-                    if (_localKar && Array.isArray(_localKar)) {
-                        const _karMap = new Map;
-                        rec.karyawan.forEach(k => {
-                            k.id && _karMap.set(k.id, k)
-                        }), _localKar.forEach(k => {
-                            k.id && _karMap.set(k.id, k)
-                        }), _mergedKar = Array.from(_karMap.values())
-                    }
-                    _mergedKar = _filterTombstoned("karyawan", _mergedKar), localStorage.setItem("sjnam_karyawan_v1", JSON.stringify(_mergedKar)), "function" == typeof window.setKaryawanData && window.setKaryawanData(_mergedKar), "function" == typeof window.renderKaryawanUserOptions && window.renderKaryawanUserOptions(),
-                        function() {
-                            try {
-                                var _cu = window.currentUser;
-                                if (!_cu || "User-DRG" !== _cu.role) return;
-                                var _myUser = (_cu.username || "").toLowerCase(),
-                                    _found = _mergedKar.find(function(k) {
-                                        return (k.username || "").toLowerCase() === _myUser || (k.nip || "").toLowerCase() === _myUser
-                                    }),
-                                    _newSt = _found && _found.station && "ALL" !== _found.station ? _found.station : null;
-                                if (window._userDrgStation === _newSt) return;
-                                window._userDrgStation = _newSt, window._userStationLock = _newSt, _cu && (_cu.station = _newSt), document.querySelectorAll("[data-dg-station]").forEach(function(t) {
-                                    var ts = t.dataset.dgStation;
-                                    ts && (_newSt && "ALL" !== _newSt ? ts === _newSt ? (t.style.opacity = "", t.style.pointerEvents = "", t.title = "") : (t.style.opacity = "0.35", t.style.pointerEvents = "none", t.title = "ALL" === ts ? "Akses terbatas" : "Akses terbatas ke station " + _newSt) : (t.style.opacity = "", t.style.pointerEvents = "", t.title = ""))
-                                }), "object" == typeof window.DRYGOODS && "function" == typeof window.DRYGOODS.renderAll && setTimeout(function() {
-                                    window.DRYGOODS.renderAll()
-                                }, 50)
-                            } catch (ex) {
-                                console.warn("[DRG Cloud Station Refresh]", ex)
-                            }
-                        }()
-                }
-                Array.isArray(rec.stcrData) && rec.stcrData.length > 0 && (localStorage.setItem("sjnam_stcr_data_v1", JSON.stringify(rec.stcrData)), window.STCR && "function" == typeof window.STCR.loadData && (window.STCR.loadData(), "function" == typeof window.STCR.applyFilters && window.STCR.applyFilters())), !window._drygoodsLocalDirty && rec.drygoodsData && (localStorage.setItem("sjnam_drygoods_v1", JSON.stringify(rec.drygoodsData)), "object" == typeof window.DRYGOODS && "function" == typeof window.DRYGOODS.loadData && (window.DRYGOODS.loadData(), window.DRYGOODS.renderAll())), window._drygoodsLocalDirty && rec.drygoodsData && cloudLog("⏭️ Pull: skip drygoodsData dari cloud — ada perubahan lokal yang belum ter-push", "info"), rec.rolePerms && (window._rolePermsLocalDirty ? (cloudLog("⏭️ Pull: skip rolePerms dari cloud — ada perubahan lokal yang belum ter-push", "info"), neonConfigured() && setTimeout(function() {
-                    cloudPush(!0).then(function(ok) {
-                        ok && (window._rolePermsLocalDirty = !1)
-                    }).catch(function(e) {
-                        console.warn("[RolePerms push]", e)
-                    })
-                }, 200)) : (localStorage.setItem("sjnam_role_perms_v1", JSON.stringify(rec.rolePerms)), "function" == typeof window.renderPermTable && window.renderPermTable(), "function" == typeof window.applyPermissions ? window.applyPermissions() : "function" == typeof applyPermissions && applyPermissions()));
-                let certChanged = !1;
-                rec.certTemplate1 && (localStorage.setItem("sjn_cert_template_1", JSON.stringify(rec.certTemplate1)), certChanged = !0), rec.certTemplate2 && (localStorage.setItem("sjn_cert_template_2", JSON.stringify(rec.certTemplate2)), certChanged = !0), rec.certTemplateActive && (localStorage.setItem("sjn_cert_template_active", rec.certTemplateActive), certChanged = !0), rec.certPositions && (localStorage.setItem("sjn_cert_positions_v1", JSON.stringify(rec.certPositions)), certChanged = !0), void 0 !== rec.certBarcode && null !== rec.certBarcode && (localStorage.setItem("sjn_cert_barcode_v1", rec.certBarcode), certChanged = !0), rec.certCustomTexts && (localStorage.setItem("sjn_cert_custom_texts_v1", JSON.stringify(rec.certCustomTexts)), certChanged = !0), rec.certCustomTextsSJ && (localStorage.setItem("sjn_cert_custom_texts_sj_v1", JSON.stringify(rec.certCustomTextsSJ)), certChanged = !0), rec.certCustomTextsNAM && (localStorage.setItem("sjn_cert_custom_texts_nam_v1", JSON.stringify(rec.certCustomTextsNAM)), certChanged = !0), rec.certCustomTextsBoth && (localStorage.setItem("sjn_cert_custom_texts_both_v1", JSON.stringify(rec.certCustomTextsBoth)), certChanged = !0), rec.certParaf && (localStorage.setItem("sjn_cert_paraf_v1", JSON.stringify(rec.certParaf)), certChanged = !0), void 0 !== rec.certParafShow && null !== rec.certParafShow && (localStorage.setItem("sjn_cert_paraf_show_v1", rec.certParafShow), certChanged = !0), certChanged && ("function" == typeof window.loadCertificateTemplate && window.loadCertificateTemplate(), "function" == typeof window.ctbRenderAll && window.ctbRenderAll()), window._rolePermsLocalDirty || _autoSyncTimer && (clearTimeout(_autoSyncTimer), window._autoSyncTimer = null), window._lastCloudUpdatedAt = cloudUpdatedAt;
-                try {
-                    localStorage.setItem(window._LAST_PULL_TS_KEY, window._lastCloudUpdatedAt)
-                } catch (e) {}
-                window._lastPushedHash = _hashPayload(getAllCloudData())
+                _saveBucketTS(window._bucketTS);
+                const fullLocalAfter = getAllCloudData();
+                newerBuckets.forEach(nb => { window._bucketHash[nb.id] = _hashPayload(pickBucketPayload(nb.id, fullLocalAfter)) }), _saveBucketHash(window._bucketHash)
             } finally {
                 window._cloudPullInProgress = !1
             }
-            renderTable(), renderDashboard(), renderStations(), renderDfsTable(), "function" == typeof window.refreshTrainingViews && window.refreshTrainingViews(), "function" == typeof window.renderBankStations && window.renderBankStations(), updateSyncStatus("connected"), cloudLog("✅ Data berhasil diambil dari Firestore (" + window.data.length + " delay, " + window.dfsData.length + " DFS)", "success"), blinkBlueLight(), await auditLog("pull", "all", "", "Pull dari cloud. " + window.data.length + " delay, " + window.dfsData.length + " DFS"), setTimeout(_flushOfflineQueue, 2e3)
+            renderTable(), renderDashboard(), renderStations(), renderDfsTable(), typeof window.refreshTrainingViews === "function" && window.refreshTrainingViews(), typeof window.renderBankStations === "function" && window.renderBankStations(), updateSyncStatus("connected"), cloudLog("✅ Data berhasil diambil dari Firestore (" + appliedCount + " modul: " + newerBuckets.map(b => b.id).join(", ") + ")", "success"), blinkBlueLight(), await auditLog("pull", "all", "", appliedCount + " modul diperbarui: " + newerBuckets.map(b => b.id).join(", ")), setTimeout(_flushOfflineQueue, 2e3)
         } catch (err) {
             window._cloudPullInProgress = !1, updateSyncStatus("error"), cloudLog("❌ Gagal download: " + err.message, "error"), silent || showToast("Gagal download: " + err.message, "error")
         }
@@ -948,11 +1091,10 @@ function() {
         if (neonConfigured()) try {
             auditLog(action, moduleName, "", (Array.isArray(items) ? items.length : 1) + " record(s)")
         } catch (e) {}
-    }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.docToObject = docToObject, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
+    }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.docToObject = docToObject, window.pickBucketPayload = pickBucketPayload, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
         _cloudPullInProgress || neonConfigured() && (clearTimeout(_autoSyncTimer), window._autoSyncTimer = setTimeout(async () => {
             if (_cloudPullInProgress) return;
-            const currentHash = _hashPayload(getAllCloudData());
-            if ((!currentHash || currentHash !== _lastPushedHash) && await cloudPush(!0, dirtyHint)) {
+            if (await cloudPush(!0, dirtyHint)) {
                 const el = document.getElementById("smartSyncLastPush");
                 el && (el.textContent = "Terakhir sync: " + (new Date).toLocaleTimeString("id-ID"))
             }
