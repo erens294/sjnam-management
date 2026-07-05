@@ -1227,6 +1227,45 @@ function() {
         // dihapus) supaya seluruh pemanggil lama tidak error.
     }
 
+    function _bucketHasContent(payload) {
+        if (!payload || typeof payload !== "object") return false;
+        return Object.keys(payload).some(k => {
+            const v = payload[k];
+            if (Array.isArray(v)) return v.length > 0;
+            if (v && typeof v === "object") return Object.keys(v).length > 0;
+            return !!v
+        })
+    }
+
+    // [Fix migrasi] Data yang SUDAH ADA di local storage SEBELUM suatu bucket
+    // ditambahkan ke sistem sync tidak otomatis terkirim — sinkronisasi hanya
+    // terpicu saat ADA PENYIMPANAN BARU. Kalau device sudah lama tidak
+    // menyentuh modul itu lagi (mis. tidak mengedit Activity Report sejak
+    // update ini dipasang), datanya bisa selamanya tidak pernah terkirim,
+    // walau device lain sudah menarik & menemukan kosong. Sweep ini berjalan
+    // SEKALI saja setiap device pertama kali login setelah bucket baru
+    // ditambahkan — mendorong data lama itu supaya terkirim tanpa perlu user
+    // mengedit ulang apa pun secara manual.
+    async function _sweepUnsyncedBucketsOnce() {
+        if (!neonConfigured()) return;
+        const full = getAllCloudData();
+        for (const bucket of CLOUD_BUCKETS) {
+            if (window._bucketTS[bucket.id]) continue;
+            const payload = pickBucketPayload(bucket.id, full);
+            if (!_bucketHasContent(payload)) continue;
+            cloudLog("📤 [migrasi] Bucket \"" + bucket.id + "\" punya data lokal tapi belum pernah tersinkron — mengirim otomatis satu kali...", "info");
+            try { await cloudPush(!0, bucket.dirtyHints[0]) } catch (e) { console.warn("[_sweepUnsyncedBucketsOnce]", bucket.id, e) }
+        }
+    }
+    (function () {
+        let tries = 0;
+        const iv = setInterval(function () {
+            tries++;
+            if (window.currentUser && neonConfigured()) { clearInterval(iv); setTimeout(_sweepUnsyncedBucketsOnce, 3000) }
+            else if (tries > 120) clearInterval(iv)
+        }, 1000)
+    })();
+
     function initCloudUI() {
         updateAutoSyncBtn();
         const guide = $("#cloudSetupGuide");
@@ -1335,7 +1374,7 @@ function() {
         if (neonConfigured()) try {
             auditLog(action, moduleName, "", (Array.isArray(items) ? items.length : 1) + " record(s)")
         } catch (e) {}
-    }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.docToObject = docToObject, window.pickBucketPayload = pickBucketPayload, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
+    }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.docToObject = docToObject, window.pickBucketPayload = pickBucketPayload, window._sweepUnsyncedBucketsOnce = _sweepUnsyncedBucketsOnce, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
         _cloudPullInProgress || neonConfigured() && (clearTimeout(_autoSyncTimer), window._autoSyncTimer = setTimeout(async () => {
             if (_cloudPullInProgress) return;
             if (await cloudPush(!0, dirtyHint)) {
