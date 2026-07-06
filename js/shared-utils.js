@@ -1571,12 +1571,25 @@ function() {
             auditLog(action, moduleName, "", (Array.isArray(items) ? items.length : 1) + " record(s)")
         } catch (e) {}
     }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.docToObject = docToObject, window.pickBucketPayload = pickBucketPayload, window._sweepUnsyncedBucketsOnce = _sweepUnsyncedBucketsOnce, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
-        _cloudPullInProgress || neonConfigured() && (clearTimeout(_autoSyncTimer), window._autoSyncTimer = setTimeout(async () => {
-            if (_cloudPullInProgress) return;
-            if (await cloudPush(!0, dirtyHint)) {
-                const el = document.getElementById("smartSyncLastPush");
-                el && (el.textContent = "Terakhir sync: " + (new Date).toLocaleTimeString("id-ID"))
+        if (!neonConfigured()) return;
+        clearTimeout(window._autoSyncTimer);
+        window._autoSyncTimer = setTimeout(function attempt() {
+            if (_cloudPullInProgress) {
+                // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya, kalau proses pull
+                // otomatis (berjalan tiap 20 detik) kebetulan sedang berjalan
+                // PERSIS saat ini, pengiriman data yang baru saja disimpan
+                // akan DIBATALKAN SEPENUHNYA — tidak dicoba lagi sama sekali,
+                // sampai user melakukan penyimpanan lain. Sekarang: coba lagi
+                // tiap 500ms sampai proses pull selesai, baru kirim.
+                window._autoSyncTimer = setTimeout(attempt, 500);
+                return
             }
-        }, 800))
+            cloudPush(!0, dirtyHint).then(function(ok) {
+                if (ok) {
+                    const el = document.getElementById("smartSyncLastPush");
+                    el && (el.textContent = "Terakhir sync: " + (new Date).toLocaleTimeString("id-ID"))
+                }
+            })
+        }, 800)
     }, window.initCloudUI = initCloudUI, window.updateAutoSyncBtn = updateAutoSyncBtn, window.initSyncDelayUI = function() {}, window.updatePresetHighlight = function(val) {}
 }();

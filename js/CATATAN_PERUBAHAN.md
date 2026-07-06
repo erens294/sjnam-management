@@ -1284,3 +1284,42 @@ Upload `index.html` dan `js/shared-utils.js` yang baru — cukup ini saja untuk 
 Drygoods, tidak ada langkah tambahan sama sekali di luar kebiasaan Anda mengupload
 `js/drygoods.js` seperti biasa — sistem akan otomatis mengenali & memecah datanya begitu file itu
 aktif dipakai.
+
+---
+
+## Update 30: Bug ditemukan — pengiriman data bisa dibatalkan diam-diam kalau "bertabrakan" dengan proses tarik data otomatis
+
+### Bug yang ditemukan
+Aplikasi ini menarik data dari cloud secara otomatis setiap 20 detik di latar belakang (supaya
+Anda tidak perlu klik manual terus-menerus). Ditemukan: kalau Anda menyimpan data BARU **persis**
+di saat proses tarik-otomatis 20-detik itu sedang berjalan, pengiriman data yang baru saja Anda
+simpan akan **dibatalkan sepenuhnya** — bukan ditunda, bukan dicoba lagi, benar-benar hilang dari
+antrian, sampai Anda menyimpan sesuatu yang lain lagi. Ini bisa menjelaskan kenapa kadang data baru
+tidak muncul di device lain meski tidak ada pesan error sama sekali.
+
+### Perbaikan
+- File: `js/shared-utils.js`.
+- Sekarang, kalau situasi "bertabrakan" itu terjadi, pengiriman data **dicoba ulang otomatis
+  setiap 0,5 detik** sampai proses tarik-data selesai, baru benar-benar dikirim. Tidak pernah lagi
+  hilang begitu saja.
+
+### Verifikasi
+Ditambahkan test yang mensimulasikan persis skenario ini: proses tarik data "sedang berjalan" saat
+penyimpanan terjadi — dibuktikan pengiriman BENAR-BENAR menunggu (bukan dibatalkan), lalu berhasil
+begitu proses tarik data selesai. **Total 288 dari 288 test lulus.**
+
+### Langkah diagnosa tambahan yang perlu Anda lakukan
+Bug di atas kemungkinan salah satu penyebab, tapi saya tidak bisa memastikan itu SATU-SATUNYA
+penyebab tanpa melihat langsung sesi Anda. Setelah upload file ini, tolong lakukan tes berikut
+untuk memastikan:
+1. Minta Admin input 1 data STCR baru (data uji coba boleh).
+2. **Segera setelah itu**, minta Jajat membuka Settings dan klik tombol **"Tarik Data dari Cloud"**
+   secara MANUAL (jangan tunggu otomatis).
+3. Kalau data barunya **langsung muncul** setelah klik manual → berarti mekanisme intinya sudah
+   benar, cuma soal waktu tunggu sinkronisasi otomatis (20 detik, atau bisa lebih lambat kalau tab
+   browser Jajat sedang tidak aktif/di-minimize, karena browser membatasi kecepatan timer di tab
+   yang tidak sedang dilihat).
+4. Kalau setelah klik manual pun **tetap tidak muncul** → itu bukti ada bug lain yang lebih dalam,
+   dan saya perlu tahu itu untuk menelusuri lebih jauh lagi.
+
+Mohon info hasil tes nomor 3 atau 4 di atas supaya saya tahu langkah selanjutnya yang tepat.
