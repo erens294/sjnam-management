@@ -1401,3 +1401,47 @@ sempit.
 ### Verifikasi
 **Total 300 dari 300 test lulus** (3 test baru khusus untuk menjawab kedua pertanyaan ini secara
 langsung, bukan berdasarkan asumsi arsitektur semata).
+
+---
+
+## Update 33: Bug ditemukan — sinkronisasi bisa "bentrok sendiri" di browser yang benar-benar baru
+
+### Klarifikasi penting: "device sama, browser beda" = localStorage KOSONG TOTAL
+localStorage (tempat semua data disimpan di sisi Anda) **tidak dibagi antar browser** — Chrome dan
+Edge di komputer yang sama punya penyimpanan yang sepenuhnya terpisah. Jadi membuka browser lain,
+walau di komputer yang sama, itu sama persis dengan device yang benar-benar baru dari sudut pandang
+aplikasi ini.
+
+### Bug yang ditemukan
+`cloudPull()` (fungsi tarik data) ternyata bisa terpanggil **dua kali hampir bersamaan** dalam
+skenario browser baru: sekali otomatis begitu layar login muncul (latar belakang), sekali lagi saat
+form login disubmit (menunggu data terbaru sebelum validasi, dari Update 31). Kedua panggilan ini
+sebelumnya **tidak saling tahu** dan bisa berjalan bersamaan tanpa koordinasi — berpotensi membuat
+salah satu proses "menimpa" progres yang lain di tengah jalan, menyebabkan sebagian data tidak
+benar-benar ter-apply meski proses sinkronisasi terlihat berjalan.
+
+### Perbaikan
+- File: `js/shared-utils.js`, `js/auth.js`.
+- `cloudPull()` sekarang punya penjagaan: kalau ada proses tarik-data yang SEDANG berjalan,
+  panggilan berikutnya cukup menunggu hasil yang SAMA — tidak memulai proses baru yang bisa
+  bentrok.
+- Waktu tunggu sebelum validasi login sekarang otomatis lebih lama (8 detik, dari sebelumnya 2,5
+  detik) khusus untuk device/browser yang **benar-benar belum pernah sinkron sama sekali** —
+  karena sinkronisasi pertama kali (menarik SEMUA modul) wajar butuh waktu lebih lama dibanding
+  pengecekan rutin harian.
+
+### Verifikasi
+Ditambahkan test yang mereproduksi PERSIS skenario Anda: instalasi lama dengan data di banyak
+modul (Karyawan, Drygoods, STCR) sudah ada di cloud, lalu disimulasikan browser yang benar-benar
+baru (localStorage kosong total) login dengan 2 panggilan tarik-data hampir bersamaan (persis pola
+nyata: pull latar belakang + pull saat submit) — dibuktikan SEMUA data dari instalasi lama berhasil
+sampai dengan lengkap, tidak ada yang tertinggal. **Total 304 dari 304 test lulus.**
+
+### Perkiraan waktu sinkronisasi realistis
+Dengan perbaikan ini: satu kali panggilan "list semua dokumen" (mengambil status SEMUA modul
+sekaligus, bukan satu-satu) biasanya butuh kurang dari 1 detik dengan koneksi internet normal,
+ditambah waktu memproses & menyimpan ke localStorage (biasanya di bawah 1 detik lagi kecuali datanya
+sangat besar). Total realistis: **1-3 detik** untuk device baru dengan koneksi normal. Kalau
+setelah beberapa detik data masih belum muncul, klik **"Tarik Data dari Cloud"** secara manual di
+Settings sebagai langkah pasti — itu tidak terpengaruh timeout apa pun dan akan menunggu sampai
+benar-benar selesai.

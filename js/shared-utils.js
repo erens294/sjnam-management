@@ -1339,7 +1339,27 @@ function() {
         return cloudLog("✅ Migrasi struktur data granular selesai (" + CLOUD_BUCKETS.length + " modul dipisah)", "success"), newDocs
     }
 
+    let _cloudPullPromise = null;
     async function cloudPull(silent = !1) {
+        // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya, memanggil cloudPull() dua
+        // kali hampir bersamaan (mis. sekali otomatis saat layar login
+        // tampil, sekali lagi saat form login disubmit — persis skenario
+        // device/browser baru pertama kali dipakai) bisa membuat KEDUA
+        // panggilan berjalan bersamaan tanpa saling tahu, berpotensi saling
+        // menimpa progres satu sama lain di tengah jalan. Sekarang, kalau
+        // ada pull yang SEDANG berjalan, panggilan berikutnya cukup
+        // menunggu hasil yang SAMA — tidak memulai proses baru yang bisa
+        // bentrok.
+        if (_cloudPullPromise) return _cloudPullPromise;
+        _cloudPullPromise = _cloudPullInternal(silent);
+        try {
+            return await _cloudPullPromise
+        } finally {
+            _cloudPullPromise = null
+        }
+    }
+
+    async function _cloudPullInternal(silent = !1) {
         if (!neonConfigured()) return void (silent || showToast("Firebase belum dikonfigurasi (js/config.js)", "error"));
         updateSyncStatus("syncing");
         try {
