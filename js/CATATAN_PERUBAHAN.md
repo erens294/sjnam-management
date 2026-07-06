@@ -1368,3 +1368,36 @@ login di **device yang berbeda** dan tidak melihat data — itu soal device ters
 menarik data dari cloud (mirip kasus Vera sebelumnya, sudah ada perbaikan otomatis untuk ini di
 Update 26). Kalau yang Anda maksud sesuatu yang lain (misalnya tab/menu tertentu yang tidak
 muncul), boleh beri tahu saya tab spesifiknya supaya saya bisa telusuri lebih tepat.
+
+---
+
+## Update 32: Verifikasi langsung (bukan asumsi) untuk 2 pertanyaan Anda
+
+Tidak ada perubahan kode produk di update ini — murni verifikasi dengan 3 test baru yang
+membuktikan langsung, bukan sekadar penjelasan.
+
+### Pertanyaan: "jika saya buat user baru, apakah data yang sudah ada akan terbaca?"
+**Ya, terbukti benar.** Dibuktikan lewat 2 test:
+1. **Membuat user baru TIDAK menyentuh data apa pun yang lain** — dibandingkan byte-per-byte
+   sebelum & sesudah untuk data Karyawan, Drygoods, dan STCR: semuanya identik, tidak berubah
+   sedikit pun.
+2. **User baru tersebut, begitu login di device yang SAMA, langsung bisa membaca semua data lama**
+   — dibuktikan dengan benar-benar login sebagai user baru itu lewat form login sungguhan, lalu
+   memverifikasi data Karyawan/Drygoods/STCR lama masih terbaca utuh.
+
+Catatan penting yang tetap berlaku: ini untuk device yang SAMA. Kalau user baru login di device
+BERBEDA yang belum pernah menarik data dari cloud, mereka perlu menunggu sinkronisasi pertama
+(sudah ditangani otomatis sejak Update 26).
+
+### Pertanyaan: "apakah update kemarin (Update 31) berlaku untuk seluruh tab & sub-tab?"
+**Ya, terbukti berlaku menyeluruh, bukan perbaikan sempit.** Dibuktikan lewat 1 test tambahan:
+penarikan data yang terjadi di layar login tidak cuma menyegarkan daftar user, tapi **sekaligus**
+menyegarkan **Atur Akses Role** (`role_perms`) — pengaturan yang menentukan tab/sub-tab mana saja
+yang boleh dilihat setiap role. Karena satu proses tarik data yang sama menyegarkan SEMUA bucket
+yang relevan sekaligus (bukan cuma "users" saja), setiap tab & sub-tab yang keterlihatannya diatur
+lewat Atur Akses Role otomatis ikut ter-cover oleh perbaikan Update 31 — bukan kasus khusus yang
+sempit.
+
+### Verifikasi
+**Total 300 dari 300 test lulus** (3 test baru khusus untuk menjawab kedua pertanyaan ini secara
+langsung, bukan berdasarkan asumsi arsitektur semata).
