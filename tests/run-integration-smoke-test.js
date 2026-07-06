@@ -1724,6 +1724,26 @@ async function hashSha256(str) {
     assert(metaDoc.includes('Test Bank Item') && !metaDoc.includes('New Item'), 'drygoods_meta contains bankItems but NOT transaction data (properly separated)');
   }
 
+  console.log('\n[79] BUG FOUND FROM USER REPORT: a save that happens to coincide with an in-progress background pull must NOT be silently dropped — it must retry and eventually sync');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {};
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify([{ id: 'k_race_test', nama: 'Race Test', station: 'CGK', updatedAt: new Date().toISOString() }]));
+
+    // Simulate a background pull being "in progress" at the exact moment a save triggers auto-sync
+    window._cloudPullInProgress = true;
+    window.triggerAutoSync('karyawan');
+
+    await new Promise(r => setTimeout(r, 900)); // past the initial 800ms debounce
+    assert(mockDocIds().length === 0, 'sanity: while the pull is still "in progress", the push has correctly NOT fired yet (waiting, not dropped)');
+
+    window._cloudPullInProgress = false; // the "pull" finishes
+    await new Promise(r => setTimeout(r, 700)); // past the 500ms retry interval
+
+    const ids = mockDocIds();
+    assert(ids.includes('karyawan'), 'once the pull finished, the previously-scheduled push correctly retried and completed — it was NOT silently dropped, got: ' + JSON.stringify(ids));
+  }
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   if (fail > 0) {
     console.log('Failures:');
