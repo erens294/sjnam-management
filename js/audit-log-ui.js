@@ -12,7 +12,7 @@ async function loadAuditLog(){
         whereField: moduleFilter||undefined, whereValue: moduleFilter||undefined
       });
       if(!logs||!logs.length)return void(container.innerHTML='<p class="text-slate-400 p-3 italic">Belum ada log. Pastikan sudah pernah push/pull minimal sekali.</p>');
-      const actionColor={push:"text-blue-500",pull:"text-green-500",merge:"text-amber-500",create:"text-emerald-500",update:"text-slate-400",delete:"text-red-400"};
+      const actionColor={push:"text-blue-500",pull:"text-green-500",merge:"text-amber-500",create:"text-emerald-500",update:"text-slate-400",delete:"text-red-400",push_partial_fail:"text-red-600 font-bold"};
       container.innerHTML=`
       <table class="w-full text-xs">
         <thead><tr class="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">

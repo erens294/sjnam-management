@@ -1168,3 +1168,119 @@ Upload `index.html` dan `js/shared-utils.js` ke server, lalu **Admin login sekal
 melakukan apa pun selain login dan tunggu ±3 detik) — data Activity Report yang sudah ada akan
 otomatis terkirim ke cloud saat itu. Setelah itu, Vera tinggal refresh halamannya (atau tunggu
 siklus sync otomatis berikutnya) dan datanya akan muncul.
+
+---
+
+## Update 27: Status baru "No-Op" untuk Activity Report (station non-daily)
+
+### Yang ditambahkan
+- File: `js/station-report.js`.
+- Opsi status baru **"No-Op"** di kolom Status Input Data Activity Report — untuk station yang
+  memang tidak ada penerbangan pada hari itu (non-daily), berbeda dari "Tidak Lapor" (station
+  seharusnya lapor tapi tidak melakukannya).
+- Warna badge indigo, berbeda dari 3 status lain (Lapor=hijau, Tidak Lapor=merah, Tutup=abu-abu).
+
+### Perhitungan disesuaikan — inti dari permintaan Anda
+- **"No-Op" DIKECUALIKAN dari perhitungan kepatuhan** — hari yang ditandai No-Op tidak ikut
+  menghitung sebagai "hari yang seharusnya lapor" sama sekali (sama seperti perlakuan "Tutup"
+  yang sudah ada). Beda jelasnya:
+  - **Tidak Lapor** → tetap dihitung sebagai kegagalan lapor, menurunkan persentase kepatuhan.
+  - **No-Op** → tidak dihitung sama sekali (tidak menambah maupun mengurangi persentase),
+    karena memang tidak ada kewajiban lapor hari itu.
+- Perubahan ini otomatis berlaku ke SEMUA tempat yang menampilkan persentase kepatuhan:
+  Dashboard (KPI, grafik pie, grafik batang, tren), Rekap Bulanan, dan Export Excel/PDF — karena
+  semuanya mengambil dari satu fungsi perhitungan yang sama, saya cukup perbaiki di satu tempat.
+- Import Excel sekarang juga mengenali "No-Op"/"noop"/"n/a"/"na" sebagai status yang valid.
+- Template Excel yang bisa diunduh diperbarui dengan contoh baris "No-Op".
+- Export Excel Dashboard sekarang punya kolom tambahan "Hari No-Op" di sheet Peringkat Station.
+
+### Verifikasi
+Ditambahkan 3 test baru yang membuktikan langsung: (1) No-Op benar-benar dikecualikan dari
+pembagi persentase — dibandingkan dengan skenario yang sama tapi memakai "Tidak Lapor" untuk
+membuktikan keduanya berperilaku beda; (2) Import Excel mengenali token "No-Op" tanpa bentrok
+dengan token "Tidak Lapor" yang sudah ada; (3) kasus ekstrem (satu bulan penuh No-Op) tidak
+menyebabkan error pembagian oleh nol. **Total 266 dari 266 test lulus.**
+
+---
+
+## Update 28: Bug ditemukan — kegagalan sync per-modul disembunyikan sepenuhnya dari user
+
+### Jawaban langsung pertanyaan Anda
+**Tidak perlu setting cloud-sync terpisah di device lain.** `js/config.js` adalah bagian dari
+aplikasi itu sendiri, dimuat otomatis untuk SEMUA user yang membuka URL yang sama.
+
+Soal 2 screenshot STCR (117 vs 427) — itu kemungkinan besar murni beda **filter**: Jajat memfilter
+AOC="IN" saja, Admin memfilter "Semua" (Sriwijaya Air + NAM Air sekaligus) — bukan indikasi data
+tidak sinkron.
+
+### Bug NYATA yang ditemukan
+Saat mengecek laporan Drygoods Anda, ditemukan bug penting di `js/shared-utils.js`: kalau SEBAGIAN
+modul berhasil terkirim ke cloud tapi SEBAGIAN LAIN gagal (misal karena ukuran data Drygoods sudah
+terlalu besar untuk 1 dokumen Firestore, atau gangguan jaringan sesaat), kegagalan itu **hanya
+tercatat di console browser** (tidak terlihat user biasa) — sementara notifikasi yang muncul tetap
+bilang "Sync berhasil!", seolah SEMUA modul tersimpan padahal ada yang diam-diam gagal terus-
+menerus. Ini bisa menjelaskan kenapa Drygoods spesifik tidak ikut update meski modul lain baik-baik
+saja.
+
+### Perbaikan
+- Kegagalan sync per-modul sekarang **selalu diberi tahu dengan jelas** — menyebutkan modul mana
+  yang gagal dan alasan spesifiknya, baik lewat notifikasi maupun tercatat di Audit Log (kategori
+  baru, ditandai merah tebal supaya mudah terlihat).
+- Modul yang gagal TIDAK ditandai "sudah tersinkron" secara internal — jadi percobaan sync
+  berikutnya akan otomatis mencoba lagi, bukan mengira sudah beres.
+
+### Verifikasi
+Ditambahkan test yang mensimulasikan 1 modul gagal push sementara modul lain berhasil — membuktikan
+modul yang berhasil tetap benar-benar tersimpan, modul yang gagal benar-benar tidak tersimpan (bukan
+pura-pura berhasil), dan sistem tahu untuk mencoba lagi nanti. **Total 270 dari 270 test lulus.**
+
+### Yang perlu Anda lakukan
+Upload `index.html`, `js/shared-utils.js`, `js/audit-log-ui.js` yang baru, lalu coba sync ulang dari
+device yang tadi mengedit Drygoods. Kalau sekarang muncul notifikasi merah menyebutkan "drygoods
+gagal: [alasan]" — itu petunjuk pasti untuk saya telusuri lebih lanjut kenapa gagalnya. Kalau
+notifikasinya sekarang normal (semua berhasil), berarti sebelumnya memang kendala sesaat yang sudah
+lewat, tidak perlu dikhawatirkan lagi.
+
+---
+
+## Update 29: STCR dipecah per-tahun (dan Drygoods siap otomatis begitu di-upload)
+
+### STCR sekarang dipecah per-tahun
+- File: `js/shared-utils.js`.
+- Data STCR (Stretchercase & POB) sekarang disimpan sebagai **dokumen terpisah per tahun**
+  (`stcr_2024`, `stcr_2025`, `stcr_2026`, dst.) di Firestore — bukan lagi 1 dokumen besar berisi
+  semua tahun sekaligus.
+- **Mengedit/menambah data tahun 2026 TIDAK PERNAH menyentuh dokumen tahun 2024/2025** sama sekali
+  — baik dibaca maupun ditulis. Ini yang mencegah dokumen mendekati batas 1MB Firestore berapa pun
+  lamanya data terkumpul ke depannya (setiap tahun baru = dokumen baru, ukurannya tidak pernah
+  membengkak tak terbatas).
+- **Migrasi otomatis:** dokumen STCR lama (yang masih 1 dokumen besar) otomatis terpecah jadi
+  dokumen per tahun begitu ada device yang menarik data (pull) pertama kali setelah update ini.
+  Dokumen lama tetap dibiarkan ada (tidak dihapus), hanya tidak dipakai lagi.
+- Penggabungan otomatis antar-device tetap bekerja SAMA seperti sebelumnya, hanya sekarang di
+  dalam lingkup per-tahun — kalau 2 orang menambah data STCR berbeda di tahun yang sama, keduanya
+  tetap tergabung, tidak saling menghapus.
+
+### Drygoods — SUDAH SIAP, tinggal upload
+Menjawab pertanyaan Anda langsung: **ya, bisa langsung diterapkan**, dan sudah saya siapkan
+sekarang juga di `js/shared-utils.js` — begitu Anda upload `js/drygoods.js` yang sudah ada
+(tidak perlu diubah sama sekali, filenya SAMA seperti sebelumnya), transaksi Drygoods akan
+otomatis ikut dipecah per tahun (`drygoods_trx_2024`, `drygoods_trx_2025`, dst.), memakai
+mekanisme migrasi otomatis yang sama seperti STCR. Data barang master (Bank Item) tetap di
+dokumen terpisah (`drygoods_meta`) karena itu bukan data yang terus bertambah tanpa batas seperti
+transaksi — jadi tidak perlu dipecah.
+
+### Verifikasi
+Ditambahkan 5 test baru yang membuktikan langsung: (1) data STCR multi-tahun benar-benar terpecah
+jadi dokumen terpisah; (2) menambah data 1 tahun TIDAK menyentuh dokumen tahun lain sama sekali —
+dibuktikan dengan membandingkan isi dokumen byte-per-byte sebelum & sesudah; (3) migrasi dari
+dokumen lama ke per-tahun berhasil dengan benar; (4) skenario PERSIS yang Anda laporkan (Admin &
+Jajat menambah data berbeda di tahun yang sama) sekarang benar-benar tergabung; (5) Drygoods
+transactions terbukti SUDAH BISA dipecah per tahun sekarang juga, sementara Bank Item tetap aman
+terpisah. **Total 286 dari 286 test lulus.**
+
+### Yang perlu Anda lakukan
+Upload `index.html` dan `js/shared-utils.js` yang baru — cukup ini saja untuk STCR. Untuk
+Drygoods, tidak ada langkah tambahan sama sekali di luar kebiasaan Anda mengupload
+`js/drygoods.js` seperti biasa — sistem akan otomatis mengenali & memecah datanya begitu file itu
+aktif dipakai.

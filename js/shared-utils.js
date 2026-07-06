@@ -364,8 +364,7 @@ function() {
         { id: "users", dirtyHints: ["users"] },
         { id: "karyawan", dirtyHints: ["karyawan"] },
         { id: "training", dirtyHints: ["training"] },
-        { id: "stcr", dirtyHints: ["stcrData", "stcr"] },
-        { id: "drygoods", dirtyHints: ["drygoodsData", "drygoods"] },
+        { id: "drygoods_meta", dirtyHints: ["drygoodsData", "drygoods"] },
         { id: "role_perms", dirtyHints: ["rolePerms"] },
         { id: "cert_config", dirtyHints: ["certConfig", "cert"] },
         { id: "tombstones", dirtyHints: ["tombstones"] },
@@ -379,6 +378,72 @@ function() {
         { id: "home_editor", dirtyHints: ["homeEditor"] }
     ];
     window._CLOUD_BUCKETS = CLOUD_BUCKETS;
+
+    // ============ SHARDING PER-TAHUN (Update: cegah dokumen kelewat besar) ============
+    // Beberapa dataset (STCR, transaksi Drygoods) terus bertambah tanpa batas dan
+    // berisiko mendekati/melewati batas 1MB per dokumen Firestore kalau disimpan
+    // sebagai SATU dokumen besar. Family di bawah ini dipecah otomatis jadi
+    // beberapa dokumen terpisah per TAHUN (mis. "stcr_2024", "stcr_2025", ...) —
+    // baik Push maupun Pull menangani ini secara transparan; kode di stcr.js/
+    // drygoods.js tidak perlu tahu atau berubah sama sekali.
+    const SHARD_FAMILIES = {
+        stcr: {
+            dirtyHints: ["stcrData", "stcr"],
+            legacyBucketId: "stcr",
+            getLocalArray: function () { try { return JSON.parse(localStorage.getItem("sjnam_stcr_data_v1") || "[]") } catch (e) { return [] } },
+            setLocalArray: function (arr) {
+                localStorage.setItem("sjnam_stcr_data_v1", JSON.stringify(arr));
+                window.STCR && typeof window.STCR.loadData === "function" && (window.STCR.loadData(), typeof window.STCR.applyFilters === "function" && window.STCR.applyFilters())
+            },
+            shardKeyOf: function (r) { return String(r && r.Year || "unknown") },
+            idKeyOf: function (r) { return r && (r["App Service & Tehnik"] || JSON.stringify(r)) },
+            legacyDataPath: "stcrData"
+        },
+        drygoods_trx: {
+            dirtyHints: ["drygoodsData", "drygoods"],
+            legacyBucketId: "drygoods", // dokumen lama sebelum drygoods_meta dipisah dari transactions
+            getLocalArray: function () { try { return JSON.parse(localStorage.getItem("sjnam_drygoods_v1") || "{}").transactions || [] } catch (e) { return [] } },
+            setLocalArray: function (arr) {
+                let dg; try { dg = JSON.parse(localStorage.getItem("sjnam_drygoods_v1") || "{}") } catch (e) { dg = {} }
+                dg.transactions = arr;
+                localStorage.setItem("sjnam_drygoods_v1", JSON.stringify(dg));
+                "object" == typeof window.DRYGOODS && typeof window.DRYGOODS.loadData === "function" && (window.DRYGOODS.loadData(), window.DRYGOODS.renderAll())
+            },
+            shardKeyOf: function (r) { return (r && r.date || "").slice(0, 4) || "unknown" },
+            idKeyOf: function (r) { return r && (r.id || JSON.stringify(r)) },
+            legacyDataPath: "drygoodsData.transactions" // field di dalam dokumen "drygoods" lama, bukan seluruh payload
+        }
+    };
+    window._SHARD_FAMILIES = SHARD_FAMILIES;
+
+    function _familyIdForHint(hint) {
+        if (!hint) return null;
+        for (const fam in SHARD_FAMILIES) if (SHARD_FAMILIES[fam].dirtyHints.indexOf(hint) > -1) return fam;
+        return null
+    }
+
+    function _groupByShard(family, arr) {
+        const groups = {};
+        (arr || []).forEach(function (r) {
+            const k = family.shardKeyOf(r);
+            (groups[k] = groups[k] || []).push(r)
+        });
+        return groups
+    }
+
+    function _mergeShardArray(family, cloudArr, localArr) {
+        const map = new Map;
+        (cloudArr || []).forEach(function (item) { const k = family.idKeyOf(item); k && map.set(k, item) });
+        (localArr || []).forEach(function (item) {
+            const k = family.idKeyOf(item);
+            if (!k) return void map.set(JSON.stringify(item), item);
+            const existing = map.get(k);
+            if (!existing) return void map.set(k, item);
+            const { winner: winner } = detectConflict(item, existing);
+            map.set(k, winner)
+        });
+        return Array.from(map.values())
+    }
 
     function _bucketIdForHint(hint) {
         if (!hint) return null;
@@ -395,8 +460,7 @@ function() {
             case "users": return { users: full.users };
             case "karyawan": return { karyawan: full.karyawan };
             case "training": return { training: full.training };
-            case "stcr": return { stcrData: full.stcrData };
-            case "drygoods": return { drygoodsData: full.drygoodsData };
+            case "drygoods_meta": return { drygoodsData: { ...full.drygoodsData, transactions: undefined } };
             case "role_perms": return { rolePerms: full.rolePerms };
             case "cert_config": return {
                 certTemplate1: full.certTemplate1, certTemplate2: full.certTemplate2,
@@ -823,8 +887,6 @@ function() {
                 merged.data = _mergeWithConflict(cloudBucketPayload.data, localBucketPayload.data, byIdOrKey)
             } else if (bucketId === "dfs_stations") {
                 merged.dfsData = _mergeWithConflict(cloudBucketPayload.dfsData, localBucketPayload.dfsData, byIdOrKey)
-            } else if (bucketId === "stcr") {
-                merged.stcrData = _mergeWithConflict(cloudBucketPayload.stcrData, localBucketPayload.stcrData, byIdOrKey)
             } else if (bucketId === "users") {
                 if (Array.isArray(cloudBucketPayload.users) || Array.isArray(localBucketPayload.users)) {
                     merged.users = _filterTombstoned("users", _mergeWithConflict(cloudBucketPayload.users, localBucketPayload.users, u => u.id))
@@ -840,12 +902,9 @@ function() {
                         merged.training.peserta = _filterTombstoned("peserta", _mergeWithConflict(cloudBucketPayload.training.peserta, localBucketPayload.training.peserta, pesertaKeyFn))
                     }
                 }
-            } else if (bucketId === "drygoods") {
+            } else if (bucketId === "drygoods_meta") {
                 if (localBucketPayload.drygoodsData && cloudBucketPayload.drygoodsData) {
                     merged.drygoodsData = { ...localBucketPayload.drygoodsData };
-                    if (Array.isArray(localBucketPayload.drygoodsData.transactions) && Array.isArray(cloudBucketPayload.drygoodsData.transactions)) {
-                        merged.drygoodsData.transactions = _mergeWithConflict(cloudBucketPayload.drygoodsData.transactions, localBucketPayload.drygoodsData.transactions, dgTrxKeyFn)
-                    }
                     if (Array.isArray(localBucketPayload.drygoodsData.bankItems) && Array.isArray(cloudBucketPayload.drygoodsData.bankItems)) {
                         merged.drygoodsData.bankItems = _mergeWithConflict(cloudBucketPayload.drygoodsData.bankItems, localBucketPayload.drygoodsData.bankItems, dgTrxKeyFn)
                     }
@@ -934,9 +993,11 @@ function() {
             return await _offlineQueue.enqueue(localPayload), cloudLog("📴 Offline — perubahan disimpan ke antrian lokal (akan dikirim saat online)", "info"), silent || showToast("📴 Offline — perubahan akan dikirim saat koneksi kembali", "info"), !0
         }
         const mappedBucketId = dirtyHint ? _bucketIdForHint(dirtyHint) : null;
-        const targetBucketIds = mappedBucketId ? [mappedBucketId] : CLOUD_BUCKETS.map(b => b.id);
+        const mappedFamilyIdEarly = dirtyHint ? _familyIdForHint(dirtyHint) : null;
+        const hintRecognized = !!(mappedBucketId || mappedFamilyIdEarly);
+        const targetBucketIds = !dirtyHint ? CLOUD_BUCKETS.map(b => b.id) : (mappedBucketId ? [mappedBucketId] : (hintRecognized ? [] : CLOUD_BUCKETS.map(b => b.id)));
         const fullLocal = getAllCloudData();
-        let anyPushed = false, anyError = null, totalPushed = 0;
+        let anyPushed = false, anyError = null, totalPushed = 0, failedBuckets = [];
         updateSyncStatus("syncing");
         for (const bucketId of targetBucketIds) {
             const localBucketPayload = pickBucketPayload(bucketId, fullLocal);
@@ -987,13 +1048,65 @@ function() {
                 if (WHOLE_BLOB_BUCKETS.indexOf(bucketId) > -1) window._bucketBase[bucketId] = JSON.parse(JSON.stringify(mergedPayload));
                 anyPushed = true, totalPushed++
             } catch (err) {
-                anyError = err, console.warn("[cloudPush bucket=" + bucketId + "]", err)
+                anyError = err, failedBuckets.push({ id: bucketId, message: err && err.message || String(err) }), console.warn("[cloudPush bucket=" + bucketId + "]", err)
+            }
+        }
+        // ── Sharded families (STCR, dan Drygoods transactions begitu di-upload) ──
+        // Dipecah per tahun supaya tidak pernah mendekati batas 1MB per dokumen
+        // Firestore, berapa pun banyaknya data yang terkumpul ke depannya.
+        const mappedFamilyId = mappedFamilyIdEarly;
+        const targetFamilyIds = !dirtyHint ? Object.keys(SHARD_FAMILIES) : (mappedFamilyId ? [mappedFamilyId] : (hintRecognized ? [] : Object.keys(SHARD_FAMILIES)));
+        for (const familyId of targetFamilyIds) {
+            const family = SHARD_FAMILIES[familyId];
+            const localArr = family.getLocalArray();
+            const shardGroups = _groupByShard(family, localArr);
+            for (const shardKey in shardGroups) {
+                const docId = familyId + "_" + shardKey;
+                const shardArr = shardGroups[shardKey];
+                const shardHash = _hashPayload(shardArr);
+                if (silent && shardHash && shardHash === window._bucketHash[docId]) continue;
+                try {
+                    const cloudRow = await neonSelectOne("sjnam_sync", docId);
+                    const cloudRowUpdatedAt = cloudRow ? (cloudRow._firestoreUpdateTime || cloudRow.updated_at) : null;
+                    const cloudVersion = cloudRow && cloudRow.payload && typeof cloudRow.payload._version === "number" ? cloudRow.payload._version : 0;
+                    const knownVersion = window._bucketVersion[docId] || 0;
+                    let mergedShardArr = shardArr;
+                    if (cloudRow && cloudRowUpdatedAt && (!window._bucketTS[docId] || cloudRowUpdatedAt > window._bucketTS[docId])) {
+                        mergedShardArr = _mergeShardArray(family, (cloudRow.payload && cloudRow.payload.items) || [], shardArr);
+                        cloudLog("🔀 [" + docId + "] Konflik terdeteksi — data digabung otomatis (merge)", "info");
+                        await auditLog("merge", familyId, "", "Merge shard " + docId + " dari cloud");
+                        silent || showToast("🔀 Merge: " + docId + " dari 2 device digabung otomatis", "info")
+                    }
+                    const shardPayload = { items: mergedShardArr, _pushedBy: getDeviceId(), _pushedAt: (new Date).toISOString(), _version: Math.max(cloudVersion, knownVersion) + 1 };
+                    const upsertResult = await neonUpsert("sjnam_sync", docId, { payload: shardPayload, updated_at: (new Date).toISOString() });
+                    const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || shardPayload._pushedAt;
+                    window._bucketHash[docId] = _hashPayload(mergedShardArr), window._bucketTS[docId] = serverUpdatedAt, window._bucketVersion[docId] = shardPayload._version;
+                    anyPushed = true, totalPushed++
+                } catch (err) {
+                    anyError = err, failedBuckets.push({ id: docId, message: err && err.message || String(err) }), console.warn("[cloudPush shard=" + docId + "]", err)
+                }
             }
         }
         _saveBucketHash(window._bucketHash), _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion), _saveBucketBase(window._bucketBase);
         if (anyError && !anyPushed) return updateSyncStatus("error"), cloudLog("❌ Gagal upload: " + anyError.message, "error"), silent || showToast("Sync gagal: " + anyError.message, "error"), !1;
-        if (!anyPushed) return cloudLog("⏭️ Smart Push: tidak ada perubahan data, skip upload", "info"), updateSyncStatus("connected"), !0;
-        return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil (" + totalPushed + " bucket)"), window._rolePermsLocalDirty = !1, window._drygoodsLocalDirty = !1, updateSyncStatus("connected"), cloudLog("✅ Data tersimpan ke Firestore (" + totalPushed + " bucket diperbarui)", "success"), silent || showToast("⚡ Firestore Sync berhasil! (" + totalPushed + " bucket)", "success"), !0
+        if (!anyPushed && !failedBuckets.length) return cloudLog("⏭️ Smart Push: tidak ada perubahan data, skip upload", "info"), updateSyncStatus("connected"), !0;
+        if (failedBuckets.length) {
+            // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya, kalau SEBAGIAN bucket
+            // berhasil push tapi SEBAGIAN LAIN gagal (mis. Drygoods gagal
+            // karena ukuran data terlalu besar untuk 1 dokumen Firestore,
+            // atau gangguan jaringan sesaat), kegagalan itu HANYA tercatat
+            // di console.warn (tidak terlihat user awam) — sementara toast
+            // yang tampil tetap bilang "berhasil", membuat user mengira SEMUA
+            // data tersinkron padahal ada modul yang diam-diam gagal terus-
+            // menerus. Sekarang kegagalan per-modul selalu diberi tahu
+            // dengan jelas, menyebutkan modul mana yang gagal & kenapa.
+            const namesLabel = failedBuckets.map(b => b.id).join(", ");
+            cloudLog("⚠️ Sync SEBAGIAN gagal — modul berikut TIDAK tersimpan ke cloud: " + namesLabel + ". Detail: " + failedBuckets.map(b => b.id + " (" + b.message + ")").join("; "), "error");
+            silent || showToast("⚠️ Sebagian gagal sync: " + namesLabel + " — modul lain berhasil. Cek Audit Log untuk detail.", "error");
+            await auditLog("push_partial_fail", namesLabel, "", failedBuckets.map(b => b.id + ": " + b.message).join(" | ")).catch(() => {});
+            if (!anyPushed) return updateSyncStatus("error"), !1
+        }
+        return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil (" + totalPushed + " bucket)"), window._rolePermsLocalDirty = !1, window._drygoodsLocalDirty = !1, updateSyncStatus(failedBuckets.length ? "error" : "connected"), cloudLog("✅ Data tersimpan ke Firestore (" + totalPushed + " bucket diperbarui)", "success"), silent || failedBuckets.length || showToast("⚡ Firestore Sync berhasil! (" + totalPushed + " bucket)", "success"), !0
     }
     function _applyBucketPull(bucketId, rec) {
         if (bucketId === "station_report") {
@@ -1111,12 +1224,17 @@ function() {
             }
             return
         }
-        if (bucketId === "stcr") {
-            Array.isArray(rec.stcrData) && rec.stcrData.length > 0 && (localStorage.setItem("sjnam_stcr_data_v1", JSON.stringify(rec.stcrData)), window.STCR && typeof window.STCR.loadData === "function" && (window.STCR.loadData(), typeof window.STCR.applyFilters === "function" && window.STCR.applyFilters()));
-            return
-        }
-        if (bucketId === "drygoods") {
-            !window._drygoodsLocalDirty && rec.drygoodsData ? (localStorage.setItem("sjnam_drygoods_v1", JSON.stringify(rec.drygoodsData)), "object" == typeof window.DRYGOODS && typeof window.DRYGOODS.loadData === "function" && (window.DRYGOODS.loadData(), window.DRYGOODS.renderAll())) : window._drygoodsLocalDirty && rec.drygoodsData && cloudLog("⏭️ Pull: skip drygoodsData dari cloud — ada perubahan lokal yang belum ter-push", "info");
+        if (bucketId === "drygoods_meta") {
+            if (!window._drygoodsLocalDirty && rec.drygoodsData) {
+                let dg;
+                try { dg = JSON.parse(localStorage.getItem("sjnam_drygoods_v1") || "{}") } catch (e) { dg = {} }
+                const existingTransactions = dg.transactions || [];
+                dg = { ...dg, ...rec.drygoodsData, transactions: existingTransactions };
+                localStorage.setItem("sjnam_drygoods_v1", JSON.stringify(dg));
+                "object" == typeof window.DRYGOODS && typeof window.DRYGOODS.loadData === "function" && (window.DRYGOODS.loadData(), window.DRYGOODS.renderAll())
+            } else if (window._drygoodsLocalDirty && rec.drygoodsData) {
+                cloudLog("⏭️ Pull: skip drygoodsData (meta) dari cloud — ada perubahan lokal yang belum ter-push", "info")
+            }
             return
         }
         if (bucketId === "role_perms") {
@@ -1149,6 +1267,35 @@ function() {
     // satu blob) dipecah jadi dokumen granular per-modul. Aman dijalankan
     // berkali-kali dari device manapun (upsert bersifat idempotent) — kalau
     // device lain sudah lebih dulu migrasi, fungsi ini langsung skip.
+    function _getPath(obj, path) {
+        return path.split(".").reduce((o, k) => o && typeof o === "object" ? o[k] : undefined, obj)
+    }
+
+    // Migrasi satu kali per family: dokumen lama yang belum di-shard (mis.
+    // "stcr" berisi SEMUA tahun dalam 1 dokumen) dipecah jadi dokumen per
+    // tahun. Aman dijalankan berkali-kali dari device manapun.
+    async function _migrateLegacyShardIfNeeded(listedDocs, familyId) {
+        const family = SHARD_FAMILIES[familyId];
+        const legacy = listedDocs.find(d => d._docId === family.legacyBucketId);
+        if (!legacy || !legacy.payload) return listedDocs;
+        const alreadySharded = listedDocs.some(d => d._docId.indexOf(familyId + "_") === 0);
+        if (alreadySharded) return listedDocs;
+        const legacyArr = family.legacyDataPath ? _getPath(legacy.payload, family.legacyDataPath) : null;
+        if (!Array.isArray(legacyArr) || !legacyArr.length) return listedDocs;
+        cloudLog("🔀 Migrasi sharding per-tahun untuk \"" + familyId + "\" — memisah " + legacyArr.length + " record jadi dokumen per tahun...", "info");
+        const shardGroups = _groupByShard(family, legacyArr);
+        const newDocs = listedDocs.slice();
+        for (const shardKey in shardGroups) {
+            const docId = familyId + "_" + shardKey;
+            const shardPayload = { items: shardGroups[shardKey], _pushedBy: getDeviceId(), _pushedAt: (new Date).toISOString(), _migratedFrom: family.legacyBucketId, _version: 1 };
+            try {
+                const upsertResult = await neonUpsert("sjnam_sync", docId, { payload: shardPayload, updated_at: (new Date).toISOString() });
+                newDocs.push({ _docId: docId, payload: shardPayload, _firestoreUpdateTime: upsertResult?._firestoreUpdateTime || upsertResult?.updated_at })
+            } catch (e) { console.warn("[Migrasi shard] gagal " + docId, e) }
+        }
+        return cloudLog("✅ Migrasi sharding \"" + familyId + "\" selesai (" + Object.keys(shardGroups).length + " dokumen per tahun dibuat)", "success"), newDocs
+    }
+
     async function _migrateLegacySyncDocIfNeeded(listedDocs) {
         const legacy = listedDocs.find(d => d._docId === "sjnam_main");
         if (!legacy || !legacy.payload) return listedDocs;
@@ -1175,6 +1322,7 @@ function() {
             let listedDocs = await neonListCollection("sjnam_sync");
             if (!listedDocs.length) throw new Error("Data tidak ditemukan di Firestore");
             listedDocs = await _migrateLegacySyncDocIfNeeded(listedDocs);
+            for (const familyId in SHARD_FAMILIES) listedDocs = await _migrateLegacyShardIfNeeded(listedDocs, familyId);
             const newerBuckets = [];
             for (const bucket of CLOUD_BUCKETS) {
                 const doc = listedDocs.find(d => d._docId === bucket.id);
@@ -1184,9 +1332,19 @@ function() {
                 if (window._bucketTS[bucket.id] && docUpdatedAt <= window._bucketTS[bucket.id]) continue;
                 newerBuckets.push({ id: bucket.id, doc: doc, docUpdatedAt: docUpdatedAt })
             }
-            if (!newerBuckets.length) return cloudLog("⏭️ Smart Pull: tidak ada perubahan data antar device, skip pull (payload tidak diunduh)", "info"), updateSyncStatus("connected"), void (silent || showToast("Data sudah paling baru — tidak ada perubahan dari device lain", "info"));
+            const newerShards = [];
+            for (const familyId in SHARD_FAMILIES) {
+                const shardDocs = listedDocs.filter(d => d._docId.indexOf(familyId + "_") === 0);
+                for (const doc of shardDocs) {
+                    const docUpdatedAt = doc._firestoreUpdateTime || doc.updated_at;
+                    if (!docUpdatedAt) continue;
+                    if (window._bucketTS[doc._docId] && docUpdatedAt <= window._bucketTS[doc._docId]) continue;
+                    newerShards.push({ id: doc._docId, familyId: familyId, doc: doc, docUpdatedAt: docUpdatedAt })
+                }
+            }
+            if (!newerBuckets.length && !newerShards.length) return cloudLog("⏭️ Smart Pull: tidak ada perubahan data antar device, skip pull (payload tidak diunduh)", "info"), updateSyncStatus("connected"), void (silent || showToast("Data sudah paling baru — tidak ada perubahan dari device lain", "info"));
             if (!silent) {
-                const namesLabel = newerBuckets.map(b => b.id).join(", ");
+                const namesLabel = newerBuckets.map(b => b.id).concat(newerShards.map(s => s.id)).join(", ");
                 if (!await showConfirm("⚡ Tarik Data dari Firestore", `Modul dengan pembaruan dari device lain: ${namesLabel}.\n\nData lokal modul-modul ini akan diganti/digabung otomatis. Lanjutkan?`)) return void updateSyncStatus("connected")
             }
             window._cloudPullInProgress = !0;
@@ -1197,13 +1355,43 @@ function() {
                     const rec = nb.doc.payload || {};
                     _applyBucketPull(nb.id, rec), window._bucketTS[nb.id] = nb.docUpdatedAt, typeof rec._version === "number" && (window._bucketVersion[nb.id] = rec._version), WHOLE_BLOB_BUCKETS.indexOf(nb.id) > -1 && (window._bucketBase[nb.id] = JSON.parse(JSON.stringify(rec))), appliedCount++
                 }
+                // Terapkan shard yang berubah, dikelompokkan per family supaya
+                // array lokal hanya perlu ditulis ulang SEKALI per family
+                // (menggabungkan shard yang berubah dengan shard yang tidak berubah).
+                const shardsByFamily = {};
+                newerShards.forEach(ns => { (shardsByFamily[ns.familyId] = shardsByFamily[ns.familyId] || []).push(ns) });
+                for (const familyId in shardsByFamily) {
+                    const family = SHARD_FAMILIES[familyId];
+                    const localArr = family.getLocalArray();
+                    const localGroups = _groupByShard(family, localArr);
+                    shardsByFamily[familyId].forEach(ns => {
+                        const shardKey = ns.id.slice((familyId + "_").length);
+                        const cloudItems = (ns.doc.payload && ns.doc.payload.items) || [];
+                        localGroups[shardKey] = _mergeShardArray(family, cloudItems, localGroups[shardKey] || []);
+                        window._bucketTS[ns.id] = ns.docUpdatedAt;
+                        const shardVersion = ns.doc.payload && ns.doc.payload._version;
+                        typeof shardVersion === "number" && (window._bucketVersion[ns.id] = shardVersion);
+                        appliedCount++
+                    });
+                    const finalArr = Object.values(localGroups).reduce((acc, arr) => acc.concat(arr), []);
+                    family.setLocalArray(finalArr)
+                }
                 _saveBucketTS(window._bucketTS), _saveBucketVersion(window._bucketVersion), _saveBucketBase(window._bucketBase);
                 const fullLocalAfter = getAllCloudData();
-                newerBuckets.forEach(nb => { window._bucketHash[nb.id] = _hashPayload(pickBucketPayload(nb.id, fullLocalAfter)) }), _saveBucketHash(window._bucketHash)
+                newerBuckets.forEach(nb => { window._bucketHash[nb.id] = _hashPayload(pickBucketPayload(nb.id, fullLocalAfter)) });
+                for (const familyId in shardsByFamily) {
+                    const family = SHARD_FAMILIES[familyId];
+                    const freshGroups = _groupByShard(family, family.getLocalArray());
+                    shardsByFamily[familyId].forEach(ns => {
+                        const shardKey = ns.id.slice((familyId + "_").length);
+                        window._bucketHash[ns.id] = _hashPayload(freshGroups[shardKey] || [])
+                    })
+                }
+                _saveBucketHash(window._bucketHash)
             } finally {
                 window._cloudPullInProgress = !1
             }
-            renderTable(), renderDashboard(), renderStations(), renderDfsTable(), typeof window.refreshTrainingViews === "function" && window.refreshTrainingViews(), typeof window.renderBankStations === "function" && window.renderBankStations(), updateSyncStatus("connected"), cloudLog("✅ Data berhasil diambil dari Firestore (" + appliedCount + " modul: " + newerBuckets.map(b => b.id).join(", ") + ")", "success"), blinkBlueLight(), await auditLog("pull", "all", "", appliedCount + " modul diperbarui: " + newerBuckets.map(b => b.id).join(", ")), setTimeout(_flushOfflineQueue, 2e3)
+            renderTable(), renderDashboard(), renderStations(), renderDfsTable(), typeof window.refreshTrainingViews === "function" && window.refreshTrainingViews(), typeof window.renderBankStations === "function" && window.renderBankStations(), updateSyncStatus("connected"), cloudLog("✅ Data berhasil diambil dari Firestore (" + appliedCount + " modul diperbarui)", "success"), blinkBlueLight(), await auditLog("pull", "all", "", appliedCount + " modul diperbarui"), setTimeout(_flushOfflineQueue, 2e3)
         } catch (err) {
             window._cloudPullInProgress = !1, updateSyncStatus("error"), cloudLog("❌ Gagal download: " + err.message, "error"), silent || showToast("Gagal download: " + err.message, "error")
         }
@@ -1255,6 +1443,14 @@ function() {
             if (!_bucketHasContent(payload)) continue;
             cloudLog("📤 [migrasi] Bucket \"" + bucket.id + "\" punya data lokal tapi belum pernah tersinkron — mengirim otomatis satu kali...", "info");
             try { await cloudPush(!0, bucket.dirtyHints[0]) } catch (e) { console.warn("[_sweepUnsyncedBucketsOnce]", bucket.id, e) }
+        }
+        for (const familyId in SHARD_FAMILIES) {
+            const family = SHARD_FAMILIES[familyId];
+            const shardGroups = _groupByShard(family, family.getLocalArray());
+            const anyUnsynced = Object.keys(shardGroups).some(function (shardKey) { return !window._bucketTS[familyId + "_" + shardKey] && shardGroups[shardKey].length });
+            if (!anyUnsynced) continue;
+            cloudLog("📤 [migrasi] \"" + familyId + "\" punya data lokal yang belum pernah tersinkron — mengirim otomatis satu kali (per tahun)...", "info");
+            try { await cloudPush(!0, family.dirtyHints[0]) } catch (e) { console.warn("[_sweepUnsyncedBucketsOnce] family=" + familyId, e) }
         }
     }
     (function () {
