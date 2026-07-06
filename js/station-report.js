@@ -6,9 +6,12 @@
    Master Distrik (28 station default) sesuai file Excel
    "Distrik_Activity_Dashboard2.xlsx" yang dilampirkan — supaya
    pengisian tetap konsisten dengan skema pelaporan yang sudah ada
-   (Tanggal, Station, Status: Lapor / Tidak Lapor / Tutup,
+   (Tanggal, Station, Status: Lapor / Tidak Lapor / Tutup / No-Op,
    Keterangan opsional). Daftar 28 station default ini bisa ditambah
    oleh user lewat tombol "+ Tambah Station" di sub-tab Input Data.
+   Status "No-Op" (station tidak punya penerbangan/non-daily hari itu)
+   dikecualikan dari perhitungan kepatuhan — beda dari "Tidak Lapor"
+   yang justru dihitung sebagai kegagalan lapor.
 
    Semua data disimpan di localStorage & disinkronkan lewat
    triggerAutoSync() seperti modul lain (mengikuti pola stok
@@ -84,11 +87,12 @@
     saveStationList();
   }
 
-  var STATUS_OPTS = ["Lapor", "Tidak Lapor", "Tutup"];
+  var STATUS_OPTS = ["Lapor", "Tidak Lapor", "Tutup", "No-Op"];
   var STATUS_CLASS = {
     "Lapor": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
     "Tidak Lapor": "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-    "Tutup": "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+    "Tutup": "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+    "No-Op": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
   };
 
   var LS_ACT = "sjnam_station_activity_v1";
@@ -152,18 +156,18 @@
   function computeDistrikMonth(distrik, y, m) {
     var now = new Date();
     var isFuture = y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth() + 1);
-    if (isFuture) return { lapor: 0, tutup: 0, pct: null, cat: "Belum" };
+    if (isFuture) return { lapor: 0, tutup: 0, noop: 0, pct: null, cat: "Belum" };
     var mm = String(m).padStart(2, "0"), prefix = y + "-" + mm;
-    var lapor = 0, tutup = 0;
+    var lapor = 0, tutup = 0, noop = 0;
     getActivityData().forEach(function (r) {
       if (r.distrik !== distrik || !r.tanggal || r.tanggal.slice(0, 7) !== prefix) return;
-      if (r.status === "Lapor") lapor++; else if (r.status === "Tutup") tutup++;
+      if (r.status === "Lapor") lapor++; else if (r.status === "Tutup") tutup++; else if (r.status === "No-Op") noop++;
     });
     var isCurrentMonth = y === now.getFullYear() && m === now.getMonth() + 1;
     var dim = isCurrentMonth ? now.getDate() : daysInMonth(y, m);
-    var eff = dim - tutup, pct = eff <= 0 ? null : lapor / eff, cat = "Tutup";
+    var eff = dim - tutup - noop, pct = eff <= 0 ? null : lapor / eff, cat = "Tutup";
     if (pct !== null) cat = pct >= 0.87 ? "Better" : pct >= 0.53 ? "Middle" : "Worst";
-    return { lapor: lapor, tutup: tutup, pct: pct, cat: cat };
+    return { lapor: lapor, tutup: tutup, noop: noop, pct: pct, cat: cat };
   }
 
   function fmtPct(p) { return p === null ? "—" : Math.round(p * 100) + "%"; }
@@ -532,7 +536,7 @@
     var mo = srActMonths[srActCurMonthIdx];
     var rows = STATION_LIST.map(function (d) {
       var r = computeDistrikMonth(d, mo.y, mo.m);
-      return { Station: d, "Hari Lapor": r.lapor, "Hari Tutup": r.tutup, "Kepatuhan %": r.pct === null ? "-" : Math.round(r.pct * 100), Kategori: r.cat };
+      return { Station: d, "Hari Lapor": r.lapor, "Hari Tutup": r.tutup, "Hari No-Op": r.noop || 0, "Kepatuhan %": r.pct === null ? "-" : Math.round(r.pct * 100), Kategori: r.cat };
     }).sort(function (a, b) { return (typeof b["Kepatuhan %"] === "number" ? b["Kepatuhan %"] : -1) - (typeof a["Kepatuhan %"] === "number" ? a["Kepatuhan %"] : -1); });
     var aktif = rows.filter(function (r) { return r["Hari Lapor"] > 0; }).length;
     var rata = rows.length ? (rows.reduce(function (s, r) { return s + r["Hari Lapor"]; }, 0) / rows.length) : 0;
@@ -696,6 +700,7 @@
     if (s === "l" || s === "lapor" || s === "yes" || s === "y" || s === "1") return "Lapor";
     if (s === "tl" || s === "tidak lapor" || s === "no" || s === "n" || s === "0" || s === "tidaklapor") return "Tidak Lapor";
     if (s === "t" || s === "tutup" || s === "closed" || s === "close") return "Tutup";
+    if (s === "no-op" || s === "noop" || s === "no op" || s === "n/a" || s === "na" || s === "nonoperasional" || s === "non operasional") return "No-Op";
     return "";
   }
 
@@ -747,7 +752,7 @@
           var keterangan = String(col(row, ["keterangan", "catatan", "note", "remark"]) || "").trim();
           if (!dateVal) { errors.push("Baris " + rowNum + ": tanggal tidak valid (\"" + dateRaw + "\")"); skipped++; return; }
           if (!stationRaw) { errors.push("Baris " + rowNum + ": station/distrik kosong"); skipped++; return; }
-          if (!status) { errors.push("Baris " + rowNum + ": status harus Lapor/Tidak Lapor/Tutup (ditemukan: \"" + statusRaw + "\")"); skipped++; return; }
+          if (!status) { errors.push("Baris " + rowNum + ": status harus Lapor/Tidak Lapor/Tutup/No-Op (ditemukan: \"" + statusRaw + "\")"); skipped++; return; }
           if (!STATION_LIST.some(function (s) { return s.toLowerCase() === stationRaw.toLowerCase(); })) {
             STATION_LIST.push(stationRaw);
             newStations.push(stationRaw);
@@ -767,7 +772,7 @@
         if (!added && !updated) {
           var msg = "Import gagal: " + skipped + " baris dilewati.";
           if (errors.length) msg += "\n\nDetail:\n" + errors.slice(0, 8).join("\n") + (errors.length > 8 ? "\n... dan " + (errors.length - 8) + " baris lainnya" : "");
-          msg += "\n\n💡 Format kolom yang dikenali: Tanggal, Station/Distrik, Status (Lapor/Tidak Lapor/Tutup), Keterangan (opsional).";
+          msg += "\n\n💡 Format kolom yang dikenali: Tanggal, Station/Distrik, Status (Lapor/Tidak Lapor/Tutup/No-Op), Keterangan (opsional).";
           "function" == typeof window.showToast && window.showToast("Import gagal — lihat detail", "error");
           setTimeout(function () { alert(msg); }, 100);
           return;
@@ -891,12 +896,13 @@
     document.getElementById("btnSrActAddStation")?.addEventListener("click", openAddStationModal);
     document.getElementById("btnSrActDownloadTemplate")?.addEventListener("click", function () {
       if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("Library XLSX belum termuat", "error"));
-      var sample = STATION_LIST.slice(0, 3);
+      var sample = STATION_LIST.slice(0, 4);
       var today = todayStr();
       var rows = [
         { Tanggal: today, Station: sample[0] || "Ujung Pandang (UPG)", Status: "Lapor", Keterangan: "" },
         { Tanggal: today, Station: sample[1] || "Sorong (SOQ)", Status: "Tidak Lapor", Keterangan: "" },
-        { Tanggal: today, Station: sample[2] || "Jayapura (DJJ)", Status: "Tutup", Keterangan: "Station tutup sementara" }
+        { Tanggal: today, Station: sample[2] || "Jayapura (DJJ)", Status: "Tutup", Keterangan: "Station tutup sementara" },
+        { Tanggal: today, Station: sample[3] || "Timika (TIM)", Status: "No-Op", Keterangan: "Tidak ada penerbangan hari ini (non-daily)" }
       ];
       var ws = XLSX.utils.json_to_sheet(rows);
       ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 14 }, { wch: 30 }];
@@ -1217,6 +1223,8 @@
     MASTER_DISTRIK: MASTER_DISTRIK,
     getStationList: function () { return STATION_LIST.slice(); },
     setStationListFromCloud: function (list) { if (Array.isArray(list)) STATION_LIST = list.slice(); },
+    computeDistrikMonth: computeDistrikMonth,
+    normalizeActStatus: normalizeActStatus,
     refreshAll: function () {
       try {
         rebuildActMonths(true);
