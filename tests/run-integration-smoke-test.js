@@ -1844,6 +1844,45 @@ async function hashSha256(str) {
     assert(localPermsAfter['tab-stcr-data'].user === true, 'the STCR permission change is also correctly picked up, confirming this is a full refresh across the whole permission table, not a narrow one-off fix');
   }
 
+  console.log('\n[84] BUG FOUND FROM USER REPORT: a brand-new browser (different browser, same device — completely empty local sync state) must reliably receive ALL existing cloud data on first login, even with concurrent pull calls');
+  {
+    resetMockFirestore();
+    // Simulate an ESTABLISHED installation already existing in the cloud,
+    // across many buckets — exactly what a long-running SJNAM deployment
+    // would have accumulated.
+    await (async () => {
+      window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+      window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify([{ id: 'k_est_1', nama: 'Karyawan Established', station: 'CGK', updatedAt: new Date().toISOString() }]));
+      window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify({ transactions: [{ id: 't_est_1', date: '2026-06-01', station: 'CGK', item: 'Barang Established' }], bankItems: [{ id: 'bi_est_1', name: 'Item Established' }] }));
+      window.localStorage.setItem('sjnam_stcr_data_v1', JSON.stringify([{ 'App Service & Tehnik': 'EST/2026', Year: 2026, 'Nama Pasien': 'Pasien Established' }]));
+      await window.cloudPush(true); // push everything to the cloud, simulating the established state
+    })();
+
+    // NOW simulate a completely fresh browser: empty local sync tracking AND
+    // empty local business data (a different browser on the same computer
+    // shares nothing — localStorage is per-browser, not per-device).
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {}; window._bucketBase = {};
+    window.localStorage.setItem('sjnam_karyawan_v1', '[]');
+    window.localStorage.setItem('sjnam_drygoods_v1', '{}');
+    window.localStorage.setItem('sjnam_stcr_data_v1', '[]');
+
+    // Simulate the EXACT real-world race: the login screen's background pull
+    // fires (not awaited), and almost immediately the user submits the login
+    // form, triggering auth.js's own wait-for-pull — both hitting cloudPull()
+    // concurrently, exactly like a real fast-typing user on a fresh browser.
+    const backgroundPull = window.cloudPull(true);
+    const loginSubmitPull = window.cloudPull(true);
+    await Promise.all([backgroundPull, loginSubmitPull]);
+
+    const karyawanNow = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    const drygoodsNow = JSON.parse(window.localStorage.getItem('sjnam_drygoods_v1') || '{}');
+    const stcrNow = JSON.parse(window.localStorage.getItem('sjnam_stcr_data_v1') || '[]');
+    assert(karyawanNow.some(k => k.nama === 'Karyawan Established'), 'Karyawan data from the established cloud installation fully arrived on the brand-new browser, got: ' + JSON.stringify(karyawanNow));
+    assert((drygoodsNow.transactions || []).some(t => t.item === 'Barang Established'), 'Drygoods transaction data fully arrived, got: ' + JSON.stringify(drygoodsNow.transactions));
+    assert((drygoodsNow.bankItems || []).some(b => b.name === 'Item Established'), 'Drygoods bankItems (drygoods_meta) fully arrived');
+    assert(stcrNow.some(s => s['Nama Pasien'] === 'Pasien Established'), 'STCR data (from its year-shard) fully arrived, got: ' + JSON.stringify(stcrNow));
+  }
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   if (fail > 0) {
     console.log('Failures:');
