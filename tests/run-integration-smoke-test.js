@@ -127,7 +127,7 @@ async function hashSha256(str) {
       // failures caused purely by lack of network access. beforeParse runs before
       // jsdom starts executing any <script> tags in the document.
       window.tailwind = { config: {} };
-      window.Chart = window.Chart || function () {};
+      window.Chart = window.Chart || function () { this.destroy = function () {}; this.update = function () {}; };
       window.XLSX = window.XLSX || {};
       window.jspdf = window.jspdf || {};
       window.html2canvas = window.html2canvas || function () { return Promise.resolve({}); };
@@ -1742,6 +1742,36 @@ async function hashSha256(str) {
 
     const ids = mockDocIds();
     assert(ids.includes('karyawan'), 'once the pull finished, the previously-scheduled push correctly retried and completed — it was NOT silently dropped, got: ' + JSON.stringify(ids));
+  }
+
+  console.log('\n[80] BUG FOUND FROM USER REPORT: a user DELETED on another device (removed + tombstoned) must be rejected at login, not allowed in on this device\'s stale local data');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    const staleHash = await hashSha256('StaleUser123!');
+    let localUsers = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]').filter(u => u.username !== 'staleuser');
+    localUsers.push({ id: 777888, username: 'staleuser', password: staleHash, role: 'Admin', name: 'Stale User', active: true, created: '2026-01-01', mustChangePassword: false });
+    window.localStorage.setItem('sjnam_users_v1', JSON.stringify(localUsers));
+
+    // Simulate another device having ACTUALLY DELETED this user: removed
+    // from the users array entirely, AND recorded a tombstone — exactly
+    // what user-management.js's real delete flow does.
+    const usersWithoutStale = localUsers.filter(u => u.username !== 'staleuser');
+    seedMockDoc('sjnam_sync', 'users', { payload: { users: usersWithoutStale, _version: 2 }, updated_at: new Date().toISOString() });
+    seedMockDoc('sjnam_sync', 'tombstones', { payload: { deletedTombstones: { users: { '777888': Date.now() } }, _version: 2 }, updated_at: new Date().toISOString() });
+
+    window.document.getElementById('loginUser').value = 'staleuser';
+    window.document.getElementById('loginPass').value = 'StaleUser123!';
+    window.currentUser = null;
+    const form = window.document.getElementById('loginForm');
+    form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 800)); // allow the pull-then-validate flow to complete
+
+    assert(!window.currentUser || window.currentUser.username !== 'staleuser', 'login correctly REJECTED — the deletion (with tombstone) synced and was applied before credentials were validated, got currentUser: ' + JSON.stringify(window.currentUser));
+    const localAfter = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]');
+    const staleUserAfter = localAfter.find(u => u.username === 'staleuser');
+    assert(!staleUserAfter, 'the local users list was correctly refreshed to no longer contain the deleted user at all, got: ' + JSON.stringify(staleUserAfter));
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
