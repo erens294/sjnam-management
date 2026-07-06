@@ -1170,22 +1170,23 @@ async function hashSha256(str) {
     assert(ids.length === 1 && ids[0] === 'karyawan', 'ONLY the "karyawan" document was written — no other bucket document exists in Firestore, got: ' + JSON.stringify(ids));
   }
 
-  console.log('\n[53] cloudPush() with no dirtyHint (generic "Push Sekarang") writes all buckets, but a SECOND silent push with nothing changed writes NOTHING');
+  console.log('\n[53] cloudPush() with no dirtyHint (generic "Push Sekarang") writes all buckets (+ any shards with data), but a SECOND silent push with nothing changed writes NOTHING');
   {
     resetMockFirestore();
     window._bucketTS = {}; window._bucketHash = {};
+    // Clear shard-family source data so the shard count is predictable for this test.
+    window.localStorage.setItem('sjnam_stcr_data_v1', '[]');
+    const dgClean = JSON.parse(window.localStorage.getItem('sjnam_drygoods_v1') || '{}'); dgClean.transactions = []; window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify(dgClean));
 
     const ok1 = await window.cloudPush(true);
     assert(ok1 === true, 'first full push succeeds');
     const idsAfterFirst = mockDocIds();
-    assert(idsAfterFirst.length === window._CLOUD_BUCKETS.length, 'first push writes one document per bucket (' + window._CLOUD_BUCKETS.length + '), got: ' + idsAfterFirst.length);
+    assert(idsAfterFirst.length === window._CLOUD_BUCKETS.length, 'first push writes one document per regular bucket (no shard docs, since shard source arrays are empty) (' + window._CLOUD_BUCKETS.length + '), got: ' + idsAfterFirst.length);
 
     const writeCountBefore = idsAfterFirst.length;
     const ok2 = await window.cloudPush(true); // nothing changed locally since
     assert(ok2 === true, 'second silent push with no changes still resolves true (treated as success, nothing to do)');
-    // Verify no bucket's updateTime advanced (i.e. nothing was actually re-written)
     const collAfter = window.__mockFirestore.collections['sjnam_sync'];
-    const anyDocChanged = Object.keys(collAfter).some(id => collAfter[id].updateTime !== undefined) && false; // placeholder, real check below
     assert(Object.keys(collAfter).length === writeCountBefore, 'no new documents appeared on the redundant push');
   }
 
@@ -1209,8 +1210,9 @@ async function hashSha256(str) {
     const usersDocAfter = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['users']);
     assert(trainingDocBefore === trainingDocAfter, 'Training document in Firestore is COMPLETELY UNCHANGED after a Drygoods-only push (the exact isolation the user asked for)');
     assert(usersDocBefore === usersDocAfter, 'Users document in Firestore is COMPLETELY UNCHANGED after a Drygoods-only push');
-    const dgDoc = window.__mockFirestore.collections['sjnam_sync']['drygoods'];
-    assert(JSON.stringify(dgDoc).includes('trx_granular_test'), 'the Drygoods document itself DOES contain the new transaction');
+    const dgShardDoc = window.__mockFirestore.collections['sjnam_sync']['drygoods_trx_2026'];
+    assert(!!dgShardDoc, 'the new transaction landed in the correct year-shard document (drygoods_trx_2026), got docs: ' + JSON.stringify(mockDocIds()));
+    assert(JSON.stringify(dgShardDoc).includes('trx_granular_test'), 'the shard document itself DOES contain the new transaction');
   }
 
   console.log('\n[55] cloudPull() only downloads/applies buckets that actually changed — verified via a real pull cycle');
@@ -1263,15 +1265,18 @@ async function hashSha256(str) {
     assert(idsAfter === idsBefore, 'pulling again after migration already happened does not create duplicate documents, count stayed at: ' + idsAfter);
   }
 
-  console.log('\n[58] BUG FOUND WHILE ANSWERING USER QUESTION: an unrecognized dirtyHint must NOT create a stray empty document, and safely falls back to a full push');
+  console.log('\n[58] BUG FOUND WHILE ANSWERING USER QUESTION: an unrecognized dirtyHint must NOT create a stray empty document, and safely falls back to a full push (buckets + shard families)');
   {
     resetMockFirestore();
     window._bucketTS = {}; window._bucketHash = {};
+    window.localStorage.setItem('sjnam_stcr_data_v1', '[]');
+    const dgClean = JSON.parse(window.localStorage.getItem('sjnam_drygoods_v1') || '{}'); dgClean.transactions = []; window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify(dgClean));
+
     const ok = await window.cloudPush(true, 'some_totally_unrecognized_hint_xyz');
     assert(ok === true, 'push resolves true even with an unrecognized hint');
     const ids = mockDocIds();
     assert(!ids.includes('some_totally_unrecognized_hint_xyz'), 'NO stray document named after the unrecognized hint was created, got docs: ' + JSON.stringify(ids));
-    assert(ids.length === window._CLOUD_BUCKETS.length, 'instead, it safely fell back to a full push across all real buckets, got: ' + ids.length);
+    assert(ids.length === window._CLOUD_BUCKETS.length, 'instead, it safely fell back to a full push across all real buckets (no shard docs since shard sources are empty), got: ' + ids.length);
   }
 
   console.log('\n[58b] FIX FOR THE ACTUAL REPORTED BUG: station-report.js\'s raw localStorage key now correctly routes to the "station_report" bucket alone (not a full push, not a stray doc)');
@@ -1527,6 +1532,196 @@ async function hashSha256(str) {
     await window._sweepUnsyncedBucketsOnce();
     const ids = mockDocIds();
     assert(!ids.includes('station_report'), 'an empty bucket is correctly skipped by the sweep, not pushed as noise');
+  }
+
+  console.log('\n=== NEW FEATURE: "No-Op" status for Activity Report (non-daily flight stations) ===\n');
+
+  console.log('\n[70] No-Op days are EXCLUDED from the compliance denominator — unlike "Tidak Lapor", which IS counted as a miss');
+  {
+    const y = 2026, m = 3; // fully-elapsed past month, so the full days-in-month applies
+    const distrik = 'Test Station No-Op (TSN)';
+    let act = window.STATION_REPORT.getActivityData().filter(r => r.distrik !== distrik);
+    // March 2026 has 31 days. Mark 10 as No-Op (station simply has no flight
+    // those days), 5 as Lapor, and leave the rest untouched (implicitly "not reported").
+    for (let d = 1; d <= 10; d++) act.push({ id: 'noop_' + d, tanggal: '2026-03-' + String(d).padStart(2, '0'), distrik: distrik, status: 'No-Op', updatedAt: new Date().toISOString() });
+    for (let d = 11; d <= 15; d++) act.push({ id: 'lapor_' + d, tanggal: '2026-03-' + String(d).padStart(2, '0'), distrik: distrik, status: 'Lapor', updatedAt: new Date().toISOString() });
+    window.localStorage.setItem('sjnam_station_activity_v1', JSON.stringify(act));
+
+    const r = window.STATION_REPORT.computeDistrikMonth(distrik, y, m);
+    assert(r.noop === 10, 'computeDistrikMonth correctly counts 10 No-Op days, got: ' + r.noop);
+    assert(r.lapor === 5, 'computeDistrikMonth correctly counts 5 Lapor days, got: ' + r.lapor);
+    // Effective days = 31 total - 10 No-Op = 21. Compliance = 5/21 ≈ 23.8%.
+    const expectedPct = 5 / (31 - 10);
+    assert(Math.abs(r.pct - expectedPct) < 0.001, 'compliance % correctly excludes No-Op days from the denominator (5/21≈' + Math.round(expectedPct * 100) + '%), got: ' + Math.round(r.pct * 100) + '%');
+
+    // Contrast: if those same 10 days had been "Tidak Lapor" instead (explicit miss),
+    // the denominator would NOT shrink — proving No-Op and Tidak Lapor behave differently.
+    let actTL = window.STATION_REPORT.getActivityData().filter(r2 => r2.distrik !== distrik);
+    for (let d = 1; d <= 10; d++) actTL.push({ id: 'tl_' + d, tanggal: '2026-03-' + String(d).padStart(2, '0'), distrik: distrik, status: 'Tidak Lapor', updatedAt: new Date().toISOString() });
+    for (let d = 11; d <= 15; d++) actTL.push({ id: 'lapor2_' + d, tanggal: '2026-03-' + String(d).padStart(2, '0'), distrik: distrik, status: 'Lapor', updatedAt: new Date().toISOString() });
+    window.localStorage.setItem('sjnam_station_activity_v1', JSON.stringify(actTL));
+    const r2 = window.STATION_REPORT.computeDistrikMonth(distrik, y, m);
+    const expectedPctTL = 5 / 31;
+    assert(Math.abs(r2.pct - expectedPctTL) < 0.001, '"Tidak Lapor" days do NOT shrink the denominator (5/31≈' + Math.round(expectedPctTL * 100) + '%) — confirming it behaves differently from No-Op, got: ' + Math.round(r2.pct * 100) + '%');
+    assert(r2.pct < r.pct, 'as expected, a station with explicit "Tidak Lapor" misses scores WORSE than one with the same missed days marked "No-Op"');
+  }
+
+  console.log('\n[71] Excel import correctly recognizes "No-Op" status tokens, without colliding with existing "Tidak Lapor" tokens (no/n)');
+  {
+    const nao = window.STATION_REPORT.normalizeActStatus;
+    assert(nao('No-Op') === 'No-Op', 'exact "No-Op" recognized');
+    assert(nao('noop') === 'No-Op', '"noop" recognized');
+    assert(nao('N/A') === 'No-Op', '"N/A" recognized');
+    assert(nao('na') === 'No-Op', '"na" recognized');
+    assert(nao('no') === 'Tidak Lapor', 'existing "no" token still correctly maps to Tidak Lapor (no collision introduced)');
+    assert(nao('n') === 'Tidak Lapor', 'existing "n" token still correctly maps to Tidak Lapor (no collision introduced)');
+    assert(nao('tutup') === 'Tutup', 'existing "tutup" token still works correctly');
+  }
+
+  console.log('\n[72] A month where EVERY day is No-Op (edge case, station never operates) does not crash and falls back gracefully');
+  {
+    const distrik = 'Test AllNoOp Station (XXX)';
+    let act = window.STATION_REPORT.getActivityData().filter(r => r.distrik !== distrik);
+    for (let d = 1; d <= 30; d++) act.push({ id: 'allnoop_' + d, tanggal: '2026-04-' + String(d).padStart(2, '0'), distrik: distrik, status: 'No-Op', updatedAt: new Date().toISOString() });
+    window.localStorage.setItem('sjnam_station_activity_v1', JSON.stringify(act));
+    const r = window.STATION_REPORT.computeDistrikMonth(distrik, 2026, 4);
+    assert(r.pct === null, 'a fully No-Op month correctly returns null percentage (no crash, no division by zero), got: ' + r.pct);
+  }
+
+  console.log('\n=== BUG FOUND FROM USER REPORT: partial push failures were silently swallowed ===\n');
+
+  console.log('\n[73] When ONE bucket fails to push while OTHERS succeed, the successful ones still reach Firestore, and the failure is tracked (not silently marked as full success)');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify([{ id: 'k1', nama: 'Test', station: 'CGK', updatedAt: new Date().toISOString() }]));
+    window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify({ transactions: [{ id: 't1', date: '2026-07-01', station: 'CGK', item: 'Test Item', type: 'IN', qty: 1 }], bankItems: [] }));
+
+    // Make PATCH requests to the "drygoods" bucket specifically fail, while everything else succeeds normally.
+    const realFetch = window.fetch;
+    window.fetch = async function (url, opts) {
+      if (String(url).includes('/sjnam_sync/drygoods') && opts && opts.method === 'PATCH') {
+        throw new Error('Simulated failure (e.g. document too large)');
+      }
+      return realFetch(url, opts);
+    };
+
+    let ok;
+    try {
+      ok = await window.cloudPush(true); // push all buckets
+    } finally {
+      window.fetch = realFetch; // always restore, even if the assertion below throws
+    }
+
+    assert(ok === true, 'cloudPush still resolves true overall (partial success), since most buckets DID succeed');
+    const ids = mockDocIds();
+    assert(ids.includes('karyawan'), 'the karyawan bucket (unaffected by the simulated failure) was correctly pushed to Firestore');
+    assert(!ids.includes('drygoods'), 'the drygoods bucket, which failed, correctly did NOT silently appear as if it succeeded — it is genuinely absent from Firestore');
+    assert(!window._bucketHash['drygoods'], 'drygoods bucket hash/timestamp bookkeeping was NOT updated for the failed bucket (so a future push attempt will correctly retry it, not think it is already up to date)');
+  }
+
+  console.log('\n=== NEW FEATURE: per-year sharding for STCR (and Drygoods transactions once uploaded) — prevents Firestore 1MB document limit ===\n');
+
+  console.log('\n[74] STCR records across multiple years correctly split into SEPARATE year-shard documents, not one big document');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    const stcrRecords = [
+      { 'App Service & Tehnik': '001/SJ/I/2024', Year: 2024, Month: 'Jan', 'Nama Pasien': 'Test 2024' },
+      { 'App Service & Tehnik': '001/SJ/I/2025', Year: 2025, Month: 'Jan', 'Nama Pasien': 'Test 2025' },
+      { 'App Service & Tehnik': '001/SJ/I/2026', Year: 2026, Month: 'Jan', 'Nama Pasien': 'Test 2026' },
+    ];
+    window.localStorage.setItem('sjnam_stcr_data_v1', JSON.stringify(stcrRecords));
+    await window.cloudPush(true, 'stcrData');
+
+    const ids = mockDocIds();
+    assert(ids.includes('stcr_2024') && ids.includes('stcr_2025') && ids.includes('stcr_2026'), 'three separate year-shard documents were created, got: ' + JSON.stringify(ids));
+    assert(!ids.includes('stcr'), 'no single combined "stcr" document exists — fully sharded');
+    const doc2024 = window.__mockFirestore.collections['sjnam_sync']['stcr_2024'];
+    assert(JSON.stringify(doc2024).includes('Test 2024') && !JSON.stringify(doc2024).includes('Test 2025'), 'the 2024 shard contains ONLY the 2024 record, not other years');
+  }
+
+  console.log('\n[75] Adding a NEW STCR record for one year does not touch the Firestore document for a DIFFERENT year (this is the whole point of sharding)');
+  {
+    // Continuing from test 74's state: add one more 2026 record only.
+    let stcrRecords = JSON.parse(window.localStorage.getItem('sjnam_stcr_data_v1'));
+    stcrRecords.push({ 'App Service & Tehnik': '002/SJ/I/2026', Year: 2026, Month: 'Jan', 'Nama Pasien': 'Test 2026 B' });
+    window.localStorage.setItem('sjnam_stcr_data_v1', JSON.stringify(stcrRecords));
+
+    const doc2024Before = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['stcr_2024']);
+    const doc2025Before = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['stcr_2025']);
+    await window.cloudPush(true, 'stcrData');
+    const doc2024After = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['stcr_2024']);
+    const doc2025After = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['stcr_2025']);
+
+    assert(doc2024Before === doc2024After, 'the 2024 shard document is completely untouched (byte-identical) after adding a 2026 record');
+    assert(doc2025Before === doc2025After, 'the 2025 shard document is completely untouched after adding a 2026 record');
+    const doc2026 = window.__mockFirestore.collections['sjnam_sync']['stcr_2026'];
+    assert(JSON.stringify(doc2026).includes('Test 2026 B'), 'the new record correctly landed in the 2026 shard');
+  }
+
+  console.log('\n[76] LEGACY MIGRATION: an old single "stcr" document (pre-sharding) is automatically split into per-year shard documents on first pull');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    const legacyStcr = [
+      { 'App Service & Tehnik': 'A/2024', Year: 2024, 'Nama Pasien': 'Legacy 2024' },
+      { 'App Service & Tehnik': 'A/2025', Year: 2025, 'Nama Pasien': 'Legacy 2025' },
+    ];
+    seedMockDoc('sjnam_sync', 'stcr', { payload: { stcrData: legacyStcr }, updated_at: new Date().toISOString() });
+    assert(mockDocIds().length === 1 && mockDocIds()[0] === 'stcr', 'sanity: only the legacy unsharded document exists before migration');
+
+    window.localStorage.setItem('sjnam_stcr_data_v1', '[]');
+    await window.cloudPull(true);
+
+    const idsAfter = mockDocIds();
+    assert(idsAfter.includes('stcr_2024') && idsAfter.includes('stcr_2025'), 'migration split the legacy document into per-year shards, got: ' + JSON.stringify(idsAfter));
+    assert(idsAfter.includes('stcr'), 'the old legacy document is left in place (not destructively deleted)');
+    const localAfter = JSON.parse(window.localStorage.getItem('sjnam_stcr_data_v1'));
+    const names = localAfter.map(r => r['Nama Pasien']);
+    assert(names.includes('Legacy 2024') && names.includes('Legacy 2025'), 'both years\' data correctly landed locally after migration, got: ' + JSON.stringify(names));
+  }
+
+  console.log('\n[77] Two devices adding DIFFERENT records to the SAME year must both survive (merge within a shard works correctly)');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    window.localStorage.setItem('sjnam_stcr_data_v1', JSON.stringify([{ 'App Service & Tehnik': 'A/2026', Year: 2026, 'Nama Pasien': 'Admin Entry' }]));
+    await window.cloudPush(true, 'stcrData'); // baseline for 2026 shard
+
+    // Another device adds a DIFFERENT 2026 record directly to the cloud shard
+    seedMockDoc('sjnam_sync', 'stcr_2026', { payload: { items: [{ 'App Service & Tehnik': 'A/2026', Year: 2026, 'Nama Pasien': 'Admin Entry' }, { 'App Service & Tehnik': 'B/2026', Year: 2026, 'Nama Pasien': 'Jajat Entry' }], _version: 2 }, updated_at: new Date().toISOString() });
+
+    await window.cloudPull(true);
+    const localAfter = JSON.parse(window.localStorage.getItem('sjnam_stcr_data_v1'));
+    const names = localAfter.map(r => r['Nama Pasien']);
+    assert(names.includes('Admin Entry') && names.includes('Jajat Entry'), 'both devices\' 2026 entries are present after pulling — exactly the reported bug scenario, now fixed, got: ' + JSON.stringify(names));
+  }
+
+  console.log('\n[78] Drygoods transactions ALSO shard by year (ready the moment drygoods.js is uploaded/used), while bankItems (drygoods_meta) stays separate and untouched');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify({
+      transactions: [
+        { id: 't2025', date: '2025-06-01', station: 'CGK', item: 'Old Item' },
+        { id: 't2026', date: '2026-06-01', station: 'CGK', item: 'New Item' }
+      ],
+      bankItems: [{ id: 'bi1', name: 'Test Bank Item' }]
+    }));
+    await window.cloudPush(true, 'drygoodsData');
+
+    const ids = mockDocIds();
+    assert(ids.includes('drygoods_trx_2025') && ids.includes('drygoods_trx_2026'), 'Drygoods transactions correctly split into per-year shards, got: ' + JSON.stringify(ids));
+    assert(ids.includes('drygoods_meta'), 'bankItems landed in the separate drygoods_meta document');
+    assert(!ids.includes('drygoods'), 'no single combined "drygoods" document exists');
+    const metaDoc = JSON.stringify(window.__mockFirestore.collections['sjnam_sync']['drygoods_meta']);
+    assert(metaDoc.includes('Test Bank Item') && !metaDoc.includes('New Item'), 'drygoods_meta contains bankItems but NOT transaction data (properly separated)');
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
