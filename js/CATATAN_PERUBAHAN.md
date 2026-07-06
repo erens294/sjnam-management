@@ -1323,3 +1323,48 @@ untuk memastikan:
    dan saya perlu tahu itu untuk menelusuri lebih jauh lagi.
 
 Mohon info hasil tes nomor 3 atau 4 di atas supaya saya tahu langkah selanjutnya yang tepat.
+
+---
+
+## Update 31: Bug KEAMANAN ditemukan — user yang sudah dihapus masih bisa login
+
+### Akar masalah (menjawab pertanyaan #2 Anda)
+Layar login **tidak pernah** menarik data terbaru dari cloud sebelum memvalidasi username/
+password. Semua mekanisme tarik-data (pull) di aplikasi ini hanya berjalan **setelah** ada yang
+berhasil login — jadi justru di saat yang paling penting (sebelum memutuskan siapa boleh masuk),
+sistem memakai data yang bisa sangat usang. Kalau Admin menghapus user di device lain, device yang
+belum sempat menarik pembaruan itu akan tetap mengizinkan user tsb login — dan **hard refresh
+(Ctrl+Shift+R) tidak membantu sama sekali**, karena itu hanya membersihkan cache kode, bukan data
+yang tersimpan di localStorage.
+
+### Perbaikan
+- File: `js/auth.js`.
+- Sekarang, begitu ada percobaan login, sistem menunggu sebentar (maksimal 2,5 detik) untuk
+  menarik daftar user terbaru dari cloud SEBELUM memvalidasi kredensial. Selain itu, penarikan data
+  ini juga mulai berjalan di latar belakang begitu layar login pertama muncul (sebelum orang sempat
+  mengetik apa pun) — supaya di kebanyakan kasus, saat form login disubmit, data sudah lebih dulu
+  siap dan proses terasa instan.
+
+### Bug tambahan yang ditemukan saat menelusuri ini (`js/shared-utils.js`)
+Saat menguji perbaikan di atas, ditemukan bug lain yang lebih dalam: proses penggabungan data User
+& Karyawan dari cloud selama ini membiarkan **data lokal SELALU menang** dibanding data cloud untuk
+akun dengan ID yang sama — bukan berdasarkan mana yang benar-benar lebih baru. Ini bisa membuat
+perubahan yang sah dari device lain (misalnya menonaktifkan akun) tidak pernah benar-benar
+diterapkan di device yang kebetulan punya salinan lokal lama untuk akun yang sama. Sudah diperbaiki
+untuk membandingkan waktu pembaruan yang sebenarnya.
+
+### Verifikasi
+Ditambahkan test yang meniru persis skenario Anda: user dihapus (dihapus dari daftar + dicatat
+sebagai tombstone) di satu device, device lain yang datanya masih usang mencoba login memakai akun
+itu — dibuktikan penarikan data terbaru berhasil terjadi SEBELUM validasi kredensial, dan login
+ditolak dengan benar. **Total 290 dari 290 test lulus.**
+
+### Soal pertanyaan #1 Anda (data yang sudah ada tidak terbaca oleh user baru)
+Untuk ini saya perlu sedikit klarifikasi supaya tidak salah menebak: semua data bisnis di aplikasi
+ini (Delay, Karyawan, Drygoods, STCR, dll.) **tidak terikat ke user tertentu** — begitu Anda buat
+user baru dan mereka login di device yang SAMA dengan Anda, mereka seharusnya melihat data yang
+identik (selama role mereka punya akses ke tab tersebut). Kalau yang Anda maksud adalah: user baru
+login di **device yang berbeda** dan tidak melihat data — itu soal device tersebut belum pernah
+menarik data dari cloud (mirip kasus Vera sebelumnya, sudah ada perbaikan otomatis untuk ini di
+Update 26). Kalau yang Anda maksud sesuatu yang lain (misalnya tab/menu tertentu yang tidak
+muncul), boleh beri tahu saya tab spesifiknya supaya saya bisa telusuri lebih tepat.

@@ -1191,8 +1191,23 @@ function() {
                 const _localUsers = function() { try { return JSON.parse(localStorage.getItem("sjnam_users_v1") || "null") } catch (e) { return null } }();
                 let _mergedUsers = rec.users;
                 if (_localUsers && Array.isArray(_localUsers)) {
+                    // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya, data LOKAL selalu
+                    // menang mengalahkan data CLOUD untuk record dengan id yang
+                    // sama, apa pun isinya — bukan berdasarkan mana yang benar-
+                    // benar lebih baru. Ini bisa membuat perubahan yang sudah
+                    // benar dari device lain (mis. menonaktifkan/menghapus user)
+                    // tidak pernah benar-benar diterapkan di device yang punya
+                    // data lokal lama untuk id yang sama. Sekarang memakai
+                    // perbandingan waktu (_updatedAt) yang sebenarnya.
                     const _userMap = new Map;
-                    rec.users.forEach(u => { u.id && _userMap.set(u.id, u) }), _localUsers.forEach(u => { u.id && _userMap.set(u.id, u) }), _mergedUsers = Array.from(_userMap.values())
+                    rec.users.forEach(u => { u.id && _userMap.set(u.id, u) });
+                    _localUsers.forEach(u => {
+                        if (!u.id) return;
+                        const existing = _userMap.get(u.id);
+                        if (!existing) return void _userMap.set(u.id, u);
+                        _userMap.set(u.id, detectConflict(u, existing).winner)
+                    });
+                    _mergedUsers = Array.from(_userMap.values())
                 }
                 _mergedUsers = _filterTombstoned("users", _mergedUsers), localStorage.setItem("sjnam_users_v1", JSON.stringify(_mergedUsers)), window._userSelectedIds && window._userSelectedIds.clear(), typeof renderUserTable === "function" && renderUserTable()
             }
@@ -1203,8 +1218,17 @@ function() {
                 const _localKar = function() { try { return JSON.parse(localStorage.getItem("sjnam_karyawan_v1") || "null") } catch (e) { return null } }();
                 let _mergedKar = rec.karyawan;
                 if (_localKar && Array.isArray(_localKar)) {
+                    // Sama seperti perbaikan "users" di atas — bandingkan waktu
+                    // sebenarnya, jangan biarkan data lokal menang secara buta.
                     const _karMap = new Map;
-                    rec.karyawan.forEach(k => { k.id && _karMap.set(k.id, k) }), _localKar.forEach(k => { k.id && _karMap.set(k.id, k) }), _mergedKar = Array.from(_karMap.values())
+                    rec.karyawan.forEach(k => { k.id && _karMap.set(k.id, k) });
+                    _localKar.forEach(k => {
+                        if (!k.id) return;
+                        const existing = _karMap.get(k.id);
+                        if (!existing) return void _karMap.set(k.id, k);
+                        _karMap.set(k.id, detectConflict(k, existing).winner)
+                    });
+                    _mergedKar = Array.from(_karMap.values())
                 }
                 _mergedKar = _filterTombstoned("karyawan", _mergedKar), localStorage.setItem("sjnam_karyawan_v1", JSON.stringify(_mergedKar)), typeof window.setKaryawanData === "function" && window.setKaryawanData(_mergedKar), typeof window.renderKaryawanUserOptions === "function" && window.renderKaryawanUserOptions();
                 (function() {
