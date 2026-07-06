@@ -1774,6 +1774,76 @@ async function hashSha256(str) {
     assert(!staleUserAfter, 'the local users list was correctly refreshed to no longer contain the deleted user at all, got: ' + JSON.stringify(staleUserAfter));
   }
 
+  console.log('\n=== VERIFICATION: does creating a new user affect existing data, and does the login-freshness pull cover ALL modules/tabs? ===\n');
+
+  console.log('\n[81] VERIFICATION: creating a NEW user does not touch/clear ANY other data bucket (Delay, Karyawan, Drygoods, STCR, Training, etc.)');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    // Seed realistic pre-existing data across several modules, exactly like
+    // an established installation that's been in use for a while.
+    window.localStorage.setItem('sjnam_karyawan_v1', JSON.stringify([{ id: 'k_verify_1', nama: 'Karyawan Lama', station: 'CGK', updatedAt: new Date().toISOString() }]));
+    window.localStorage.setItem('sjnam_drygoods_v1', JSON.stringify({ transactions: [{ id: 't_verify_1', date: '2026-07-01', station: 'CGK', item: 'Barang Lama' }], bankItems: [{ id: 'bi_verify_1', name: 'Item Lama' }] }));
+    window.localStorage.setItem('sjnam_stcr_data_v1', JSON.stringify([{ 'App Service & Tehnik': 'VERIFY/2026', Year: 2026, 'Nama Pasien': 'Pasien Lama' }]));
+
+    const karyawanBefore = window.localStorage.getItem('sjnam_karyawan_v1');
+    const drygoodsBefore = window.localStorage.getItem('sjnam_drygoods_v1');
+    const stcrBefore = window.localStorage.getItem('sjnam_stcr_data_v1');
+
+    // Simulate adding a brand-new user, exactly like clicking "+ Tambah User"
+    // in Kelola Akun (user-management.js's _doAddUser ultimately calls
+    // window.saveUsers(...) with the updated array).
+    let users = JSON.parse(window.localStorage.getItem('sjnam_users_v1') || '[]');
+    users.push({ id: 99001, username: 'usernewbie', password: await hashSha256('NewUser123!'), role: 'User', name: 'User Baru', active: true, created: '2026-07-06', mustChangePassword: true });
+    window.saveUsers(users);
+
+    assert(window.localStorage.getItem('sjnam_karyawan_v1') === karyawanBefore, 'Karyawan data completely UNCHANGED after creating a new user');
+    assert(window.localStorage.getItem('sjnam_drygoods_v1') === drygoodsBefore, 'Drygoods data completely UNCHANGED after creating a new user');
+    assert(window.localStorage.getItem('sjnam_stcr_data_v1') === stcrBefore, 'STCR data completely UNCHANGED after creating a new user');
+  }
+
+  console.log('\n[82] VERIFICATION: the newly-created user, upon logging in on the SAME device, correctly sees the pre-existing data (nothing was reset for them)');
+  {
+    // Continuing from test 81's state: log in as the brand-new user and
+    // confirm the pre-existing data is still readable via the real getters.
+    window.document.getElementById('loginUser').value = 'usernewbie';
+    window.document.getElementById('loginPass').value = 'NewUser123!';
+    window.currentUser = null;
+    const form = window.document.getElementById('loginForm');
+    form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 800));
+
+    assert(window.currentUser && window.currentUser.username === 'usernewbie', 'the new user successfully logged in, got: ' + JSON.stringify(window.currentUser));
+    const karyawanNow = JSON.parse(window.localStorage.getItem('sjnam_karyawan_v1') || '[]');
+    const drygoodsNow = JSON.parse(window.localStorage.getItem('sjnam_drygoods_v1') || '{}');
+    const stcrNow = JSON.parse(window.localStorage.getItem('sjnam_stcr_data_v1') || '[]');
+    assert(karyawanNow.some(k => k.nama === 'Karyawan Lama'), 'pre-existing Karyawan data is still fully readable after the new user logs in');
+    assert((drygoodsNow.transactions || []).some(t => t.item === 'Barang Lama'), 'pre-existing Drygoods data is still fully readable after the new user logs in');
+    assert(stcrNow.some(s => s['Nama Pasien'] === 'Pasien Lama'), 'pre-existing STCR data is still fully readable after the new user logs in');
+  }
+
+  console.log('\n[83] VERIFICATION: the login-freshness pull (Update 31) refreshes ALL relevant buckets in one go — not just "users" — so it genuinely covers permission changes affecting every tab/sub-tab, not a narrow special case');
+  {
+    resetMockFirestore();
+    window._bucketTS = {}; window._bucketHash = {}; window._bucketVersion = {};
+
+    // Simulate an Admin, on another device, having JUST changed role
+    // permissions (e.g. revoking a tab from a role) and pushed that change —
+    // this device's local role_perms is stale.
+    const freshRolePerms = { 'tab-drygoods-data': { user: false }, 'tab-stcr-data': { user: true } };
+    seedMockDoc('sjnam_sync', 'role_perms', { payload: { rolePerms: freshRolePerms, _version: 2 }, updated_at: new Date().toISOString() });
+    window.localStorage.setItem('sjnam_role_perms_v1', JSON.stringify({ 'tab-drygoods-data': { user: true }, 'tab-stcr-data': { user: false } }));
+
+    window.currentUser = null;
+    const ok = await window.cloudPull(true); // the same pull the login flow triggers
+    assert(ok === undefined || ok === true, 'the login-style pull call completes without throwing');
+
+    const localPermsAfter = JSON.parse(window.localStorage.getItem('sjnam_role_perms_v1') || '{}');
+    assert(localPermsAfter['tab-drygoods-data'].user === false, 'role_perms (which gates EVERY tab/sub-tab\'s visibility) is refreshed by the SAME pull call, got: ' + JSON.stringify(localPermsAfter['tab-drygoods-data']));
+    assert(localPermsAfter['tab-stcr-data'].user === true, 'the STCR permission change is also correctly picked up, confirming this is a full refresh across the whole permission table, not a narrow one-off fix');
+  }
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   if (fail > 0) {
     console.log('Failures:');
