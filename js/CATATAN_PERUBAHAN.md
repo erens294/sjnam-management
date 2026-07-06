@@ -1129,3 +1129,42 @@ Dengan update ini, **semua data isi aplikasi** (bukan preferensi tampilan) sudah
 granular — 13 bucket mencakup seluruh tab dan sub-tab yang ada saat ini. Kalau ke depan ada tab
 baru ditambahkan, saya akan selalu mengecek dan memasukkannya ke sistem ini sebagai bagian dari
 pengerjaan tab tersebut, bukan menunggu dilaporkan lagi.
+
+---
+
+## Update 26: Perbaikan permanen — data lama tidak otomatis terkirim setelah bucket baru ditambahkan
+
+Ini akar masalah untuk laporan Anda: data Vera masih 0/kosong padahal sudah hard refresh & hapus-
+tambah user.
+
+### Akar masalah
+Data Activity Report Admin (28 hari yang sudah ada) dimasukkan **sebelum** modul ini punya sistem
+sync. Sistem hanya mengirim data ke cloud saat ada **penyimpanan baru** — kalau Admin tidak sempat
+mengedit ulang apa pun di Activity Report sejak update dipasang, data lama itu **belum pernah
+terkirim ke cloud sama sekali**. Vera menarik data dari cloud dan menemukan kosong bukan karena
+penggabungannya salah — tidak ada apa pun untuk digabungkan, karena memang belum pernah dikirim.
+Menghapus & menambah ulang akun Vera tidak berpengaruh karena data Activity Report tidak terikat
+ke user tertentu.
+
+### Perbaikan permanen
+- File: `js/shared-utils.js`.
+- Ditambahkan **pemeriksaan otomatis sekali saat login**: setiap device mengecek SEMUA 13 bucket —
+  kalau ada bucket yang punya data lokal tapi device itu belum pernah berhasil mengirimnya sama
+  sekali, data itu otomatis dikirim, tanpa perlu user mengedit apa pun secara manual.
+- Ini bukan cuma perbaikan untuk Activity Report — ini menutup celah yang sama untuk **bucket
+  apa pun yang ditambahkan di masa depan**: begitu modul baru ditambahkan ke sistem sync, data lama
+  yang sudah ada di device manapun akan otomatis "terdorong" naik ke cloud saat device itu login
+  berikutnya, tidak akan pernah lagi tersangkut seperti kasus Activity Report ini.
+- Bucket kosong (belum ada data sama sekali) otomatis dilewati, tidak ikut dikirim sebagai data
+  kosong yang tidak perlu.
+
+### Verifikasi
+Ditambahkan 2 test baru: (1) membuktikan data historis yang belum pernah tersinkron benar-benar
+terkirim otomatis tanpa edit manual; (2) memastikan bucket kosong tidak ikut terkirim sebagai
+noise. **Total 253 dari 253 test lulus.**
+
+### Yang perlu Anda lakukan
+Upload `index.html` dan `js/shared-utils.js` ke server, lalu **Admin login sekali** (tidak perlu
+melakukan apa pun selain login dan tunggu ±3 detik) — data Activity Report yang sudah ada akan
+otomatis terkirim ke cloud saat itu. Setelah itu, Vera tinggal refresh halamannya (atau tunggu
+siklus sync otomatis berikutnya) dan datanya akan muncul.
