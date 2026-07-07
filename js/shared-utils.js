@@ -407,7 +407,13 @@ function() {
                 localStorage.setItem("sjnam_stcr_data_v1", JSON.stringify(arr));
                 window.STCR && typeof window.STCR.loadData === "function" && (window.STCR.loadData(), typeof window.STCR.applyFilters === "function" && window.STCR.applyFilters())
             },
-            shardKeyOf: function (r) { return String(r && r.Year || "unknown") },
+            // [BUG FIX — konsisten dengan perbaikan drygoods_trx] Sebelumnya
+            // di-shard PER TAHUN saja ("stcr_2024"). Data STCR sudah punya
+            // field "Month" ("Jan","Feb",...) per record, jadi bisa langsung
+            // dipecah lebih halus per tahun+bulan tanpa perlu parsing tanggal
+            // tambahan — memberi ruang ~12x lebih banyak sebelum berisiko
+            // kena limit 1MB Firestore yang sama seperti drygoods_trx.
+            shardKeyOf: function (r) { return String(r && r.Year || "unknown") + "-" + String(r && r.Month || "00") },
             idKeyOf: function (r) { return r && (r["App Service & Tehnik"] || JSON.stringify(r)) },
             legacyDataPath: "stcrData"
         },
@@ -1063,6 +1069,22 @@ function() {
                     }
                 }
                 mergedPayload._pushedBy = getDeviceId(), mergedPayload._pushedAt = (new Date).toISOString(), mergedPayload._version = Math.max(cloudVersion, knownVersion) + 1;
+                // [BUG FIX] Bucket di sini (delay_data/Service Recovery,
+                // station_report, dfs_stations, training, drygoods_meta, dll)
+                // BELUM dipecah per periode seperti drygoods_trx/stcr — masing-
+                // masing masih 1 dokumen utuh untuk SEMUA datanya. Supaya kalau
+                // salah satu mendekati/melewati limit 1MB Firestore, kegagalannya
+                // KETAHUAN JELAS (bukan gagal diam-diam terus-menerus seperti
+                // kasus drygoods_trx sebelumnya), size-nya dicek dulu di sini.
+                // Ambang 900KB (bukan pas 1MB) supaya ada peringatan DINI
+                // sebelum benar-benar mentok, memberi waktu untuk direncanakan
+                // pemecahan per periode seperti drygoods_trx/stcr kalau perlu.
+                const _mergedBytes = new Blob ? new Blob([JSON.stringify(mergedPayload)]).size : JSON.stringify(mergedPayload).length;
+                if (_mergedBytes > 1048576) {
+                    throw new Error("Data " + bucketId + " (" + (_mergedBytes / 1048576).toFixed(2) + " MB) melebihi batas 1MB Firestore. Hubungi admin sistem — modul ini perlu dipecah per periode seperti Drygoods/STCR.");
+                } else if (_mergedBytes > 943718) {
+                    cloudLog("⚠️ Data " + bucketId + " sudah " + (_mergedBytes / 1048576).toFixed(2) + " MB (mendekati batas 1MB Firestore) — pertimbangkan pemecahan per periode sebelum penuh.", "info");
+                }
                 const upsertResult = await neonUpsert("sjnam_sync", bucketId, { payload: mergedPayload, updated_at: (new Date).toISOString() });
                 const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || mergedPayload._pushedAt;
                 window._bucketHash[bucketId] = _hashPayload(mergedPayload), window._bucketTS[bucketId] = serverUpdatedAt, window._bucketVersion[bucketId] = mergedPayload._version;
