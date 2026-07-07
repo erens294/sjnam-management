@@ -671,8 +671,6 @@ document.getElementById('editUserModalSave')?.addEventListener('click', function
   const user = users.find(u => u.id === id);
   if (!user) { showToast('Akun tidak ditemukan', 'error'); return; }
 
-  let roleOrStatusChanged = false;
-
   if (isMasterOrAdmin && newRole && newRole !== user.role) {
     if (newRole === 'Peserta' && user.role !== 'Peserta') {
       if (users.filter(u => u.role === 'Peserta').length >= 150) {
@@ -680,22 +678,25 @@ document.getElementById('editUserModalSave')?.addEventListener('click', function
       }
     }
     user.role = newRole;
-    roleOrStatusChanged = true;
   }
 
   if (user.username !== window.currentUser.username) {
-    if (user.active !== isActive) roleOrStatusChanged = true;
     user.active = isActive;
   }
 
-  // [BUG FIX] Sama seperti pembuatan akun baru — tanpa stamping ini,
-  // perubahan role/status di sini tidak akan pernah "menang" saat
-  // disinkronkan ke device yang sudah punya salinan lokal akun ini,
-  // sehingga device itu tetap melihat role/status yang lama.
-  if (roleOrStatusChanged) {
-    user._updatedAt = new Date().toISOString();
-    user._updatedBy = (window.currentUser && (window.currentUser.name || window.currentUser.username)) || 'system';
-  }
+  // [BUG FIX — REVISI] Sebelumnya stamping hanya dilakukan KALAU role/status
+  // benar-benar berubah dibanding nilai yang sudah ada di memori. Masalahnya:
+  // untuk akun yang PERNAH diedit sebelum fix ini ada (role sudah benar
+  // tersimpan LOKAL tapi belum pernah di-stamp _updatedAt), klik "Simpan"
+  // tanpa mengubah dropdown (karena rolenya memang sudah benar) TIDAK
+  // menghasilkan timestamp baru sama sekali — sehingga device lain tetap
+  // tidak pernah menerima data itu sebagai "lebih baru". Klik tombol Simpan
+  // adalah tindakan eksplisit Admin/Master untuk mengonfirmasi kondisi akun
+  // ini sekarang — jadi SELALU distamp setiap kali tombol ini diklik,
+  // apa pun isinya, supaya data lama yang belum pernah ter-stamp bisa
+  // "dibetulkan" cukup dengan membuka modal ini lalu klik Simpan sekali.
+  user._updatedAt = new Date().toISOString();
+  user._updatedBy = (window.currentUser && (window.currentUser.name || window.currentUser.username)) || 'system';
 
   if (user.username === window.currentUser.username) {
     window.currentUser.role = user.role;
