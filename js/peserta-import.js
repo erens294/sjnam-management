@@ -20,7 +20,6 @@
   "use strict";
 
   var TEMPLATE_COLS = [
-    "No Sertifikat (opsional)",
     "Tanggal Training",
     "Jam Training",
     "Airlines",
@@ -31,8 +30,7 @@
     "No Handphone",
     "Email",
     "Skor",
-    "Skor Maksimal",
-    "Berlaku Hingga (opsional)"
+    "Skor Maksimal"
   ];
 
   function romanMonthOf(m) {
@@ -102,7 +100,6 @@
 
   function downloadTemplate() {
     var sample = [{
-      "No Sertifikat (opsional)": "",
       "Tanggal Training": "2026-07-01",
       "Jam Training": "10:00",
       "Airlines": "Sriwijaya Air",
@@ -113,14 +110,13 @@
       "No Handphone": "081234567890",
       "Email": "contoh@email.com",
       "Skor": 80,
-      "Skor Maksimal": 100,
-      "Berlaku Hingga (opsional)": ""
+      "Skor Maksimal": 100
     }];
     var ws = XLSX.utils.json_to_sheet(sample, { header: TEMPLATE_COLS });
     ws["!cols"] = [
-      { wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 25 },
+      { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 25 },
       { wch: 28 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 22 },
-      { wch: 8 }, { wch: 14 }, { wch: 22 }
+      { wch: 8 }, { wch: 14 }
     ];
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template Peserta");
@@ -186,13 +182,11 @@
             return;
           }
 
-          var certNo = String(getVal(r, ["No Sertifikat", "No Sertifikat (opsional)", "No. Sertifikat"])).trim();
-          var certNoTaken = certNo && trainingData.peserta.some(function (p) { return p.certNo === certNo; });
-          if (!certNo || certNoTaken) {
-            certNo = generateCertNo(airlines, tanggal, trainingData.peserta);
-          }
-
-          var expiredDate = toISODate(getVal(r, ["Berlaku Hingga", "Berlaku Hingga (opsional)", "Expired Date"])) || addYearsLocal(tanggal, 2);
+          // No Sertifikat & Masa Berlaku SELALU dibuat otomatis oleh sistem
+          // (tidak membaca kolom manual dari Excel) — konsisten dengan hasil
+          // wizard "Mulai Training" dan mencegah nomor bentrok/format salah.
+          var certNo = generateCertNo(airlines, tanggal, trainingData.peserta);
+          var expiredDate = addYearsLocal(tanggal, 2);
 
           var peserta = {
             id: Date.now().toString() + "-" + Math.floor(1e4 * Math.random()),
