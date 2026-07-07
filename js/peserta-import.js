@@ -1,8 +1,9 @@
 /* ================================================================
-   SJNAM — IMPORT BANK DATA PESERTA (Excel)
+   SJNAM — IMPORT & DEDUPLIKASI BANK DATA PESERTA (Excel)
    ================================================================
-   Menambahkan kemampuan Download Template & Import Excel khusus
-   untuk "Bank Data Peserta" (tab Soal Training > Bank Data Peserta).
+   Menambahkan kemampuan Download Template & Import Excel, PLUS
+   deteksi & penandaan duplikat, khusus untuk "Bank Data Peserta"
+   (tab Soal Training > Bank Data Peserta).
 
    Kenapa dibuat file terpisah (bukan edit training.js langsung):
    training.js sudah terminifikasi jadi satu baris — mengedit
@@ -15,6 +16,18 @@
    window.trainingData.peserta (struktur sama persis dengan peserta
    yang dibuat lewat wizard "Mulai Training"), sehingga otomatis
    muncul juga di Bank Station & bisa dicetak ulang sertifikatnya.
+
+   DETEKSI DUPLIKAT — kenapa pakai MutationObserver (bukan wrap
+   window.renderPeserta):
+   Di training.js, listener pencarian & switch sub-tab memanggil
+   closure lokal `renderPeserta` secara langsung (bukan lewat
+   `window.renderPeserta`). Kalau kita cuma override
+   `window.renderPeserta`, tanda duplikat tidak akan ikut muncul
+   ulang saat user mengetik di kolom cari / pindah tab. Maka dari
+   itu kita observe perubahan childList pada #pesertaTableBody
+   langsung — persis pola yang sudah dipakai patch-arsitektur-v3.js
+   untuk filter station SR — supaya tanda duplikat SELALU konsisten
+   apa pun pemicu render-nya.
    ================================================================ */
 !function () {
   "use strict";
@@ -249,6 +262,143 @@
     reader.readAsArrayBuffer(file);
   }
 
+  // ================================================================
+  // DETEKSI DUPLIKAT: Tanggal Training + Nama + Stasiun sama
+  // ================================================================
+  var _dupFilterActive = false;
+  var _marking = false;
+
+  function dupKeyOf(p) {
+    return (String(p && p.tanggal || "").trim()) + "||" +
+      (String(p && p.nama || "").trim().toLowerCase()) + "||" +
+      (String(p && p.stasiun || "").trim().toLowerCase());
+  }
+
+  // Mengelompokkan seluruh peserta (bukan cuma yang sedang tampil/terfilter
+  // pencarian) supaya duplikat tetap terdeteksi walau user sedang mencari.
+  function buildDuplicateInfo() {
+    var td = window.trainingData;
+    var dupCertSet = new Set();
+    var groupCount = 0;
+    if (td && Array.isArray(td.peserta)) {
+      var groups = {};
+      td.peserta.forEach(function (p) {
+        var k = dupKeyOf(p);
+        // lewati kalau tanggal/nama/stasiun ada yang kosong — tidak relevan dibandingkan
+        if (!p || !p.tanggal || !p.nama || !p.stasiun) return;
+        (groups[k] = groups[k] || []).push(p);
+      });
+      Object.keys(groups).forEach(function (k) {
+        if (groups[k].length > 1) {
+          groupCount++;
+          groups[k].forEach(function (p) { if (p.certNo) dupCertSet.add(p.certNo); });
+        }
+      });
+    }
+    return { dupCertSet: dupCertSet, dupCount: dupCertSet.size, groupCount: groupCount };
+  }
+
+  function updateDupSummary(info) {
+    var el = document.getElementById("pesertaDupSummary");
+    if (!el) return;
+    if (info.dupCount > 0) {
+      el.textContent = "⚠️ " + info.dupCount + " data berpotensi duplikat (" + info.groupCount + " grup — Tanggal+Nama+Stasiun sama)";
+      el.classList.remove("hidden");
+    } else {
+      el.textContent = "";
+      el.classList.add("hidden");
+    }
+  }
+
+  // Menandai baris <tr> yang duplikat lewat class + title tooltip saja
+  // (bukan menyisipkan elemen anak baru) supaya TIDAK memicu MutationObserver
+  // childList lagi (mencegah infinite loop render).
+  function markDuplicates() {
+    if (_marking) return;
+    _marking = true;
+    try {
+      var tbody = document.getElementById("pesertaTableBody");
+      if (!tbody) return;
+      var info = buildDuplicateInfo();
+      var rows = tbody.querySelectorAll("tr");
+      rows.forEach(function (tr) {
+        var firstTd = tr.querySelector("td");
+        if (!firstTd) return;
+        var certNo = firstTd.textContent.trim();
+        var isDup = !!certNo && info.dupCertSet.has(certNo);
+        tr.classList.toggle("peserta-dup-row", isDup);
+        tr.title = isDup ? "⚠️ Kemungkinan duplikat: Tanggal Training + Nama + Stasiun sama dengan data peserta lain" : "";
+        if (_dupFilterActive) {
+          tr.style.display = isDup ? "" : "none";
+        } else if (tr.style.display === "none") {
+          tr.style.display = "";
+        }
+      });
+      updateDupSummary(info);
+    } finally {
+      _marking = false;
+    }
+  }
+
+  function ensureDupStyle() {
+    if (document.getElementById("pesertaDupStyle")) return;
+    var style = document.createElement("style");
+    style.id = "pesertaDupStyle";
+    style.textContent =
+      'tr.peserta-dup-row{background-color:rgba(245,158,11,0.12) !important;}' +
+      'tr.peserta-dup-row td:nth-child(5){position:relative;}' +
+      'tr.peserta-dup-row td:nth-child(5)::after{content:" \\1F501 Duplikat";color:#b45309;font-weight:700;font-size:10px;margin-left:6px;white-space:nowrap;}';
+    document.head.appendChild(style);
+  }
+
+  function ensureDupUI() {
+    ensureDupStyle();
+
+    var totalWrap = document.getElementById("pesertaTotalCount") && document.getElementById("pesertaTotalCount").parentElement;
+    if (totalWrap && !document.getElementById("pesertaDupSummary")) {
+      var dupSpan = document.createElement("span");
+      dupSpan.id = "pesertaDupSummary";
+      dupSpan.className = "text-xs font-semibold text-amber-600 dark:text-amber-400 ml-3 hidden";
+      if (totalWrap.parentNode) totalWrap.parentNode.insertBefore(dupSpan, totalWrap.nextSibling);
+    }
+
+    var searchInput = document.getElementById("pesertaSearch");
+    if (searchInput && !document.getElementById("btnTogglePesertaDupFilter")) {
+      var btn = document.createElement("button");
+      btn.id = "btnTogglePesertaDupFilter";
+      btn.type = "button";
+      btn.className = "px-4 py-2 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-sm font-semibold rounded-xl";
+      btn.textContent = "🔁 Tampilkan Hanya Duplikat";
+      btn.addEventListener("click", function () {
+        _dupFilterActive = !_dupFilterActive;
+        btn.textContent = _dupFilterActive ? "✖️ Tampilkan Semua" : "🔁 Tampilkan Hanya Duplikat";
+        btn.classList.toggle("bg-amber-500", _dupFilterActive);
+        btn.classList.toggle("text-white", _dupFilterActive);
+        btn.classList.toggle("hover:bg-amber-600", _dupFilterActive);
+        markDuplicates();
+      });
+      searchInput.insertAdjacentElement("afterend", btn);
+    }
+  }
+
+  function observePesertaTable() {
+    var tbody = document.getElementById("pesertaTableBody");
+    if (!tbody || tbody._dupObserved) return;
+    tbody._dupObserved = true;
+    var observer = new MutationObserver(function () { markDuplicates(); });
+    observer.observe(tbody, { childList: true });
+  }
+
+  function initDuplicateDetection() {
+    try {
+      ensureDupUI();
+      observePesertaTable();
+      markDuplicates();
+    } catch (err) {
+      console.error("[peserta-import] Gagal inisialisasi deteksi duplikat:", err);
+    }
+  }
+
   function bind() {
     var btnTemplate = document.getElementById("btnDownloadPesertaTemplate");
     var inputImport = document.getElementById("inputImportPeserta");
@@ -302,10 +452,12 @@
     document.addEventListener("DOMContentLoaded", function () {
       bind();
       fixLegacyJamFormat();
+      initDuplicateDetection();
     }, { once: true });
   } else {
     bind();
     fixLegacyJamFormat();
+    initDuplicateDetection();
   }
 
   console.info("%c[SJNAM] Import Bank Data Peserta (Excel) aktif — tombol Download Template & Import Data Peserta siap dipakai.", "color:#0891b2;font-weight:bold;font-size:11px");
