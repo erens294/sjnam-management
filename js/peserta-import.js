@@ -78,6 +78,28 @@
     return (d.getFullYear() + years) + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
   }
 
+  // Menerima Date object (cellDates:true — Excel time-only cell terbaca
+  // sebagai Date dengan tanggal dasar 1899-12-30), angka serial waktu Excel
+  // (pecahan hari, mis. 0.375 = 09:00), atau string bebas ("09:00", "9:00:00",
+  // "09.00", dsb) lalu mengembalikan HANYA "HH:MM", tanpa tanggal/zona waktu.
+  function toHHMM(v) {
+    if (v === null || v === undefined || v === "") return "";
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      return pad2(v.getHours()) + ":" + pad2(v.getMinutes());
+    }
+    if (typeof v === "number") {
+      var frac = v - Math.floor(v);
+      var totalMinutes = Math.round(frac * 24 * 60);
+      var hh = Math.floor(totalMinutes / 60) % 24;
+      var mm = totalMinutes % 60;
+      return pad2(hh) + ":" + pad2(mm);
+    }
+    var str = String(v).trim();
+    var m = str.match(/(\d{1,2})[:.](\d{2})/);
+    if (m) return pad2(Math.min(23, parseInt(m[1], 10))) + ":" + pad2(m[2]);
+    return "";
+  }
+
   // Format No Sertifikat sama persis dengan generator bawaan di training.js:
   // 00001/TRN/CS-SJ/VII/2026  (nomor urut per-airlines per-bulan per-tahun)
   function generateCertNo(airlines, tanggal, existingList) {
@@ -170,7 +192,7 @@
           var hp = String(getVal(r, ["No Handphone", "No HP", "HP", "Handphone"])).trim();
           var email = String(getVal(r, ["Email"])).trim();
           var tanggal = toISODate(getVal(r, ["Tanggal Training", "Tanggal"])) || (window.todayLocalStr ? window.todayLocalStr() : "");
-          var jam = String(getVal(r, ["Jam Training", "Jam"])).trim() || "00:00";
+          var jam = toHHMM(getVal(r, ["Jam Training", "Jam"])) || "00:00";
           var score = Number(getVal(r, ["Skor", "Nilai", "Score"])) || 0;
           var maxScore = Number(getVal(r, ["Skor Maksimal", "Skor Maks", "Max Skor", "Nilai Maksimal", "Max Score"])) || 0;
           if (maxScore < score) maxScore = score;
@@ -244,10 +266,46 @@
     }
   }
 
+  // ONE-TIME AUTO-FIX: memperbaiki data peserta yang sudah kadung ter-import
+  // sebelum perbaikan ini ada, di mana kolom "jam" tersimpan sebagai string
+  // Date lengkap (mis. "Sat Dec 30 1899 09:00:00 GMT+0707 (Western Indonesia
+  // Time)") alih-alih "09:00". Berjalan otomatis sekali saat halaman dibuka,
+  // aman dijalankan berkali-kali (tidak akan mengubah data yang sudah benar).
+  function fixLegacyJamFormat() {
+    try {
+      var td = window.trainingData;
+      if (!td || !Array.isArray(td.peserta) || !td.peserta.length) return;
+      var fixed = 0;
+      td.peserta.forEach(function (p) {
+        var jamStr = p && p.jam;
+        if (!jamStr) return;
+        var looksBroken = /GMT|^[A-Za-z]{3}\s[A-Za-z]{3}\s\d{1,2}\s\d{4}/.test(String(jamStr));
+        if (!looksBroken) return;
+        var m = String(jamStr).match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+        if (m) {
+          p.jam = pad2(m[1]) + ":" + m[2];
+          fixed++;
+        }
+      });
+      if (fixed > 0) {
+        "function" === typeof window.saveTraining && window.saveTraining();
+        "function" === typeof window.renderPeserta && window.renderPeserta();
+        console.info("[peserta-import] Auto-fixed format Jam pada " + fixed + " data peserta lama.");
+        window.showToast && window.showToast("Format Jam pada " + fixed + " data peserta lama diperbaiki otomatis ✅", "success");
+      }
+    } catch (err) {
+      console.error("[peserta-import] Gagal auto-fix format Jam:", err);
+    }
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bind, { once: true });
+    document.addEventListener("DOMContentLoaded", function () {
+      bind();
+      fixLegacyJamFormat();
+    }, { once: true });
   } else {
     bind();
+    fixLegacyJamFormat();
   }
 
   console.info("%c[SJNAM] Import Bank Data Peserta (Excel) aktif — tombol Download Template & Import Data Peserta siap dipakai.", "color:#0891b2;font-weight:bold;font-size:11px");
