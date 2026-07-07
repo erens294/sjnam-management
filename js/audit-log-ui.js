@@ -7,10 +7,21 @@ async function loadAuditLog(){
     container.innerHTML='<p class="text-slate-400 p-3 italic">Memuat...</p>';
     try{
       const moduleFilter=document.getElementById("auditModuleFilter")?.value||"";
-      const logs=await window.firestoreRunQuery("sjnam_audit_log",{
-        orderByField:"created_at", desc:!0, limit:50,
-        whereField: moduleFilter||undefined, whereValue: moduleFilter||undefined
+      // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya query menggabungkan
+      // where(module==X) DAN orderBy(created_at) sekaligus di server.
+      // Firestore MEWAJIBKAN composite index manual untuk kombinasi
+      // filter+urutkan seperti ini — index itu tidak pernah dibuat,
+      // sehingga query ini SELALU GAGAL (400 FAILED_PRECONDITION) begitu
+      // user memilih filter modul tertentu. Tanpa filter modul (whereField
+      // kosong) query cuma pakai orderBy saja (index tunggal, otomatis
+      // tersedia dari Firestore, makanya sebelumnya kelihatan baik-baik
+      // saja). Sekarang: HANYA orderBy yang dikirim ke server (selalu
+      // aman, tidak pernah butuh index manual), ambil batch lebih besar,
+      // lalu filter modul & potong ke 50 teratas dilakukan di JS.
+      const allLogs=await window.firestoreRunQuery("sjnam_audit_log",{
+        orderByField:"created_at", desc:!0, limit:200
       });
+      const logs=(moduleFilter?allLogs.filter(l=>l.module===moduleFilter):allLogs).slice(0,50);
       if(!logs||!logs.length)return void(container.innerHTML='<p class="text-slate-400 p-3 italic">Belum ada log. Pastikan sudah pernah push/pull minimal sekali.</p>');
       const actionColor={push:"text-blue-500",pull:"text-green-500",merge:"text-amber-500",create:"text-emerald-500",update:"text-slate-400",delete:"text-red-400",push_partial_fail:"text-red-600 font-bold"};
       container.innerHTML=`
