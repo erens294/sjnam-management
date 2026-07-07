@@ -272,22 +272,31 @@
     if (!el || !srActMonths[srActCurMonthIdx]) return;
     var y = srActMonths[srActCurMonthIdx].y, m = srActMonths[srActCurMonthIdx].m;
     el.innerHTML = STATION_LIST.map(function (d) {
-      var r = computeDistrikMonth(d, y, m);
-      return '<div class="dot" style="background:' + CAT_COLOR[r.cat] + '" title="' + esc(d) + ": " + fmtPct(r.pct) + '"></div>';
+      return { d: d, r: computeDistrikMonth(d, y, m) };
+    }).filter(function (x) {
+      // Dashboard murni: sembunyikan station yang sepanjang bulan Tutup/No-Op
+      // (tidak ada flight beroperasi sama sekali bulan ini)
+      return x.r.cat !== "Tutup";
+    }).map(function (x) {
+      return '<div class="dot" style="background:' + CAT_COLOR[x.r.cat] + '" title="' + esc(x.d) + ": " + fmtPct(x.r.pct) + '"></div>';
     }).join("");
   }
 
   function renderDashboard() {
     if (!srActMonths[srActCurMonthIdx]) return;
     var y = srActMonths[srActCurMonthIdx].y, m = srActMonths[srActCurMonthIdx].m;
-    var rows = STATION_LIST.map(function (d) { return { distrik: d, r: computeDistrikMonth(d, y, m) }; });
+    // Dashboard murni: station yang sepanjang bulan Tutup dan/atau No-Op (tidak ada
+    // flight beroperasi sama sekali bulan ini, lihat computeDistrikMonth -> cat "Tutup"
+    // saat eff<=0) DIKELUARKAN dari seluruh KPI, pie chart & bar chart di bawah, supaya
+    // data yang tersisa murni station yang benar-benar ada flightnya.
+    var rows = STATION_LIST.map(function (d) { return { distrik: d, r: computeDistrikMonth(d, y, m) }; })
+      .filter(function (x) { return x.r.cat !== "Tutup"; });
 
     var aktif = rows.filter(function (x) { return x.r.lapor > 0; }).length;
     var rata = rows.length ? (rows.reduce(function (s, x) { return s + x.r.lapor; }, 0) / rows.length) : 0;
     var better = rows.filter(function (x) { return x.r.cat === "Better"; }).length;
     var middle = rows.filter(function (x) { return x.r.cat === "Middle"; }).length;
     var worst = rows.filter(function (x) { return x.r.cat === "Worst"; }).length;
-    var tutupN = rows.filter(function (x) { return x.r.cat === "Tutup"; }).length;
     var nol = rows.filter(function (x) { return x.r.pct === 0; }).length;
 
     var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
@@ -308,10 +317,10 @@
     var pieCtx = document.getElementById("srActPieChart");
     if (srActPieChart) srActPieChart.destroy();
     if (pieCtx) {
-      var pieTotal = better + middle + worst + tutupN;
+      var pieTotal = better + middle + worst;
       srActPieChart = new Chart(pieCtx, {
         type: "doughnut",
-        data: { labels: ["Better", "Middle", "Worst", "Tutup"], datasets: [{ data: [better, middle, worst, tutupN], backgroundColor: [CAT_COLOR.Better, CAT_COLOR.Middle, CAT_COLOR.Worst, CAT_COLOR.Tutup], borderWidth: 0 }] },
+        data: { labels: ["Better", "Middle", "Worst"], datasets: [{ data: [better, middle, worst], backgroundColor: [CAT_COLOR.Better, CAT_COLOR.Middle, CAT_COLOR.Worst], borderWidth: 0 }] },
         options: {
           maintainAspectRatio: false,
           plugins: {
@@ -537,7 +546,11 @@
     var rows = STATION_LIST.map(function (d) {
       var r = computeDistrikMonth(d, mo.y, mo.m);
       return { Station: d, "Hari Lapor": r.lapor, "Hari Tutup": r.tutup, "Hari No-Op": r.noop || 0, "Kepatuhan %": r.pct === null ? "-" : Math.round(r.pct * 100), Kategori: r.cat };
-    }).sort(function (a, b) { return (typeof b["Kepatuhan %"] === "number" ? b["Kepatuhan %"] : -1) - (typeof a["Kepatuhan %"] === "number" ? a["Kepatuhan %"] : -1); });
+    })
+      // Dashboard murni: sembunyikan station yang sepanjang bulan Tutup/No-Op
+      // (tidak ada flight sama sekali), konsisten dengan tampilan dashboard.
+      .filter(function (r) { return r.Kategori !== "Tutup"; })
+      .sort(function (a, b) { return (typeof b["Kepatuhan %"] === "number" ? b["Kepatuhan %"] : -1) - (typeof a["Kepatuhan %"] === "number" ? a["Kepatuhan %"] : -1); });
     var aktif = rows.filter(function (r) { return r["Hari Lapor"] > 0; }).length;
     var rata = rows.length ? (rows.reduce(function (s, r) { return s + r["Hari Lapor"]; }, 0) / rows.length) : 0;
     var kpi = [
