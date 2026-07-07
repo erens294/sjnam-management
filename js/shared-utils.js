@@ -1616,6 +1616,22 @@ function() {
         } catch (e) {}
     }, window.cloudLog = cloudLog, window.updateSyncStatus = updateSyncStatus, window.mergeById = mergeById, window.mergeTraining = mergeTraining, window.getAllCloudData = getAllCloudData, window.getDeviceId = getDeviceId, window.cloudPush = cloudPush, window.cloudPull = cloudPull, window.docToObject = docToObject, window.pickBucketPayload = pickBucketPayload, window._sweepUnsyncedBucketsOnce = _sweepUnsyncedBucketsOnce, window.blinkBlueLight = blinkBlueLight, window.blinkSyncLight = blinkSyncLight, window.startRealtimeSubscription = startRealtimeSubscription, window.triggerAutoSync = function(dirtyHint = null) {
         if (!neonConfigured()) return;
+        // [BUG DITEMUKAN & DIPERBAIKI] _autoSyncTimer adalah SATU timer debounce
+        // yang dipakai bersama oleh SEMUA modul. Kalau dua modul berbeda
+        // memanggil triggerAutoSync() hampir bersamaan (mis. saveUsers() lalu
+        // saveKaryawan() — persis yang terjadi setiap kali Admin membuat
+        // karyawan+akun baru sekaligus, atau mengubah password karyawan),
+        // panggilan kedua akan MEMBATALKAN push yang dijadwalkan panggilan
+        // pertama sepenuhnya — hanya bucket dari hint TERAKHIR yang benar-benar
+        // dikirim ke cloud. Akibatnya bucket "users" (akun login) bisa tidak
+        // pernah terkirim ke cloud walau localStorage device ini sudah benar,
+        // sehingga akun/password baru tidak pernah muncul di device lain.
+        // Sekarang, semua hint yang menumpuk dalam jendela debounce yang sama
+        // ditampung; kalau lebih dari satu hint berbeda menumpuk, push
+        // dilakukan untuk SEMUA bucket (dirtyHint=null) supaya tidak ada
+        // perubahan yang diam-diam gagal tersinkron.
+        window._pendingSyncHints = window._pendingSyncHints || new Set();
+        window._pendingSyncHints.add(dirtyHint);
         clearTimeout(window._autoSyncTimer);
         window._autoSyncTimer = setTimeout(function attempt() {
             if (_cloudPullInProgress) {
@@ -1628,7 +1644,10 @@ function() {
                 window._autoSyncTimer = setTimeout(attempt, 500);
                 return
             }
-            cloudPush(!0, dirtyHint).then(function(ok) {
+            const pendingHints = window._pendingSyncHints || new Set(dirtyHint ? [dirtyHint] : []);
+            window._pendingSyncHints = new Set();
+            const hintToUse = pendingHints.size === 1 ? Array.from(pendingHints)[0] : null;
+            cloudPush(!0, hintToUse).then(function(ok) {
                 if (ok) {
                     const el = document.getElementById("smartSyncLastPush");
                     el && (el.textContent = "Terakhir sync: " + (new Date).toLocaleTimeString("id-ID"))
