@@ -321,8 +321,20 @@ function() {
             loser: null,
             conflict: !1
         };
-        const lt = new Date(local._updatedAt || 0).getTime(),
-            rt = new Date(remote._updatedAt || 0).getTime();
+        // [BUG DITEMUKAN & DIPERBAIKI] detectConflict cuma membaca field
+        // "_updatedAt" (dengan underscore, konvensi resmi via stampRecord/
+        // stampArray). Tapi karyawan-management.js menandai record yang
+        // diedit dengan "updatedAt" (TANPA underscore) — beda nama field.
+        // Akibatnya kedua sisi (local & remote) selalu terbaca sebagai
+        // timestamp 0 (epoch) oleh detectConflict, dan karena perbandingan
+        // "lt >= rt" jadi selalu true untuk 0 >= 0, LOCAL SELALU MENANG —
+        // apa pun isi & waktu perubahan sebenarnya. Ini yang menyebabkan
+        // device yang SUDAH punya salinan lokal suatu karyawan/user tidak
+        // pernah menerima update dari device lain untuk id yang sama
+        // (persis kasus station karyawan yang tidak ikut ke device lain).
+        // Sekarang fallback ke "updatedAt" kalau "_updatedAt" tidak ada.
+        const lt = new Date(local._updatedAt || local.updatedAt || 0).getTime(),
+            rt = new Date(remote._updatedAt || remote.updatedAt || 0).getTime();
         return {
             winner: lt >= rt ? local : remote,
             loser: lt >= rt ? remote : local,

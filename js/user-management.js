@@ -208,7 +208,14 @@ document.getElementById('btnUserToggleActive')?.addEventListener('click', functi
   users = users.map(u => {
     if (ids.includes(String(u.id)) && u.username !== window.currentUser.username && u.role !== 'Master') {
       changed++;
-      return { ...u, active: !u.active };
+      // [BUG FIX] Stamping supaya perubahan status ini benar-benar tersinkron
+      // ke device lain (lihat catatan yang sama di editUserModalSave / _doAddUser).
+      return {
+        ...u,
+        active: !u.active,
+        _updatedAt: new Date().toISOString(),
+        _updatedBy: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || 'system'
+      };
     }
     return u;
   });
@@ -540,7 +547,17 @@ function _doAddUser(preselectedRole) {
             finalUsers.push({
               id: Date.now(), username: uname, password: hashedPw,
               role, name: nama, active: true, mustChangePassword: true,
-              created: new Date().toISOString().split('T')[0]
+              created: new Date().toISOString().split('T')[0],
+              // [BUG FIX] Record user SEBELUMNYA tidak pernah diberi timestamp
+              // sama sekali. detectConflict() di shared-utils.js — yang menentukan
+              // versi mana yang menang saat data user digabung dari 2 device —
+              // membaca field "_updatedAt"; tanpa field ini, device manapun yang
+              // SUDAH punya salinan lokal user dengan id yang sama akan SELALU
+              // mempertahankan datanya sendiri, mengabaikan perubahan role/status
+              // dari device lain (persis kasus role/akses yang tidak ikut ke
+              // device lain).
+              _updatedAt: new Date().toISOString(),
+              _updatedBy: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || 'system'
             });
             if (typeof saveUsers === 'function') saveUsers(finalUsers);
 
@@ -654,6 +671,8 @@ document.getElementById('editUserModalSave')?.addEventListener('click', function
   const user = users.find(u => u.id === id);
   if (!user) { showToast('Akun tidak ditemukan', 'error'); return; }
 
+  let roleOrStatusChanged = false;
+
   if (isMasterOrAdmin && newRole && newRole !== user.role) {
     if (newRole === 'Peserta' && user.role !== 'Peserta') {
       if (users.filter(u => u.role === 'Peserta').length >= 150) {
@@ -661,9 +680,22 @@ document.getElementById('editUserModalSave')?.addEventListener('click', function
       }
     }
     user.role = newRole;
+    roleOrStatusChanged = true;
   }
 
-  if (user.username !== window.currentUser.username) user.active = isActive;
+  if (user.username !== window.currentUser.username) {
+    if (user.active !== isActive) roleOrStatusChanged = true;
+    user.active = isActive;
+  }
+
+  // [BUG FIX] Sama seperti pembuatan akun baru — tanpa stamping ini,
+  // perubahan role/status di sini tidak akan pernah "menang" saat
+  // disinkronkan ke device yang sudah punya salinan lokal akun ini,
+  // sehingga device itu tetap melihat role/status yang lama.
+  if (roleOrStatusChanged) {
+    user._updatedAt = new Date().toISOString();
+    user._updatedBy = (window.currentUser && (window.currentUser.name || window.currentUser.username)) || 'system';
+  }
 
   if (user.username === window.currentUser.username) {
     window.currentUser.role = user.role;

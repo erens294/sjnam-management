@@ -489,7 +489,18 @@
         nama, nip, jabatan, station, hp, email,
         joinDate, expiredKontrak, note,
         username:       finalUsername || username,
-        updatedAt:      new Date().toISOString()
+        // [BUG FIX] Sebelumnya field ini bernama "updatedAt" (tanpa underscore),
+        // padahal detectConflict() di shared-utils.js — yang dipakai untuk
+        // menentukan versi mana yang menang saat data karyawan digabung dari
+        // 2 device — membaca field "_updatedAt" (DENGAN underscore, konvensi
+        // resmi stampRecord/stampArray). Akibatnya perubahan di sini (mis.
+        // update station karyawan) tidak pernah "menang" saat disinkronkan
+        // ke device yang sudah punya salinan lokal karyawan yang sama —
+        // device itu terus mempertahankan data lamanya. Field ini sekarang
+        // dinamai sesuai konvensi yang benar, plus _updatedBy supaya log
+        // konflik ("Konflik record ... X vs Y") menunjukkan nama yang benar.
+        _updatedAt:     new Date().toISOString(),
+        _updatedBy:     (window.currentUser && (window.currentUser.name || window.currentUser.username)) || 'system'
       };
 
       const idx = karyawan.findIndex(k => k.id === window._karyawanEditId);
@@ -588,7 +599,15 @@
           name:               nama,
           active:             true,
           mustChangePassword: true,
-          created:            new Date().toISOString().split('T')[0]
+          created:            new Date().toISOString().split('T')[0],
+          // [BUG FIX] Lihat catatan yang sama di user-management.js — tanpa
+          // field ini, sync antar device untuk bucket "users" selalu
+          // mempertahankan salinan lokal, mengabaikan akun baru/role dari
+          // device lain untuk id yang bentrok (tidak relevan untuk akun BARU
+          // seperti ini karena id-nya pasti unik, tapi konsisten dengan
+          // konvensi timestamp di seluruh record user).
+          _updatedAt:         new Date().toISOString(),
+          _updatedBy:         (window.currentUser && (window.currentUser.name || window.currentUser.username)) || 'system'
         });
 
         if (typeof saveUsers === 'function') saveUsers(finalUsers);
