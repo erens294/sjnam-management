@@ -421,7 +421,16 @@ function() {
                 localStorage.setItem("sjnam_drygoods_v1", JSON.stringify(dg));
                 "object" == typeof window.DRYGOODS && typeof window.DRYGOODS.loadData === "function" && (window.DRYGOODS.loadData(), window.DRYGOODS.renderAll())
             },
-            shardKeyOf: function (r) { return (r && r.date || "").slice(0, 4) || "unknown" },
+            // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya di-shard PER TAHUN saja
+            // (mis. "drygoods_trx_2026"). Untuk aplikasi dengan transaksi
+            // stok yang aktif, total transaksi 1 tahun bisa dengan mudah
+            // melebihi batas keras Firestore 1MB per dokumen — begitu itu
+            // terjadi, dokumen tahun tsb GAGAL TERUS diupload ke cloud
+            // selamanya (dan makin parah karena datanya terus bertambah),
+            // tanpa cara memperbaiki diri sendiri. Sekarang di-shard PER
+            // BULAN ("2026-07") — memberi ruang ~12x lebih banyak sebelum
+            // ada risiko kena limit yang sama lagi.
+            shardKeyOf: function (r) { return (r && r.date || "").slice(0, 7) || "unknown" },
             idKeyOf: function (r) { return r && (r.id || JSON.stringify(r)) },
             legacyDataPath: "drygoodsData.transactions" // field di dalam dokumen "drygoods" lama, bukan seluruh payload
         }
@@ -1090,6 +1099,15 @@ function() {
                         silent || showToast("🔀 Merge: " + docId + " dari 2 device digabung otomatis", "info")
                     }
                     const shardPayload = { items: mergedShardArr, _pushedBy: getDeviceId(), _pushedAt: (new Date).toISOString(), _version: Math.max(cloudVersion, knownVersion) + 1 };
+                    // [BUG FIX] Cek ukuran SEBELUM upload, supaya kalau masih
+                    // melebihi limit 1MB Firestore (mis. satu bulan tertentu
+                    // memang sangat ramai transaksinya), pesan errornya jelas
+                    // dan actionable — bukan pesan mentah "INVALID_ARGUMENT"
+                    // dari Firestore yang membingungkan user awam.
+                    const approxBytes = new Blob ? new Blob([JSON.stringify(shardPayload)]).size : JSON.stringify(shardPayload).length;
+                    if (approxBytes > 1048576) {
+                        throw new Error("Data " + docId + " (" + (approxBytes / 1048576).toFixed(2) + " MB) melebihi batas 1MB Firestore untuk 1 periode. Hubungi admin sistem untuk memecah/arsipkan data periode ini.");
+                    }
                     const upsertResult = await neonUpsert("sjnam_sync", docId, { payload: shardPayload, updated_at: (new Date).toISOString() });
                     const serverUpdatedAt = upsertResult?._firestoreUpdateTime || upsertResult?.updated_at || shardPayload._pushedAt;
                     window._bucketHash[docId] = _hashPayload(mergedShardArr), window._bucketTS[docId] = serverUpdatedAt, window._bucketVersion[docId] = shardPayload._version;
