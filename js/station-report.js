@@ -158,26 +158,37 @@
     var isFuture = y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth() + 1);
     if (isFuture) return { lapor: 0, tutup: 0, noop: 0, pct: null, cat: "Belum" };
     var mm = String(m).padStart(2, "0"), prefix = y + "-" + mm;
-    var lapor = 0, tutup = 0, noop = 0, totalEntries = 0;
+    var lapor = 0, tutup = 0, noop = 0, tidakLapor = 0;
     getActivityData().forEach(function (r) {
       if (r.distrik !== distrik || !r.tanggal || r.tanggal.slice(0, 7) !== prefix) return;
-      totalEntries++;
-      if (r.status === "Lapor") lapor++; else if (r.status === "Tutup") tutup++; else if (r.status === "No-Op") noop++;
+      if (r.status === "Lapor") lapor++;
+      else if (r.status === "Tutup") tutup++;
+      else if (r.status === "No-Op") noop++;
+      else if (r.status === "Tidak Lapor") tidakLapor++;
     });
-    var isCurrentMonth = y === now.getFullYear() && m === now.getMonth() + 1;
-    var dim = isCurrentMonth ? now.getDate() : daysInMonth(y, m);
-    var eff = dim - tutup - noop;
-    // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya, station yang TIDAK PUNYA
-    // catatan log sama sekali untuk bulan ini (mis. station benar-benar
-    // tutup/tidak beroperasi, sehingga tidak ada staf yang mengisi status
-    // harian apa pun — bukan cuma "Tutup" eksplisit, tapi benar-benar
-    // kosong) akan dihitung eff = jumlah hari sebulan penuh (karena tutup=0,
-    // noop=0) dan pct = 0/eff = 0% — salah dikategorikan "Worst" (perlu
-    // ditindaklanjuti), padahal seharusnya "Tutup" (dikecualikan dari
-    // dashboard). Sekarang: kalau TIDAK ADA catatan apa pun untuk station
-    // ini bulan ini (totalEntries===0), dianggap "Tutup" — konsisten dengan
-    // station yang memang eksplisit ditandai Tutup/No-Op setiap harinya.
-    var pct = (eff <= 0 || totalEntries === 0) ? null : lapor / eff, cat = "Tutup";
+    // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya "hari efektif" (eff) dihitung
+    // dari TOTAL HARI KALENDER sebulan dikurangi hari yang eksplisit
+    // ditandai Tutup/No-Op (eff = dim - tutup - noop). Masalahnya: hari
+    // yang TIDAK PERNAH DI-LOG SAMA SEKALI (bukan ditandai apa pun, benar-
+    // benar tidak ada baris datanya — umum terjadi untuk station yang
+    // jarang/tidak rutin di-log setiap hari) ikut terhitung sebagai "hari
+    // efektif yang gagal lapor", padahal seharusnya tidak dihitung sama
+    // sekali. Akibatnya: station yang SEMUA log-nya (walau cuma sebagian
+    // hari yang ada datanya) berstatus Tutup, tapi sisa harinya tidak
+    // pernah di-log, tetap muncul sebagai "Worst 0%" di chart — bukan
+    // "Tutup" seperti seharusnya.
+    //
+    // Sekarang "hari efektif" dihitung LANGSUNG dari jumlah hari yang
+    // BENAR-BENAR ADA lognya sebagai hari operasional — yaitu status
+    // "Lapor" (berhasil lapor) + "Tidak Lapor" (seharusnya lapor tapi
+    // tidak) — tanpa bergantung pada total hari kalender maupun asumsi
+    // "hari tanpa log = hari operasional". Hari yang ditandai Tutup/No-Op,
+    // atau yang sama sekali tidak ada lognya, TIDAK dihitung sebagai hari
+    // efektif — konsisten baik untuk station yang tutup penuh sebulan,
+    // tutup sebagian dengan sisanya tidak ter-log, maupun yang benar-benar
+    // tidak ada log sama sekali.
+    var eff = lapor + tidakLapor;
+    var pct = eff <= 0 ? null : lapor / eff, cat = "Tutup";
     if (pct !== null) cat = pct >= 0.87 ? "Better" : pct >= 0.53 ? "Middle" : "Worst";
     return { lapor: lapor, tutup: tutup, noop: noop, pct: pct, cat: cat };
   }
