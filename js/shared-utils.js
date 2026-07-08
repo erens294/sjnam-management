@@ -210,9 +210,32 @@ function() {
     // terpisah per bucket. Firestore mengembalikan {documents:[...]} untuk
     // collection berisi data, atau {} (tanpa field documents) kalau kosong.
     async function neonListCollection(collection) {
-        const res = await firestoreFetch("/" + collection);
-        if (!res || !Array.isArray(res.documents)) return [];
-        return res.documents.map(doc => {
+        // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya hanya mengambil SATU
+        // halaman hasil dari Firestore documents.list REST API tanpa
+        // menangani pagination sama sekali. Firestore membatasi jumlah
+        // dokumen yang dikembalikan per request — begitu total dokumen di
+        // collection "sjnam_sync" melebihi batas itu (yang jadi jauh lebih
+        // mungkin terjadi sekarang, setelah drygoods_trx & stcr dipecah
+        // per-bulan sehingga jumlah dokumennya naik drastis), dokumen yang
+        // "kepotong" dari halaman pertama (termasuk berpotensi bucket
+        // penting seperti "karyawan" atau "users") akan DIAM-DIAM tidak
+        // pernah ikut ke listedDocs — akibatnya cloudPull akan SELALU
+        // menganggap bucket itu "tidak berubah" (karena tidak pernah
+        // benar-benar terlihat), walau datanya di cloud sebenarnya jauh
+        // lebih baru. Sekarang mengikuti nextPageToken sampai benar-benar
+        // habis, supaya SEMUA dokumen — berapa pun jumlahnya — selalu ikut
+        // diperiksa.
+        let allDocs = [];
+        let pageToken = null;
+        let guard = 0;
+        do {
+            const qs = pageToken ? "?pageToken=" + encodeURIComponent(pageToken) : "";
+            const res = await firestoreFetch("/" + collection + qs);
+            if (res && Array.isArray(res.documents)) allDocs = allDocs.concat(res.documents);
+            pageToken = res && res.nextPageToken ? res.nextPageToken : null;
+            guard++
+        } while (pageToken && guard < 50); // guard: mencegah loop tak berhenti kalau API berperilaku aneh
+        return allDocs.map(doc => {
             const obj = docToObject(doc);
             if (obj) obj._docId = doc.name.split("/").pop();
             return obj
