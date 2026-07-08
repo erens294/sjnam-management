@@ -158,14 +158,26 @@
     var isFuture = y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth() + 1);
     if (isFuture) return { lapor: 0, tutup: 0, noop: 0, pct: null, cat: "Belum" };
     var mm = String(m).padStart(2, "0"), prefix = y + "-" + mm;
-    var lapor = 0, tutup = 0, noop = 0;
+    var lapor = 0, tutup = 0, noop = 0, totalEntries = 0;
     getActivityData().forEach(function (r) {
       if (r.distrik !== distrik || !r.tanggal || r.tanggal.slice(0, 7) !== prefix) return;
+      totalEntries++;
       if (r.status === "Lapor") lapor++; else if (r.status === "Tutup") tutup++; else if (r.status === "No-Op") noop++;
     });
     var isCurrentMonth = y === now.getFullYear() && m === now.getMonth() + 1;
     var dim = isCurrentMonth ? now.getDate() : daysInMonth(y, m);
-    var eff = dim - tutup - noop, pct = eff <= 0 ? null : lapor / eff, cat = "Tutup";
+    var eff = dim - tutup - noop;
+    // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya, station yang TIDAK PUNYA
+    // catatan log sama sekali untuk bulan ini (mis. station benar-benar
+    // tutup/tidak beroperasi, sehingga tidak ada staf yang mengisi status
+    // harian apa pun — bukan cuma "Tutup" eksplisit, tapi benar-benar
+    // kosong) akan dihitung eff = jumlah hari sebulan penuh (karena tutup=0,
+    // noop=0) dan pct = 0/eff = 0% — salah dikategorikan "Worst" (perlu
+    // ditindaklanjuti), padahal seharusnya "Tutup" (dikecualikan dari
+    // dashboard). Sekarang: kalau TIDAK ADA catatan apa pun untuk station
+    // ini bulan ini (totalEntries===0), dianggap "Tutup" — konsisten dengan
+    // station yang memang eksplisit ditandai Tutup/No-Op setiap harinya.
+    var pct = (eff <= 0 || totalEntries === 0) ? null : lapor / eff, cat = "Tutup";
     if (pct !== null) cat = pct >= 0.87 ? "Better" : pct >= 0.53 ? "Middle" : "Worst";
     return { lapor: lapor, tutup: tutup, noop: noop, pct: pct, cat: cat };
   }
@@ -340,9 +352,21 @@
       var barLabels = sorted.map(function (x) { return x.distrik; });
       var barVals = sorted.map(function (x) { return x.r.pct === null ? 0 : Math.round(x.r.pct * 100); });
       var barColors = sorted.map(function (x) { return CAT_COLOR[x.r.cat]; });
+      // [BUG FIX] Tinggi kontainer chart ini sebelumnya TETAP 480px di HTML,
+      // berapa pun jumlah station yang harus ditampilkan. Begitu jumlah
+      // station cukup banyak (16+ setelah station Tutup/No-Op dikecualikan),
+      // ruang per-batang jadi terlalu sempit — label nama station & angka
+      // persentase saling bertumpuk/terpotong. Sekarang tinggi kontainer
+      // disesuaikan otomatis (~26px per station, minimum tetap 480px untuk
+      // jumlah station sedikit), supaya label selalu terbaca jelas.
+      var barContainer = barCtx.parentElement;
+      if (barContainer) {
+        var neededHeight = Math.max(480, barLabels.length * 26 + 40);
+        barContainer.style.height = neededHeight + "px";
+      }
       srActBarChart = new Chart(barCtx, {
         type: "bar",
-        data: { labels: barLabels, datasets: [{ data: barVals, backgroundColor: barColors, borderRadius: 3, barThickness: 10 }] },
+        data: { labels: barLabels, datasets: [{ data: barVals, backgroundColor: barColors, borderRadius: 3, barThickness: 14 }] },
         options: {
           indexAxis: "y", maintainAspectRatio: false,
           scales: { x: { max: 100, ticks: { callback: function (v) { return v + "%"; }, font: { size: 9 } }, grid: { color: "rgba(148,163,184,.15)" } }, y: { ticks: { font: { size: 10 } }, grid: { display: !1 } } },
