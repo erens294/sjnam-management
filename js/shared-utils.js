@@ -481,7 +481,21 @@ function() {
         return groups
     }
 
-    function _mergeShardArray(family, cloudArr, localArr) {
+    // [BUG DITEMUKAN & DIPERBAIKI] Merge untuk data yang di-shard (drygoods_trx,
+    // stcr) sebelumnya TIDAK PERNAH memeriksa tombstone sama sekali — beda
+    // dengan bucket "users"/"karyawan" yang sudah benar menerapkan
+    // _filterTombstoned() saat merge. Akibatnya: menghapus 1 transaksi
+    // Drygoods/STCR di satu device, tapi proses PUSH penghapusan itu belum
+    // sempat selesai (debounce 800ms) saat proses PULL lain kebetulan
+    // berjalan (baik otomatis maupun manual), transaksi yang baru dihapus
+    // itu bisa "hidup lagi" — cloud masih punya salinan lamanya, dan merge
+    // (yang cuma tahu "id ini ada di cloud tapi tidak ada di lokal" = musti
+    // ditambahkan) menganggapnya sebagai data baru yang belum pernah
+    // diketahui, bukan data yang SENGAJA dihapus. Sekarang, familyId dipakai
+    // sebagai scope tombstone (sama seperti scope "users"/"karyawan"),
+    // supaya item yang sudah ditandai terhapus tidak pernah muncul lagi
+    // dari hasil merge manapun (push maupun pull).
+    function _mergeShardArray(family, cloudArr, localArr, familyId) {
         const map = new Map;
         (cloudArr || []).forEach(function (item) { const k = family.idKeyOf(item); k && map.set(k, item) });
         (localArr || []).forEach(function (item) {
@@ -492,7 +506,8 @@ function() {
             const { winner: winner } = detectConflict(item, existing);
             map.set(k, winner)
         });
-        return Array.from(map.values())
+        const merged = Array.from(map.values());
+        return familyId ? _filterTombstoned(familyId, merged) : merged
     }
 
     function _bucketIdForHint(hint) {
@@ -1138,7 +1153,7 @@ function() {
                     const knownVersion = window._bucketVersion[docId] || 0;
                     let mergedShardArr = shardArr;
                     if (cloudRow && cloudRowUpdatedAt && (!window._bucketTS[docId] || cloudRowUpdatedAt > window._bucketTS[docId])) {
-                        mergedShardArr = _mergeShardArray(family, (cloudRow.payload && cloudRow.payload.items) || [], shardArr);
+                        mergedShardArr = _mergeShardArray(family, (cloudRow.payload && cloudRow.payload.items) || [], shardArr, familyId);
                         cloudLog("🔀 [" + docId + "] Konflik terdeteksi — data digabung otomatis (merge)", "info");
                         await auditLog("merge", familyId, "", "Merge shard " + docId + " dari cloud");
                         silent || showToast("🔀 Merge: " + docId + " dari 2 device digabung otomatis", "info")
@@ -1486,7 +1501,7 @@ function() {
                     shardsByFamily[familyId].forEach(ns => {
                         const shardKey = ns.id.slice((familyId + "_").length);
                         const cloudItems = (ns.doc.payload && ns.doc.payload.items) || [];
-                        localGroups[shardKey] = _mergeShardArray(family, cloudItems, localGroups[shardKey] || []);
+                        localGroups[shardKey] = _mergeShardArray(family, cloudItems, localGroups[shardKey] || [], familyId);
                         window._bucketTS[ns.id] = ns.docUpdatedAt;
                         const shardVersion = ns.doc.payload && ns.doc.payload._version;
                         typeof shardVersion === "number" && (window._bucketVersion[ns.id] = shardVersion);
