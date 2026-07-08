@@ -1094,6 +1094,117 @@
       XLSX.utils.book_append_sheet(wb, ws, "Check-In Report");
       XLSX.writeFile(wb, "CheckIn_Report_" + todayStr() + ".xlsx");
     });
+
+    // ── Import Excel — menerima format laporan bulanan yang sudah biasa
+    // dipakai (kolom: Date of Flight, Flight No, Departure, Checkin Open
+    // Time, Checkin Close Time, Total POB (A+C), dll). Kolom dicari
+    // berdasarkan NAMA header (bukan posisi tetap), supaya tetap berfungsi
+    // walau urutan kolom sedikit berbeda antar file bulanan.
+    document.getElementById("btnSrCiImportExcel")?.addEventListener("click", function () {
+      document.getElementById("srCiImportFile")?.click();
+    });
+    document.getElementById("srCiImportFile")?.addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      if (!window.XLSX) { "function" == typeof window.showToast && window.showToast("Library XLSX tidak tersedia", "error"); e.target.value = ""; return; }
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        try {
+          var wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
+          var ws = wb.Sheets[wb.SheetNames[0]];
+          var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+
+          // Cari baris header secara dinamis (bisa saja ada baris kosong di
+          // atasnya) — dicari berdasarkan kolom "Date of Flight".
+          var headerRowIdx = -1, headerRow = null;
+          for (var i = 0; i < rows.length; i++) {
+            if (rows[i].some(function (c) { return String(c).trim().toLowerCase() === "date of flight"; })) {
+              headerRowIdx = i; headerRow = rows[i]; break;
+            }
+          }
+          if (headerRowIdx === -1) {
+            "function" == typeof window.showToast && window.showToast("Format tidak dikenali — kolom 'Date of Flight' tidak ditemukan", "error");
+            e.target.value = ""; return;
+          }
+          function colIdx(name) {
+            for (var j = 0; j < headerRow.length; j++) {
+              if (String(headerRow[j]).trim().toLowerCase() === name.toLowerCase()) return j;
+            }
+            return -1;
+          }
+          var idxDate = colIdx("Date of Flight"), idxFlight = colIdx("Flight No"), idxDep = colIdx("Departure"),
+            idxOpen = colIdx("Checkin Open Time"), idxClose = colIdx("Checkin Close Time"),
+            idxTotalPOB = colIdx("Total POB (A+C)"), idxPOBA = colIdx("POB (A)"), idxPOBC = colIdx("POB (C)"), idxPOBI = colIdx("POB (I)");
+
+          if (idxDate === -1 || idxFlight === -1 || idxDep === -1) {
+            "function" == typeof window.showToast && window.showToast("Kolom wajib tidak ditemukan (Date of Flight / Flight No / Departure)", "error");
+            e.target.value = ""; return;
+          }
+
+          function toISODate(v) {
+            if (!v) return "";
+            if (v instanceof Date && !isNaN(v.getTime())) return v.getFullYear() + "-" + String(v.getMonth() + 1).padStart(2, "0") + "-" + String(v.getDate()).padStart(2, "0");
+            var s = String(v).trim();
+            var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (m) return m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0");
+            var d = new Date(s);
+            if (!isNaN(d.getTime())) return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+            return "";
+          }
+          function toHHMM(v) {
+            if (!v) return "";
+            if (v instanceof Date && !isNaN(v.getTime())) return String(v.getHours()).padStart(2, "0") + ":" + String(v.getMinutes()).padStart(2, "0");
+            var s = String(v).trim();
+            var m = s.match(/(\d{1,2}):(\d{2})/);
+            if (m) return String(Math.min(23, parseInt(m[1], 10))).padStart(2, "0") + ":" + m[2];
+            return "";
+          }
+
+          var list = getCiData();
+          var existingKeys = {};
+          list.forEach(function (r) { existingKeys[r.tanggal + "|" + r.station + "|" + r.flight + "|" + r.open] = true; });
+
+          var added = 0, skipped = 0;
+          for (var r = headerRowIdx + 1; r < rows.length; r++) {
+            var row = rows[r];
+            if (!row || !row.length) continue;
+            var tanggal = toISODate(row[idxDate]);
+            var flight = String(row[idxFlight] || "").trim().toUpperCase().replace(/[\s-]/g, "");
+            var station = String(row[idxDep] || "").trim().toUpperCase();
+            if (!tanggal || !flight || !station || station === "DEPARTURE") { skipped++; continue; }
+            var open = idxOpen > -1 ? toHHMM(row[idxOpen]) : "";
+            var close = idxClose > -1 ? toHHMM(row[idxClose]) : "";
+            var pax = 0;
+            if (idxTotalPOB > -1 && row[idxTotalPOB] !== "" && !isNaN(Number(row[idxTotalPOB]))) {
+              pax = Number(row[idxTotalPOB]);
+            } else {
+              var a = idxPOBA > -1 ? Number(row[idxPOBA]) || 0 : 0;
+              var c = idxPOBC > -1 ? Number(row[idxPOBC]) || 0 : 0;
+              var inf = idxPOBI > -1 ? Number(row[idxPOBI]) || 0 : 0;
+              pax = a + c + inf;
+            }
+            var key = tanggal + "|" + station + "|" + flight + "|" + open;
+            if (existingKeys[key]) { skipped++; continue; }
+            existingKeys[key] = true;
+            list.push({
+              id: genId("ci"), tanggal: tanggal, station: station, flight: flight,
+              open: open, close: close, pax: pax, note: "",
+              inputBy: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || "Import Excel"
+            });
+            added++;
+          }
+          saveCiData(list);
+          renderCiTable();
+          var msg = added + " data Check-In Report berhasil diimport" + (skipped ? (", " + skipped + " baris dilewati (duplikat/data tidak lengkap)") : "");
+          "function" == typeof window.showToast && window.showToast(msg, added ? "success" : "error");
+        } catch (err) {
+          "function" == typeof window.showToast && window.showToast("Gagal membaca file: " + err.message, "error");
+        } finally {
+          e.target.value = "";
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
   }
 
   /* ============================== FIRST BAG LAST BAG REPORT ============================== */
