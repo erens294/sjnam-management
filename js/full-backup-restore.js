@@ -107,49 +107,77 @@
     return restoredCount;
   }
 
-  // ── Ganti tombol Export supaya pakai versi lengkap ──
-  // (capture phase, menghentikan versi lama sebelum sempat jalan
-  // sehingga tidak ada 2 file ter-download sekaligus)
-  document.addEventListener("click", function (e) {
-    var btn = e.target.closest && e.target.closest("#btnExportAllJson");
-    if (!btn) return;
-    e.stopImmediatePropagation();
-    e.preventDefault();
-    var backup = buildFullBackup();
-    var blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "sjnam_full_backup_" + (window.todayLocalStr ? window.todayLocalStr() : new Date().toISOString().slice(0, 10)) + ".json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-    window.showToast && window.showToast("Backup LENGKAP (semua modul) berhasil diunduh", "success");
-  }, true);
+  function bindExportImportButtons() {
+    var bound = false;
 
-  // ── Ganti input Import supaya pakai versi lengkap ──
-  // (clone node untuk benar-benar membuang listener lama, bukan cuma menumpuk)
-  var importInput = document.getElementById("fileImportAllJson");
-  if (importInput) {
-    var newInput = importInput.cloneNode(true);
-    importInput.parentNode.replaceChild(newInput, importInput);
-    newInput.addEventListener("change", async function (e) {
-      var file = e.target.files[0];
-      if (!file) return;
-      try {
-        var parsed = JSON.parse(await file.text());
-        var ok = window.showConfirm
-          ? await window.showConfirm("Import Database LENGKAP", "Ganti SEMUA modul (Karyawan, User, Training, Drygoods, STCR, Station Report, Sertifikat, dll)? Data saat ini di device ini akan tertimpa!")
-          : confirm("Import semua data? Data saat ini akan tertimpa.");
-        if (ok) {
-          var count = restoreFullBackup(parsed);
-          window.showToast && window.showToast("Restore lengkap berhasil (" + count + " bagian data dipulihkan) — memuat ulang halaman...", "success");
-          setTimeout(function () { location.reload(); }, 1200);
+    var exportBtn = document.getElementById("btnExportAllJson");
+    if (exportBtn && !exportBtn._fullBackupBound) {
+      var newExportBtn = exportBtn.cloneNode(true);
+      newExportBtn._fullBackupBound = true;
+      exportBtn.parentNode.replaceChild(newExportBtn, exportBtn);
+      newExportBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        var backup = buildFullBackup();
+        var blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "sjnam_full_backup_" + (window.todayLocalStr ? window.todayLocalStr() : new Date().toISOString().slice(0, 10)) + ".json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+        window.showToast && window.showToast("Backup LENGKAP (semua modul) berhasil diunduh", "success");
+      });
+      bound = true;
+    }
+
+    var importInput = document.getElementById("fileImportAllJson");
+    if (importInput && !importInput._fullBackupBound) {
+      var newInput = importInput.cloneNode(true);
+      newInput._fullBackupBound = true;
+      importInput.parentNode.replaceChild(newInput, importInput);
+      newInput.addEventListener("change", async function (e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        try {
+          var parsed = JSON.parse(await file.text());
+          var ok = window.showConfirm
+            ? await window.showConfirm("Import Database LENGKAP", "Ganti SEMUA modul (Karyawan, User, Training, Drygoods, STCR, Station Report, Sertifikat, dll)? Data saat ini di device ini akan tertimpa!")
+            : confirm("Import semua data? Data saat ini akan tertimpa.");
+          if (ok) {
+            var count = restoreFullBackup(parsed);
+            window.showToast && window.showToast("Restore lengkap berhasil (" + count + " bagian data dipulihkan) — memuat ulang halaman...", "success");
+            setTimeout(function () { location.reload(); }, 1200);
+          }
+        } catch (err) {
+          window.showToast && window.showToast("File tidak valid: " + err.message, "error");
         }
-      } catch (err) {
-        window.showToast && window.showToast("File tidak valid: " + err.message, "error");
-      }
-      e.target.value = "";
-    });
+        e.target.value = "";
+      });
+      bound = true;
+    }
+
+    return bound;
   }
+
+  // [BUG DITEMUKAN & DIPERBAIKI] Versi sebelumnya mencoba menghentikan
+  // klik pakai stopImmediatePropagation() di fase capture — di teori
+  // seharusnya cukup, tapi di kondisi nyata ternyata TIDAK berhasil
+  // mencegah handler lama tetap jalan (kemungkinan besar karena urutan
+  // pemuatan script yang beda-beda di tiap deployment membuat asumsi
+  // urutan event listener tidak selalu berlaku). Sekarang tombol/input
+  // di-clone (menghapus SEMUA listener lama yang menempel secara pasti,
+  // tidak bergantung pada urutan capture/bubble sama sekali) — dan
+  // dicoba berkali-kali (bukan cuma sekali saat script dimuat) sampai
+  // kedua elemen benar-benar ditemukan & berhasil diganti, untuk jaga-jaga
+  // andai HTML-nya belum sepenuhnya termuat saat script ini pertama jalan.
+  var _tries = 0;
+  var _iv = setInterval(function () {
+    _tries++;
+    var exportOk = document.getElementById("btnExportAllJson") && document.getElementById("btnExportAllJson")._fullBackupBound;
+    var importOk = document.getElementById("fileImportAllJson") && document.getElementById("fileImportAllJson")._fullBackupBound;
+    bindExportImportButtons();
+    if ((exportOk && importOk) || _tries > 40) clearInterval(_iv);
+  }, 250);
+  bindExportImportButtons();
 
   console.info("%c[SJNAM] Backup & Restore LENGKAP (semua modul) aktif.", "color:#0891b2;font-weight:bold;font-size:11px");
 }();
