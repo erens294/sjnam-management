@@ -173,14 +173,52 @@
     if (h3 && /Top\s*10\s*Stasiun/i.test(h3.textContent)) h3.textContent = h3.textContent.replace(/Top\s*10/i, "Top 5");
   }
 
+  function rebuildRevenueChart() {
+    var canvas = document.getElementById("stcrRevenueChart");
+    if (!canvas || typeof Chart === "undefined") return;
+    if (!canvas.offsetWidth && !canvas.offsetParent) return;
+
+    var filtered = getFilteredReplica();
+    var revMap = {};
+    filtered.filter(function (d) { return d["Price POB"] > 0; }).forEach(function (d) {
+      var key = d.Year + "-" + d.Month;
+      revMap[key] = (revMap[key] || 0) + d["Price POB"];
+    });
+    var revKeys = Object.keys(revMap).sort(function (a, b) {
+      var pa = a.split("-"), pb = b.split("-");
+      return (Number(pa[0]) - Number(pb[0])) || (MONTHS.indexOf(pa[1]) - MONTHS.indexOf(pb[1]));
+    });
+
+    var existing = typeof Chart.getChart === "function" ? Chart.getChart(canvas) : null;
+    if (existing) existing.destroy();
+    if (window._stcrRevenueChart) { try { window._stcrRevenueChart.destroy(); } catch (e) {} }
+
+    window._stcrRevenueChart = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: revKeys.map(function (k) { return k.replace("-", " "); }),
+        datasets: [{ label: "Revenue (juta Rp)", data: revKeys.map(function (k) { return revMap[k] / 1e6; }), backgroundColor: "#E8A427", borderRadius: 5 }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          datalabels: { display: true, color: "#92400e", font: { size: 9, weight: "bold" }, anchor: "end", align: "top", formatter: function (v) { return v > 0 ? "Rp" + v.toFixed(1) + "jt" : ""; } }
+        },
+        scales: { y: { ticks: { callback: function (v) { return "Rp " + v + "jt"; } } }, x: { ticks: { maxRotation: 45, font: { size: 10 } } } }
+      }
+    });
+  }
+
   function observeAndInit() {
     var kpiGrid = document.getElementById("stcrKpiGrid");
     if (!kpiGrid || kpiGrid._stcrSplitObserved) return false;
     kpiGrid._stcrSplitObserved = true;
-    new MutationObserver(function () { rebuildSplitTrendChart(); rebuildTop5StationChart(); }).observe(kpiGrid, { childList: true });
+    new MutationObserver(function () { rebuildSplitTrendChart(); rebuildTop5StationChart(); rebuildRevenueChart(); }).observe(kpiGrid, { childList: true });
     updateTop5Title();
     rebuildSplitTrendChart();
     rebuildTop5StationChart();
+    rebuildRevenueChart();
     return true;
   }
 
