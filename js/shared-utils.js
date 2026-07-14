@@ -1,6 +1,12 @@
 ! function() {
     "use strict";
 
+    if (window._sharedUtilsInit) {
+        console.warn("[SJNAM] shared-utils.js sudah pernah dimuat, eksekusi ulang dibatalkan.");
+        return;
+    }
+    window._sharedUtilsInit = true;
+
     function formatNumber(n) {
         try {
             return parseInt(n || 0).toLocaleString("id-ID")
@@ -111,6 +117,17 @@ function() {
     }
 
     function firestoreBase() {
+        // [FITUR BARU] Mode Server Lokal — kalau config.js menyalakan
+        // LOCAL_SERVER_MODE, semua request cloud sync diarahkan ke server
+        // lokal (jalan di laptop, meniru API Firestore) alih-alih ke
+        // Firestore Google yang asli. Dipakai untuk skenario "1 laptop jadi
+        // server, device lain di WiFi yang sama connect ke situ" — tanpa
+        // perlu internet/akun Firebase sama sekali. URL dibuat RELATIF
+        // (bukan domain penuh) supaya otomatis mengarah ke server yang
+        // sama dari mana halaman ini dimuat, apa pun alamat IP laptopnya.
+        if (window.SJNAM_CONFIG && window.SJNAM_CONFIG.LOCAL_SERVER_MODE) {
+            return "/v1/projects/" + (window.SJNAM_CONFIG.FIREBASE_PROJECT_ID || "local") + "/databases/(default)/documents";
+        }
         return "https://firestore.googleapis.com/v1/projects/" + window.SJNAM_CONFIG.FIREBASE_PROJECT_ID + "/databases/(default)/documents";
     }
 
@@ -1196,6 +1213,15 @@ function() {
             await auditLog("push_partial_fail", namesLabel, "", failedBuckets.map(b => b.id + ": " + b.message).join(" | ")).catch(() => {});
             if (!anyPushed) return updateSyncStatus("error"), !1
         }
+        // [OPTIMASI KUOTA] Setiap kali ADA data yang benar-benar berhasil
+        // di-push, catat "kapan terakhir ada perubahan" di satu dokumen
+        // kecil (_sync_meta) — supaya device lain bisa cek SATU dokumen ini
+        // dulu (1 baca) sebelum memutuskan perlu mengambil SEMUA (~60)
+        // dokumen sekaligus. Lihat penjelasan lengkap di cloudPull.
+        if (anyPushed) {
+            try { await neonUpsert("sjnam_sync", "_sync_meta", { payload: { lastChangeAt: (new Date).toISOString(), lastChangeBy: getDeviceId() }, updated_at: (new Date).toISOString() }) }
+            catch (metaErr) { console.warn("[_sync_meta update]", metaErr) }
+        }
         return dirtyHint ? clearDirty(dirtyHint) : clearDirty(), await auditLog("push", dirtyHint || "all", "", "Push berhasil (" + totalPushed + " bucket)"), window._rolePermsLocalDirty = !1, window._drygoodsLocalDirty = !1, updateSyncStatus(failedBuckets.length ? "error" : "connected"), cloudLog("✅ Data tersimpan ke Firestore (" + totalPushed + " bucket diperbarui)", "success"), silent || failedBuckets.length || showToast("⚡ Firestore Sync berhasil! (" + totalPushed + " bucket)", "success"), !0
     }
     function _applyBucketPull(bucketId, rec) {
@@ -1453,6 +1479,44 @@ function() {
         if (!neonConfigured()) return void (silent || showToast("Firebase belum dikonfigurasi (js/config.js)", "error"));
         updateSyncStatus("syncing");
         try {
+            // [OPTIMASI KUOTA] Sebelumnya, SETIAP pull (termasuk auto-pull
+            // berkala) selalu membaca SEMUA (~60) dokumen di collection
+            // "sjnam_sync" lewat neonListCollection — walau ternyata tidak
+            // ada satupun yang berubah sejak pull terakhir. Firestore
+            // menghitung SETIAP dokumen yang dikembalikan sebagai 1 "read"
+            // terpisah, jadi 1 pull = ~60 baca, bahkan saat idle. Ini salah
+            // satu penyebab utama kuota gratis 50rb baca/hari cepat habis.
+            //
+            // Sekarang: baca SATU dokumen kecil ("_sync_meta", yang di-update
+            // cloudPush setiap kali ADA perubahan nyata) dulu — cuma 1 baca.
+            // Kalau meta itu menunjukkan TIDAK ada perubahan sejak terakhir
+            // kita tahu, pull penuh di-skip sepenuhnya (persis seperti "tidak
+            // ada perubahan" yang sudah ada, cuma sekarang costnya 1 baca,
+            // bukan ~60). Kalau ADA perubahan (atau meta belum pernah ada),
+            // baru lanjut ke pull penuh seperti biasa.
+            //
+            // Jaring pengaman: tiap 5 kali pull tetap dipaksa full-check
+            // (mengabaikan hasil cek ringan), supaya kalau ada device lain
+            // yang push tanpa sempat memperbarui _sync_meta (mis. belum
+            // semua device ter-update ke versi kode ini), perubahannya tetap
+            // ketahuan dalam waktu wajar — bukan diam-diam terlewat selamanya.
+            window._pullCycleCount = (window._pullCycleCount || 0) + 1;
+            const forceFullCheck = window._pullCycleCount % 5 === 0;
+            if (!forceFullCheck) {
+                try {
+                    const meta = await neonSelectOne("sjnam_sync", "_sync_meta");
+                    const metaChangeAt = meta && meta.lastChangeAt;
+                    if (metaChangeAt && window._lastKnownMetaChange && metaChangeAt <= window._lastKnownMetaChange) {
+                        updateSyncStatus("connected");
+                        cloudLog("⏭️ Smart Pull: tidak ada perubahan data antar device (cek ringan, 1x baca), skip pull penuh", "info");
+                        silent || showToast("Data sudah paling baru", "success");
+                        return !0
+                    }
+                    if (metaChangeAt) window._lastKnownMetaChange = metaChangeAt
+                } catch (metaCheckErr) {
+                    console.warn("[_sync_meta cek ringan]", metaCheckErr)
+                }
+            }
             let listedDocs = await neonListCollection("sjnam_sync");
             if (!listedDocs.length) throw new Error("Data tidak ditemukan di Firestore");
             listedDocs = await _migrateLegacySyncDocIfNeeded(listedDocs);

@@ -20,6 +20,12 @@
 !function () {
   "use strict";
 
+  if (window._stationReportModuleInit) {
+    console.warn("[SJNAM] station-report.js sudah pernah dimuat, eksekusi ulang dibatalkan.");
+    return;
+  }
+  window._stationReportModuleInit = true;
+
   var esc = window.esc || function (s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -1300,7 +1306,13 @@
       var d = document.getElementById("srActDate");
       if (d && !d.value) d.value = loadActState().inputDate || todayStr();
       if (!initedAct) { initActivityReportEvents(); initedAct = true; }
-      else switchActSubtab(srActCurrentSubtab);
+      // [FIX] Sebelumnya switchActSubtab() (yang memanggil renderDashboard(),
+      // renderMonthSelect(), renderPulseStrip()) HANYA dipanggil di else —
+      // artinya kunjungan PERTAMA ke tab ini tidak pernah merender apa pun,
+      // sehingga KPI & chart tetap di nilai default HTML (0 / kosong) sampai
+      // user membuka tab ini untuk kedua kalinya atau mengklik sub-tab lain.
+      // Sekarang selalu dipanggil, baik kunjungan pertama maupun berikutnya.
+      switchActSubtab(srActCurrentSubtab);
     }
     if (tab === "station-checkin") {
       if (!initedCi) { initCheckinReportEvents(); initedCi = true; }

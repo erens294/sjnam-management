@@ -1,4 +1,5 @@
 function toggleAuditPanel(){const panel=document.getElementById("auditPanel"),chevron=document.getElementById("auditPanelChevron");if(!panel)return;const isHidden=panel.classList.toggle("hidden");chevron&&(chevron.textContent=isHidden?"▼":"▲")}
+var _auditEsc=window.esc||function(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
 async function loadAuditLog(){
   const container=document.getElementById("auditLogTable");
   if(!container)return;
@@ -36,10 +37,10 @@ async function loadAuditLog(){
         <tbody>
           ${logs.map(l=>`<tr class="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700">
             <td class="px-2 py-1.5 text-slate-400 whitespace-nowrap">${new Date(l.created_at).toLocaleString("id-ID",{hour12:!1,dateStyle:"short",timeStyle:"short"})}</td>
-            <td class="px-2 py-1.5 font-semibold ${actionColor[l.action]||"text-slate-400"} whitespace-nowrap">${l.action||"-"}</td>
-            <td class="px-2 py-1.5 text-slate-500">${l.module||"-"}</td>
-            <td class="px-2 py-1.5 font-medium">${l.changed_by||"-"}</td>
-            <td class="px-2 py-1.5 text-slate-400 truncate max-w-32">${l.detail||"-"}</td>
+            <td class="px-2 py-1.5 font-semibold ${actionColor[l.action]||"text-slate-400"} whitespace-nowrap">${_auditEsc(l.action||"-")}</td>
+            <td class="px-2 py-1.5 text-slate-500">${_auditEsc(l.module||"-")}</td>
+            <td class="px-2 py-1.5 font-medium">${_auditEsc(l.changed_by||"-")}</td>
+            <td class="px-2 py-1.5 text-slate-400 truncate max-w-32">${_auditEsc(l.detail||"-")}</td>
           </tr>`).join("")}
         </tbody>
       </table>`

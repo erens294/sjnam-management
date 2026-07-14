@@ -1,0 +1,346 @@
+/* TES123 SAYA EDIT INI */
+/* ================================================================
+   SJNAM — UI MODERNIZATION LAYER
+   ================================================================
+   File terpisah, tidak menyentuh CSS/HTML yang sudah ada. Semua
+   aturan di sini bersifat ADITIF (menambah/menghaluskan tampilan
+   yang sudah ada), bukan mengganti struktur. Aman untuk dihapus
+   kapan saja tanpa merusak fungsi aplikasi — cukup hapus 1 baris
+   <link> di index.html.
+   ================================================================ */
+
+/* ---------- 1. KPI CARD: hierarki tipografi lebih jelas ---------- */
+/* Angka jadi elemen paling dominan, label jadi pendukung kecil —
+   supaya mata langsung tertuju ke data penting saat scanning. */
+.kpi-card p:first-child,
+.stcr-kpi-label {
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  opacity: 0.65;
+}
+
+.kpi-card p[id^="kpi"],
+.stcr-kpi-value {
+  font-size: 1.65rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.1 !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 2. Konsistensi border-radius (skala terpadu) ---------- */
+:root {
+  --radius-xs: 6px;
+  --radius-s: 10px;
+  --radius-m: 14px;
+  --radius-l: 18px;
+}
+
+/* ---------- 3. Skeleton loader (shimmer) ---------- */
+/* Pakai class "skeleton" pada elemen apa pun yang sedang menunggu
+   data — tampil sebagai kotak abu-abu berkilau, bukan blank/spinner. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-s);
+  color: transparent !important;
+  pointer-events: none;
+  user-select: none;
+}
+.dark .skeleton {
+  background: rgba(148, 163, 184, 0.1);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.dark .skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+}
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton-text {
+  height: 0.9em;
+  border-radius: 4px;
+  display: inline-block;
+  width: 100%;
+}
+.skeleton-kpi-value {
+  height: 1.7rem;
+  width: 70%;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------- 4. Micro-interactions ---------- */
+/* Angka KPI yang berubah nilainya akan sedikit "pop" — memberi
+   sinyal visual halus bahwa data baru saja ter-update. */
+.kpi-value-updated {
+  animation: kpi-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes kpi-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Transisi tab lebih halus (melengkapi animasi fadeIn yang sudah ada) */
+.tab-pane.active {
+  animation-duration: 0.28s !important;
+}
+
+/* Hover state kartu lebih hidup tanpa mengubah layout (no jank) */
+.card,
+.kpi-card,
+.stcr-kpi,
+.stcr-station-card {
+  transition: box-shadow 0.22s ease, transform 0.22s ease,
+    border-color 0.22s ease !important;
+}
+
+/* ---------- 5. Empty state yang lebih membantu ---------- */
+.empty-state-modern {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted, #94a3b8);
+}
+.empty-state-modern .empty-icon {
+  font-size: 40px;
+  opacity: 0.55;
+  margin-bottom: 4px;
+}
+.empty-state-modern .empty-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-secondary, #475569);
+}
+.empty-state-modern .empty-hint {
+  font-size: 12px;
+  max-width: 320px;
+}
+
+/* ---------- 6. Focus state yang lebih jelas (aksesibilitas) ---------- */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--brand-500, #3b82f6) !important;
+  outline-offset: 2px !important;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------- 7. Density toggle (opsional, untuk tabel padat) ---------- */
+/* Tambahkan class "density-compact" ke <body> untuk tabel lebih rapat. */
+body.density-compact table:not(.stcr-page table) td,
+body.density-compact table:not(.stcr-page table) th {
+  padding: 5px 10px !important;
+}
+body.density-compact .stcr-page table td,
+body.density-compact .stcr-page table th {
+  padding: 5px 8px !important;
+}
+
+/* ---------- 8. Badge & chip polish ---------- */
+.badge,
+.stcr-badge {
+  transition: transform 0.15s ease;
+}
+
+/* ---------- 9. Scrollbar tipis konsisten di semua browser ---------- */
+* {
+  scrollbar-width: thin;
+}
+
+/* ---------- 10. Print-safe: skeleton tidak pernah tercetak ---------- */
+@media print {
+  .skeleton,
+  .skeleton::after {
+    display: none !important;
+  }
+}
+
+/* ---------- 11. Kembalikan border kiri berwarna di KPI card ---------- */
+/* Tema "pro" sebelumnya menghapus border-left kategori (border-blue-500,
+   dst) lewat "border-left:none!important". Class warnanya masih ada di
+   HTML tiap kartu, cuma disembunyikan — jadi cukup override lagi di sini
+   tanpa perlu ubah HTML. */
+.kpi-card {
+  border-left-width: 4px !important;
+  border-left-style: solid !important;
+}
+.kpi-card.border-blue-500 { border-left-color: #3b82f6 !important; }
+.kpi-card.border-teal-500 { border-left-color: #14b8a6 !important; }
+.kpi-card.border-emerald-500 { border-left-color: #10b981 !important; }
+.kpi-card.border-amber-500 { border-left-color: #f59e0b !important; }
+.kpi-card.border-purple-500 { border-left-color: #a855f7 !important; }
+.kpi-card.border-red-500 { border-left-color: #ef4444 !important; }
+.kpi-card.border-slate-300 { border-left-color: #cbd5e1 !important; }
+.dark .kpi-card.border-slate-300 { border-left-color: #475569 !important; }
+
+/* ---------- 12. Filter chip: enhancement tambahan (BUKAN definisi baru) ---------- */
+/* KOREKSI: base style .filter-chip & .filter-chip-row SUDAH ADA di
+   css/visual-polish.css (sempat saya kira belum ada — ternyata sudah,
+   saya cuma belum lihat isi filenya waktu itu). Supaya tidak dobel
+   definisi, di sini HANYA menambahkan animasi masuk yang halus +
+   sedikit micro-interaction di tombol ✕ saat hover — properti yang
+   memang belum ada di visual-polish.css, tidak menimpa apa pun. */
+.filter-chip {
+  animation: chip-in 0.18s ease;
+}
+.filter-chip button {
+  border-radius: 50%;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.filter-chip button:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: #dc2626;
+}
+@keyframes chip-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+
+/* ---------- 13. Command Palette (Ctrl+K) ---------- */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  animation: cmdk-fade-in 0.15s ease;
+}
+@keyframes cmdk-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.cmdk-box {
+  width: 100%;
+  max-width: 560px;
+  max-height: 60vh;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--card-border, rgba(0,0,0,0.08));
+  border-radius: var(--radius-l);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: cmdk-pop-in 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes cmdk-pop-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cmdk-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--card-border, rgba(0,0,0,0.08));
+  flex-shrink: 0;
+}
+.cmdk-input-row svg { flex-shrink: 0; opacity: 0.45; }
+#cmdkInput {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14.5px;
+  color: var(--text-primary, #0f172a);
+  font-family: var(--font-main, inherit);
+}
+#cmdkInput::placeholder { color: var(--text-muted, #94a3b8); }
+.cmdk-esc-hint {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+  border: 1px solid var(--card-border, rgba(0,0,0,0.12));
+  border-radius: 5px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+.cmdk-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary, #0f172a);
+}
+.cmdk-item .cmdk-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+.cmdk-item .cmdk-group { margin-left: auto; font-size: 10px; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 0.04em; }
+.cmdk-item.cmdk-active {
+  background: var(--brand-500, #3b82f6);
+  color: #fff;
+}
+.cmdk-item.cmdk-active .cmdk-group { color: rgba(255,255,255,0.75); }
+.cmdk-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted, #94a3b8);
+}
+
+/* ---------- 14. Maksimalkan lebar tabel/konten ---------- */
+/* [TEMUAN] Seluruh konten utama (Service Recovery, Drygoods, Station
+   Report, dll — semua modul KECUALI STCR) dibungkus DUA KALI dengan
+   ".max-w-7xl" (1280px), dipusatkan (margin:auto) — di layar lebar,
+   ini menyisakan banyak ruang kosong di kiri-kanan padahal tabelnya
+   sendiri bisa lebih lega. Selector di sini SENGAJA dibuat spesifik
+   (diawali "#mainContent >") supaya TIDAK ikut mempengaruhi elemen
+   lain yang kebetulan juga pakai class ".max-w-7xl" (mis. modal),
+   karena class itu memang dipakai lebih dari sekali di file ini. */
+#mainContent > div.max-w-7xl,
+#mainContent > div.max-w-7xl > main.max-w-7xl {
+  max-width: 100% !important;
+}
+
+/* STCR (Stretchercase & POB) punya pembatas lebar TERPISAH (1400px)
+   di atas pembatas umum di atas — dilonggarkan juga supaya tabel
+   Data Request ikut memakai lebar penuh. */
+.stcr-main {
+  max-width: 100% !important;
+}
+

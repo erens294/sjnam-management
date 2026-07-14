@@ -33,6 +33,55 @@
 
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+  // ================================================================
+  // [BUG DITEMUKAN & DIPERBAIKI] Filter Dashboard STCR (Tahun/Bulan/
+  // AOC/Tipe Request/Stasiun) TIDAK PERNAH disimpan ke mana pun —
+  // applyFilters()/resetFilters() di stcr.js cuma baca/tulis langsung
+  // dari/ke dropdown, tanpa localStorage sama sekali. Jadi begitu
+  // halaman di-refresh, dropdown otomatis kembali ke nilai HTML
+  // aslinya ("Semua") — bukan karena ada yang me-reset secara aktif,
+  // tapi karena memang tidak pernah ada yang mengingatnya sejak awal.
+  //
+  // Sekarang nilai filter disimpan ke localStorage setiap kali
+  // #stcrKpiGrid selesai dibangun ulang (penanda "filter baru saja
+  // diterapkan", andal terlepas dari jalur pemanggilannya — lihat
+  // penjelasan di atas), dan dipulihkan sesegera mungkin saat halaman
+  // dimuat — SEBELUM applyFilters() bawaan sempat jalan pertama kali
+  // (makanya dieksekusi langsung di sini, bukan menunggu
+  // DOMContentLoaded, karena dropdown filternya adalah elemen HTML
+  // statis yang sudah ada begitu script ini dieksekusi).
+  // ================================================================
+  var FILTER_IDS = ["stcr-f-year", "stcr-f-month", "stcr-f-aoc", "stcr-f-req", "stcr-f-station"];
+  var FILTER_STORAGE_KEY = "sjnam_stcr_filter_v1";
+
+  function restoreFilters() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}");
+      FILTER_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el || saved[id] === undefined) return;
+        // hanya set kalau opsinya benar-benar ada (mis. dropdown stasiun
+        // baru terisi opsi dinamis setelah rebuildStationOptions() jalan —
+        // kalau belum ada, akan dicoba lagi di panggilan berikutnya)
+        var hasOption = Array.prototype.some.call(el.options, function (o) { return o.value === saved[id]; });
+        if (hasOption || saved[id] === "") el.value = saved[id];
+      });
+    } catch (e) { console.warn("[stcr-filter-persist] gagal restore", e); }
+  }
+
+  function saveFilters() {
+    try {
+      var toSave = {};
+      FILTER_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) toSave[id] = el.value;
+      });
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(toSave));
+    } catch (e) { console.warn("[stcr-filter-persist] gagal simpan", e); }
+  }
+
+  restoreFilters(); // sesegera mungkin, sebelum applyFilters() bawaan sempat jalan
+
   function getFilteredReplica() {
     var ALL_DATA = [];
     try { ALL_DATA = JSON.parse(localStorage.getItem("sjnam_stcr_data_v1") || "[]"); } catch (e) { ALL_DATA = []; }
@@ -67,7 +116,19 @@
   }
 
   function rebuildSplitTrendChart() {
-    var canvas = document.getElementById("stcrTrendChart");
+    // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya menargetkan canvas ID YANG
+    // SAMA ("stcrTrendChart") dengan yang dipakai kode asli stcr.js —
+    // menyebabkan race condition "Canvas is already in use" setiap kali
+    // applyFilters() jalan (kode asli & patch ini berebut canvas yang
+    // sama, saling menganggap dirinya pemilik chart itu, dan kode asli
+    // bisa mencoba membuat chart baru padahal chart YANG SEBENARNYA aktif
+    // di canvas itu adalah milik patch ini, bukan miliknya — sehingga
+    // Chart.js menolak dengan error). Sekarang pakai canvas TERPISAH
+    // ("stcrTrendSplitChart") yang sudah disiapkan khusus di index.html,
+    // sementara canvas asli tetap ada di DOM (disembunyikan via CSS) —
+    // supaya kode asli tetap bisa jalan seperti biasa tanpa ada yang
+    // saling mengganggu.
+    var canvas = document.getElementById("stcrTrendSplitChart");
     if (!canvas || typeof Chart === "undefined") return;
     if (!canvas.offsetWidth && !canvas.offsetParent) return; // tab tidak sedang terlihat
 
@@ -214,8 +275,21 @@
     var kpiGrid = document.getElementById("stcrKpiGrid");
     if (!kpiGrid || kpiGrid._stcrSplitObserved) return false;
     kpiGrid._stcrSplitObserved = true;
-    new MutationObserver(function () { rebuildSplitTrendChart(); rebuildTop5StationChart(); rebuildRevenueChart(); }).observe(kpiGrid, { childList: true });
+    new MutationObserver(function () {
+      saveFilters();
+      rebuildSplitTrendChart();
+      rebuildTop5StationChart();
+      rebuildRevenueChart();
+    }).observe(kpiGrid, { childList: true });
     updateTop5Title();
+
+    // Coba pulihkan lagi di sini (dropdown Stasiun mungkin baru terisi
+    // opsi dinamisnya setelah init() bawaan jalan), lalu picu render ulang
+    // supaya tampilan awal benar-benar mencerminkan filter yang tersimpan
+    // — bukan cuma render pertama yang keburu jalan dengan filter kosong.
+    restoreFilters();
+    if (window.STCR && typeof window.STCR.applyFilters === "function") window.STCR.applyFilters();
+
     rebuildSplitTrendChart();
     rebuildTop5StationChart();
     rebuildRevenueChart();

@@ -40,7 +40,8 @@
     stationActivity: "sjnam_station_activity_v1",
     stationActivityMaster: "sjnam_station_activity_master_v1",
     stationCheckin: "sjnam_station_checkin_v1",
-    stationBagreport: "sjnam_station_bagreport_v1"
+    stationBagreport: "sjnam_station_bagreport_v1",
+    baggage: "sjnam_baggage_v1"
   };
   var CERT_KEYS = {
     certTemplate1: "sjn_cert_template_1",

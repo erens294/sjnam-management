@@ -17,6 +17,9 @@
 !function () {
   "use strict";
 
+  if (window._dgTabWatchInit) return;
+  window._dgTabWatchInit = true;
+
   var WATCH_IDS = ["tab-drygoods-data", "tab-drygoods-dashboard", "tab-drygoods-bankitem"];
 
   function refreshDrygoods() {

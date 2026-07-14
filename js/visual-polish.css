@@ -1,0 +1,272 @@
+/* ================================================================
+   SJNAM — VISUAL POLISH (Executive Dashboard + Sidebar/Navigasi)
+   ================================================================
+   File CSS tambahan, TIDAK mengubah struktur HTML/CSS yang sudah
+   ada — cuma menambah/menghaluskan tampilan supaya lebih profesional
+   dan mudah dipahami. Aman ditambahkan lewat <link> tanpa risiko
+   merusak style modul lain, karena semua rule di sini spesifik
+   menyasar class/id yang cuma dipakai di Executive Dashboard &
+   elemen sidebar bersama.
+   ================================================================ */
+
+/* ---------- Executive Dashboard: ringkasan "at-a-glance" ---------- */
+.exec-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.exec-summary-item {
+  background: linear-gradient(135deg, var(--exec-grad-from, #1e3a8a), var(--exec-grad-to, #7c3aed));
+  border-radius: 16px;
+  padding: 18px 20px;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(30, 58, 138, .25);
+}
+.exec-summary-item .exec-summary-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 4px;
+  letter-spacing: -0.02em;
+}
+.exec-summary-item .exec-summary-label {
+  font-size: 12px;
+  opacity: .85;
+  font-weight: 500;
+}
+.exec-summary-item.variant-2 { --exec-grad-from: #DC2626; --exec-grad-to: #EA580C; box-shadow: 0 8px 24px rgba(220,38,38,.25); }
+.exec-summary-item.variant-3 { --exec-grad-from: #0D6E8A; --exec-grad-to: #16A34A; box-shadow: 0 8px 24px rgba(13,110,138,.25); }
+
+/* ---------- Executive Dashboard: kartu modul ---------- */
+.exec-module-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.exec-module-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .12);
+}
+.exec-module-card .exec-icon-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.exec-module-card h3 {
+  letter-spacing: -0.01em;
+}
+.exec-module-card .exec-metric-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.exec-module-card::after {
+  content: "→";
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  font-size: 14px;
+  color: var(--card-border, #cbd5e1);
+  opacity: 0;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.exec-module-card:hover::after {
+  opacity: 1;
+  transform: translateX(3px);
+}
+
+/* ---------- Sidebar: indikator tab aktif lebih tegas ---------- */
+.sidebar-btn.active {
+  background: linear-gradient(90deg, rgba(59, 130, 246, .18), transparent) !important;
+  border-left: 3px solid #3b82f6;
+  padding-left: calc(0.75rem - 3px) !important;
+  font-weight: 600;
+}
+.sidebar-btn {
+  transition: background-color .15s ease, padding-left .15s ease;
+}
+
+/* ---------- Sidebar: grup lebih "bernapas" & transisi halus ---------- */
+#serviceRecoveryMenuContent,
+[id$="MenuContent"] {
+  transition: max-height .25s ease, opacity .2s ease;
+}
+.sidebar-text.text-\[11px\] {
+  letter-spacing: .06em;
+}
+
+/* ---------- Chart box: konsistensi visual ---------- */
+.stcr-chart-box h3 {
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .exec-module-card::after { color: rgba(255,255,255,.25); }
+}
+.dark .exec-module-card::after { color: rgba(255,255,255,.25); }
+
+/* ================================================================
+   DESIGN SYSTEM MENYELURUH — berlaku otomatis di SEMUA tab, karena
+   menyasar class bersama (.card, table, button, input) yang sudah
+   dipakai di seluruh modul. Tidak mengubah struktur HTML manapun.
+   ================================================================ */
+
+/* ---------- Header section (judul + deskripsi) konsisten ---------- */
+.card > div:first-child > div:first-child > h2,
+.card > div:first-child > div:first-child > h3 {
+  letter-spacing: -0.01em;
+}
+.card > div:first-child p.text-xs.text-slate-500 {
+  line-height: 1.5;
+}
+
+/* ---------- Tabel: sticky header, zebra, hover, empty state ---------- */
+.card table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(4px);
+}
+.card table tbody tr:nth-child(even) {
+  background: rgba(148, 163, 184, .04);
+}
+.dark .card table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, .02);
+}
+.card table tbody tr {
+  transition: background-color .12s ease;
+}
+.card table tbody tr:hover {
+  background: rgba(59, 130, 246, .06) !important;
+}
+.dark .card table tbody tr:hover {
+  background: rgba(59, 130, 246, .1) !important;
+}
+.card table tbody tr td[colspan] {
+  padding: 40px 16px !important;
+}
+.card table tbody tr td[colspan]::before {
+  content: "📭";
+  display: block;
+  font-size: 28px;
+  margin-bottom: 8px;
+  opacity: .5;
+}
+
+/* ---------- Tombol: transisi & state lebih hidup ---------- */
+button:not(.sidebar-btn) {
+  transition: background-color .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+button:not(.sidebar-btn):active {
+  transform: scale(.97);
+}
+button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+/* Spinner kecil, dipakai lewat class "btn-loading" (opt-in, tidak
+   otomatis aktif di tombol manapun kecuali ditambahkan lewat JS) */
+.btn-loading {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+}
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 16px; height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid rgba(255,255,255,.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spin .6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* ---------- Input & select: focus state lebih jelas ---------- */
+.input:focus, input:focus, select:focus, textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+  border-color: #3b82f6 !important;
+}
+
+/* ---------- Filter chip (dipakai lewat markup .filter-chip, opt-in) ---------- */
+.filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(59, 130, 246, .1);
+  color: #1d4ed8;
+  border: 1px solid rgba(59, 130, 246, .25);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dark .filter-chip {
+  background: rgba(59, 130, 246, .18);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, .35);
+}
+.filter-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  opacity: .7;
+}
+.filter-chip button:hover { opacity: 1; }
+
+/* ---------- Accordion section (form panjang, opt-in via .form-accordion) ---------- */
+.form-accordion-section {
+  border: 1px solid var(--card-border, rgba(0,0,0,.08));
+  border-radius: 12px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.form-accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  background: rgba(148, 163, 184, .05);
+  font-weight: 600;
+  font-size: 13px;
+  user-select: none;
+}
+.dark .form-accordion-header { background: rgba(255,255,255,.03); }
+.form-accordion-header .chevron {
+  transition: transform .2s ease;
+  font-size: 11px;
+  opacity: .6;
+}
+.form-accordion-section.open .form-accordion-header .chevron {
+  transform: rotate(180deg);
+}
+.form-accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .25s ease;
+  padding: 0 16px;
+}
+.form-accordion-section.open .form-accordion-body {
+  max-height: 2000px;
+  padding: 14px 16px 16px;
+}

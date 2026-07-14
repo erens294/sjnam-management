@@ -49,6 +49,12 @@
 !function () {
   'use strict';
 
+  if (window._karyawanManagementInit) {
+    console.warn("[SJNAM] karyawan-management.js sudah pernah dimuat, eksekusi ulang dibatalkan.");
+    return;
+  }
+  window._karyawanManagementInit = true;
+
   // ── State lokal ──────────────────────────────────────────────────────────
   let karyawan = [];
   try { karyawan = JSON.parse(localStorage.getItem('sjnam_karyawan_v1') || '[]'); }

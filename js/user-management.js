@@ -29,6 +29,10 @@
  */
 
 // ── State ──────────────────────────────────────────────────────────────────
+if (window._userManagementModuleInit) {
+  console.warn("[SJNAM] user-management.js dieksekusi ulang di scope global yang sama — ini akan menyebabkan SyntaxError pada deklarasi const/let di bawah (proteksi alami browser terhadap re-injection ganda).");
+}
+window._userManagementModuleInit = true;
 window._userSelectedIds = new Set();
 
 // ── Helper ─────────────────────────────────────────────────────────────────
