@@ -344,3 +344,182 @@ body.density-compact .stcr-page table th {
   max-width: 100% !important;
 }
 
+/* ---------- 16. Badge status konsisten (warna semantik seragam) ---------- */
+/* Menyamakan tampilan badge status di semua modul (Service Recovery,
+   Check-In OTP, Training, dst) — tanpa mengubah warna DASAR yang sudah
+   dipakai (masih hijau=sukses, merah=bahaya, kuning=proses), cuma
+   dirapikan bentuk & bobotnya supaya konsisten. */
+.badge {
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  padding: 3px 10px !important;
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---------- 17. Ikon emoji -> Tabler Icons (styling pelengkap JS) ---------- */
+i.ti {
+  display: inline-block;
+}
+
+/* ---------- 18. Sidebar: kejelasan menu aktif + badge notifikasi ---------- */
+/* Badge notifikasi (._sidebar-badge) disisipkan via JS sebagai anak
+   terakhir tombol sidebar yang sudah berbentuk flex container — cukup
+   "ml-auto" (dari Tailwind) untuk mendorongnya ke kanan, tanpa perlu
+   positioning absolute (lebih aman terhadap variasi struktur tombol). */
+._sidebar-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ---------- 15. Konsistensi radius diperluas ---------- */
+/* Sebelumnya var(--radius-*) sudah didefinisikan tapi cuma dipakai di
+   beberapa tempat spesifik. Sekarang diterapkan lebih luas ke elemen
+   umum yang muncul di HAMPIR SEMUA modul, supaya sudut membulat terasa
+   konsisten di seluruh aplikasi, bukan cuma di bagian yang saya buat. */
+button:not(.sidebar-btn):not(.stcr-btn):not(.rounded-full):not(.rounded-l):not(.rounded-r),
+.input,
+input[type="text"],
+input[type="date"],
+input[type="time"],
+input[type="email"],
+input[type="number"],
+input[type="month"],
+select {
+  border-radius: var(--radius-s) !important;
+}
+.card,
+.modal-box {
+  border-radius: var(--radius-m) !important;
+}
+
+/* ---------- 16. Sistem warna badge/status TERPADU ---------- */
+/* Dipakai lewat class ".status-badge" + salah satu modifier di bawah —
+   opt-in, tidak menimpa badge lama yang sudah punya warna sendiri
+   (supaya tidak merusak modul yang sudah ada), tapi tersedia sebagai
+   standar untuk fitur BARU ke depannya. Palet: merah=bahaya/delay,
+   hijau=sukses/approved, kuning=peringatan, biru=info netral. */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.status-badge.status-danger { background: var(--bg-danger, #fef2f2); color: var(--text-danger, #b91c1c); }
+.status-badge.status-success { background: var(--bg-success, #ecfdf5); color: var(--text-success, #047857); }
+.status-badge.status-warning { background: var(--bg-warning, #fffbeb); color: var(--text-warning, #b45309); }
+.status-badge.status-info { background: var(--bg-accent, #eff6ff); color: var(--text-accent, #1d4ed8); }
+.status-badge.status-neutral { background: rgba(148, 163, 184, 0.15); color: var(--text-secondary, #475569); }
+.dark .status-badge.status-danger { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+.dark .status-badge.status-success { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
+.dark .status-badge.status-warning { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+.dark .status-badge.status-info { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+.dark .status-badge.status-neutral { background: rgba(148, 163, 184, 0.12); color: #cbd5e1; }
+
+/* ---------- 17. Toggle Kepadatan Tabel (Compact/Comfortable) ---------- */
+#btnDensityToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-s);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-1, rgba(148, 163, 184, 0.12));
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  cursor: pointer;
+  color: var(--text-secondary, #475569);
+  transition: background 0.15s ease;
+}
+#btnDensityToggle:hover { background: rgba(148, 163, 184, 0.2); }
+#btnDensityToggle.is-compact { color: var(--text-accent, #1d4ed8); border-color: var(--border-accent, #93c5fd); }
+
+/* ---------- 18. Skeleton baris tabel (loading state async) ---------- */
+/* Dipakai via class "skeleton-row" pada <tr> — menampilkan shimmer
+   di semua <td> di dalamnya, dipasang/dilepas lewat JS saat data
+   sedang diambil (async), bukan cuma di tombol seperti sebelumnya. */
+tr.skeleton-row td {
+  padding: 10px 12px !important;
+}
+tr.skeleton-row td > * { visibility: hidden; }
+tr.skeleton-row td::before {
+  content: "";
+  display: block;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.18);
+  position: relative;
+  overflow: hidden;
+  animation: skeleton-shimmer-row 1.4s ease-in-out infinite;
+}
+.dark tr.skeleton-row td::before { background: rgba(148, 163, 184, 0.1); }
+@keyframes skeleton-shimmer-row {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* ---------- 19. Sidebar: badge notifikasi & active state lebih jelas ---------- */
+.sidebar-notif-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fill-danger, #ef4444);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ---------- 20. Empty state: SVG pengganti emoji 📭 ---------- */
+/* [TEMUAN] visual-polish.css punya rule:
+   .card table tbody tr td[colspan]::before{content:"📭"}
+   Di sini ditimpa dengan ikon SVG (kotak kosong sederhana) via
+   data-URI — menyasar selector yang SAMA, jadi otomatis berlaku di
+   SEMUA tabel kosong di seluruh aplikasi tanpa perlu ubah HTML
+   manapun. Warna disesuaikan light/dark lewat 2 data-URI berbeda. */
+.card table tbody tr td[colspan]::before {
+  content: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-6l-2 3h-4l-2-3H2'/%3E%3Cpath d='M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'/%3E%3C/svg%3E") !important;
+  display: inline-block !important;
+}
+.dark .card table tbody tr td[colspan]::before {
+  content: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-6l-2 3h-4l-2-3H2'/%3E%3Cpath d='M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'/%3E%3C/svg%3E") !important;
+}
+
+/* ---------- 21. Palet warna chart TERPADU ---------- */
+/* Standar warna untuk chart di SELURUH aplikasi — dipakai lewat CSS
+   variable ini (atau via window.SJNAM_CHART_PALETTE di JS, lihat
+   ui-modernization-v3.js). Modul BARU sebaiknya pakai palet ini;
+   modul LAMA (stcr.js, executive-dashboard.js, drygoods.js) belum
+   disentuh — assessment risiko: file-file itu besar & sudah beberapa
+   kali terbukti rapuh saat diedit langsung, jadi perubahan warna di
+   sana butuh sesi tersendiri yang lebih hati-hati. */
+:root {
+  --chart-blue: #378ADD;
+  --chart-teal: #1D9E75;
+  --chart-amber: #EF9F27;
+  --chart-red: #E24B4A;
+  --chart-purple: #7F77DD;
+  --chart-coral: #D85A30;
+  --chart-gray: #94a3b8;
+}
+

@@ -93,6 +93,57 @@
     });
   }
 
+  // ── Pencarian DATA (bukan cuma navigasi tab) — STCR, Karyawan,
+  //    Bank Data Peserta Training. Cuma jalan kalau query >= 3 karakter,
+  //    supaya tidak berat scan localStorage di tiap ketikan huruf pertama. ──
+  var DATA_SOURCES = [
+    {
+      key: "stcrData", tab: "stcr-data", searchInputId: "stcr-s-search", icon: "🩺", group: "STCR",
+      load: function () { try { return JSON.parse(localStorage.getItem("sjnam_stcr_data_v1") || "[]"); } catch (e) { return []; } },
+      match: function (r, q) { return (r["Nama Pasien"] || "").toLowerCase().indexOf(q) !== -1 || (r["Flight No"] || "").toLowerCase().indexOf(q) !== -1; },
+      label: function (r) { return (r["Nama Pasien"] || "(tanpa nama)") + " — " + (r["Flight No"] || ""); },
+      term: function (r) { return r["Nama Pasien"] || r["Flight No"] || ""; }
+    },
+    {
+      key: "karyawan", tab: "admin", searchInputId: "karyawanSearch", icon: "👤", group: "Karyawan",
+      load: function () { try { return JSON.parse(localStorage.getItem("sjnam_karyawan_v1") || "[]"); } catch (e) { return []; } },
+      match: function (r, q) { return (r.nama || "").toLowerCase().indexOf(q) !== -1 || (r.nip || "").toLowerCase().indexOf(q) !== -1; },
+      label: function (r) { return (r.nama || "(tanpa nama)") + " — NIP " + (r.nip || "-"); },
+      term: function (r) { return r.nama || r.nip || ""; }
+    },
+    {
+      key: "peserta", tab: "soal", searchInputId: "pesertaSearch", icon: "🎓", group: "Peserta Training",
+      load: function () {
+        try { return (JSON.parse(localStorage.getItem("sjn_training_v1") || "{}").peserta) || []; } catch (e) { return []; }
+      },
+      match: function (r, q) { return (r.nama || "").toLowerCase().indexOf(q) !== -1 || (r.certNo || "").toLowerCase().indexOf(q) !== -1; },
+      label: function (r) { return (r.nama || "(tanpa nama)") + " — " + (r.certNo || ""); },
+      term: function (r) { return r.nama || r.certNo || ""; }
+    }
+  ];
+
+  function searchDataSources(query) {
+    var q = (query || "").toLowerCase().trim();
+    if (q.length < 3) return [];
+    var results = [];
+    DATA_SOURCES.forEach(function (src) {
+      var list = src.load();
+      if (!Array.isArray(list)) return;
+      var count = 0;
+      for (var i = 0; i < list.length && count < 5; i++) {
+        if (src.match(list[i], q)) {
+          results.push({
+            tab: src.tab, icon: src.icon, group: src.group,
+            label: src.label(list[i]), isData: true,
+            searchInputId: src.searchInputId, searchTerm: src.term(list[i])
+          });
+          count++;
+        }
+      }
+    });
+    return results;
+  }
+
   function render(query) {
     var q = (query || "").toLowerCase().trim();
     var filtered = !q
@@ -100,9 +151,11 @@
       : items.filter(function (it) {
           return (it.label + " " + it.group).toLowerCase().indexOf(q) !== -1;
         });
+    var dataResults = searchDataSources(query);
+    filtered = filtered.concat(dataResults);
 
     if (!filtered.length) {
-      listEl.innerHTML = '<div class="cmdk-empty">Tidak ada menu yang cocok dengan "' + escapeHtml(query) + '"</div>';
+      listEl.innerHTML = '<div class="cmdk-empty">Tidak ada menu atau data yang cocok dengan "' + escapeHtml(query) + '"</div>';
       return;
     }
 
@@ -144,6 +197,19 @@
     close();
     var btn = document.querySelector('[data-tab="' + chosen.tab + '"]');
     if (btn) btn.click();
+
+    if (chosen.isData && chosen.searchInputId && chosen.searchTerm) {
+      // Beri jeda supaya tab benar-benar selesai berpindah (render konten
+      // tab tujuan) sebelum kita coba isi kotak pencariannya.
+      setTimeout(function () {
+        var input = document.getElementById(chosen.searchInputId);
+        if (input) {
+          input.value = chosen.searchTerm;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.focus();
+        }
+      }, 150);
+    }
   }
 
   function open() {

@@ -61,7 +61,21 @@
       btn.classList.add("btn-loading");
     } else {
       btn.classList.add("btn-loading");
-      btn.disabled = true;
+      // [BUG DITEMUKAN & DIPERBAIKI] Sebelumnya "btn.disabled=true" langsung
+      // dieksekusi di sini (capture phase, jalan PALING AWAL). Beberapa modul
+      // lain (mis. karyawan-management.js) punya pengaman double-klik SENDIRI
+      // yang mengecek "if (saveBtn?.disabled) return" di awal handler-nya —
+      // karena interceptor generik ini menonaktifkan tombol LEBIH DULU
+      // (sebelum handler asli modul tsb sempat jalan), pengaman modul itu
+      // salah menyangka "sedang ada proses berjalan" padahal itu klik
+      // PERTAMA — sehingga logic simpan yang sesungguhnya TIDAK PERNAH
+      // jalan sama sekali (tombol terlihat seperti tidak merespons apa pun).
+      // Sekarang, "disabled" beneran BARU diterapkan satu tick kemudian
+      // (setelah SEMUA listener untuk klik yang sama ini selesai diproses),
+      // sehingga modul lain tetap melihat status "belum disabled" yang benar
+      // saat memeriksa kondisi awal mereka sendiri. Class "btn-loading" untuk
+      // efek visual (spinner) tetap langsung aktif seperti sebelumnya.
+      setTimeout(function () { btn.disabled = true; }, 0);
     }
     var timeoutId = setTimeout(function () {
       btn.classList.remove("btn-loading");

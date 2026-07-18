@@ -538,7 +538,7 @@
     var saveBtn = document.getElementById("btnSrCiSave");
     if (!saveBtn) return;
     if (on) {
-      saveBtn.textContent = "🔄 Update Data";
+      saveBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Update Data';
       saveBtn.classList.add("bg-amber-500", "hover:bg-amber-600");
       saveBtn.classList.remove("bg-blue-600", "hover:bg-blue-700");
       if (!document.getElementById("btnSrCiCancelEdit")) {
@@ -551,7 +551,7 @@
         cancelBtn.addEventListener("click", function () { cancelEdit(); });
       }
     } else {
-      saveBtn.textContent = "💾 Simpan";
+      saveBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Simpan';
       saveBtn.classList.remove("bg-amber-500", "hover:bg-amber-600");
       saveBtn.classList.add("bg-blue-600", "hover:bg-blue-700");
       var cancelBtn2 = document.getElementById("btnSrCiCancelEdit");
@@ -748,7 +748,7 @@
     bar.className = "flex gap-2 mb-4";
     bar.innerHTML =
       '<button type="button" data-ci-subtab="data" class="ci-subtab-btn px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white">📄 Data</button>' +
-      '<button type="button" data-ci-subtab="dashboard" class="ci-subtab-btn px-4 py-2 rounded-xl text-sm font-semibold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200">📊 Dashboard</button>';
+      '<button type="button" data-ci-subtab="dashboard" class="ci-subtab-btn px-4 py-2 rounded-xl text-sm font-semibold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>Dashboard</button>';
     section.insertBefore(bar, firstCard);
 
     // ── Bungkus semua card yang SUDAH ADA ke dalam 1 wrapper "data view" ──
@@ -1165,7 +1165,7 @@
     var btn = document.createElement("button");
     btn.id = "btnSrCiTemplate";
     btn.className = "px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl";
-    btn.textContent = "📋 Template Excel";
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>Template Excel';
     exportBtn.parentNode.insertBefore(btn, exportBtn);
     btn.addEventListener("click", downloadTemplate);
   }

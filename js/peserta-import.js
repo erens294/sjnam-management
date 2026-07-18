@@ -191,12 +191,24 @@
           return;
         }
 
-        var added = 0, skipped = 0;
+        var added = 0, updated = 0, skipped = 0;
         var remainingSlots = 150 - trainingData.peserta.length;
 
-        rows.forEach(function (r) {
-          if (added >= remainingSlots) { skipped++; return; }
+        // [PATCH] Sebelumnya TIDAK ADA deteksi duplikat saat import sama
+        // sekali — setiap baris valid selalu jadi peserta baru
+        // (trainingData.peserta.push tanpa syarat). Deteksi duplikat yang
+        // sudah ada di file ini sebelumnya HANYA penanda visual (highlight
+        // kuning) SETELAH data masuk, tidak mencegah/menggantikan apa pun.
+        // Sekarang: kunci sama dengan yang dipakai penanda visual
+        // (dupKeyOf — Tanggal + Nama + Stasiun) dipakai juga di sini —
+        // kalau cocok, data lama DIGANTIKAN (certNo/id/createdAt lama
+        // dipertahankan supaya sertifikat yang sudah dicetak tidak
+        // berubah nomor); kalau tidak cocok, jadi peserta BARU.
+        var existingIndex = {};
+        trainingData.peserta.forEach(function (p, idx) { existingIndex[dupKeyOf(p)] = idx; });
+        console.log("[PesertaImport] Mulai — " + rows.length + " baris terbaca, " + trainingData.peserta.length + " peserta sudah ada.");
 
+        rows.forEach(function (r) {
           var nama = String(getVal(r, ["Nama", "Nama Lengkap"])).trim();
           var airlines = normalizeAirlines(getVal(r, ["Airlines"]));
           var stasiun = String(getVal(r, ["Stasiun"])).trim();
@@ -217,13 +229,33 @@
             return;
           }
 
+          var key = tanggal + "||" + nama.toLowerCase() + "||" + stasiun.toLowerCase();
+          var isDup = Object.prototype.hasOwnProperty.call(existingIndex, key);
+
+          if (isDup) {
+            var oldP = trainingData.peserta[existingIndex[key]];
+            var peserta = {
+              id: oldP.id, certNo: oldP.certNo, // dipertahankan — bukan digenerate ulang
+              airlines: airlines, bankId: oldP.bankId || "", bankName: "Import Excel",
+              tanggal: tanggal, jam: jam, nama: nama, stasiun: stasiun, perusahaan: perusahaan,
+              jabatan: jabatan, hp: hp, email: email, score: score, maxScore: maxScore,
+              createdAt: oldP.createdAt || new Date().toISOString(),
+              expiredDate: oldP.expiredDate || addYearsLocal(tanggal, 2)
+            };
+            trainingData.peserta[existingIndex[key]] = peserta;
+            updated++;
+            return;
+          }
+
+          if (added >= remainingSlots) { skipped++; return; } // batas 150 hanya berlaku utk peserta BARU, bukan update
+
           // No Sertifikat & Masa Berlaku SELALU dibuat otomatis oleh sistem
           // (tidak membaca kolom manual dari Excel) — konsisten dengan hasil
           // wizard "Mulai Training" dan mencegah nomor bentrok/format salah.
           var certNo = generateCertNo(airlines, tanggal, trainingData.peserta);
           var expiredDate = addYearsLocal(tanggal, 2);
 
-          var peserta = {
+          var pesertaBaru = {
             id: Date.now().toString() + "-" + Math.floor(1e4 * Math.random()),
             certNo: certNo,
             airlines: airlines,
@@ -243,17 +275,19 @@
             expiredDate: expiredDate
           };
 
-          trainingData.peserta.push(peserta);
+          trainingData.peserta.push(pesertaBaru);
+          existingIndex[key] = trainingData.peserta.length - 1;
           added++;
         });
 
-        if (added > 0) {
+        console.log("[PesertaImport] Selesai — ditambahkan=" + added + ", digantikan(update)=" + updated + ", dilewati=" + skipped + ".");
+        if (added > 0 || updated > 0) {
           "function" === typeof window.saveTraining && window.saveTraining();
           "function" === typeof window.renderPeserta && window.renderPeserta();
         }
 
-        var msg = added + " peserta berhasil diimpor" + (skipped ? (", " + skipped + " baris dilewati (data wajib belum lengkap / format salah)") : "");
-        window.showToast && window.showToast(msg, added ? "success" : "error");
+        var msg = added + " peserta baru ditambahkan" + (updated ? ", " + updated + " peserta diperbarui (menggantikan data yang sama)" : "") + (skipped ? (", " + skipped + " baris dilewati (data wajib belum lengkap / format salah / kuota penuh)") : "");
+        window.showToast && window.showToast(msg, (added || updated) ? "success" : "error");
       } catch (err) {
         console.error("[peserta-import] Gagal memproses file:", err);
         window.showToast && window.showToast("Gagal membaca file Excel: " + err.message, "error");

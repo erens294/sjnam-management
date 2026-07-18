@@ -369,21 +369,13 @@
   }
 
   function rebuildEntryFilterOptions() {
+    // [PATCH] Sebelumnya logika populate-dropdown Station & Tahun ditulis
+    // manual (duplikat dengan rebuildDashboardFilterOptions() di bawah,
+    // dan dengan pola yang sama di Bank Station/Bank Data Peserta).
+    // Sekarang pakai window.populateFilterSelect() dari shared-utils.js.
     var list = getBaggageData();
-    var stations = Array.from(new Set(list.map(function (d) { return d.station; }).filter(Boolean))).sort();
-    var years = Array.from(new Set(list.map(function (d) { return d.year; }).filter(Boolean))).sort();
-    var stSel = $id("bg-f-station");
-    if (stSel) {
-      var curSt = stSel.value;
-      stSel.innerHTML = '<option value="">Semua Station</option>' + stations.map(function (s) { return "<option value=\"" + escapeHtml(s) + "\">" + escapeHtml(s) + "</option>"; }).join("");
-      stSel.value = curSt;
-    }
-    var yrSel = $id("bg-f-year");
-    if (yrSel) {
-      var curYr = yrSel.value;
-      yrSel.innerHTML = '<option value="">Semua Tahun</option>' + years.map(function (y) { return "<option value=\"" + escapeHtml(y) + "\">" + escapeHtml(y) + "</option>"; }).join("");
-      yrSel.value = curYr;
-    }
+    window.populateFilterSelect($id("bg-f-station"), list.map(function (d) { return d.station; }), "Semua Station", "sjnam_bg_filter_station_v1");
+    window.populateFilterSelect($id("bg-f-year"), list.map(function (d) { return d.year; }), "Semua Tahun", "sjnam_bg_filter_year_v1");
   }
 
   // ================================================================
@@ -599,13 +591,11 @@
   }
 
   function rebuildDashboardFilterOptions() {
+    // [PATCH] Sama seperti rebuildEntryFilterOptions() di atas — pakai
+    // window.populateFilterSelect() bersama, bukan logika manual duplikat.
     var list = getBaggageData();
-    var stations = Array.from(new Set(list.map(function (d) { return d.station; }).filter(Boolean))).sort();
-    var years = Array.from(new Set(list.map(function (d) { return d.year; }).filter(Boolean))).sort();
-    var stSel = $id("bg-d-station");
-    if (stSel) { var curSt = stSel.value; stSel.innerHTML = '<option value="">Semua Station</option>' + stations.map(function (s) { return "<option value=\"" + escapeHtml(s) + "\">" + escapeHtml(s) + "</option>"; }).join(""); stSel.value = curSt; }
-    var yrSel = $id("bg-d-year");
-    if (yrSel) { var curYr = yrSel.value; yrSel.innerHTML = '<option value="">Semua Tahun</option>' + years.map(function (y) { return "<option value=\"" + escapeHtml(y) + "\">" + escapeHtml(y) + "</option>"; }).join(""); yrSel.value = curYr; }
+    window.populateFilterSelect($id("bg-d-station"), list.map(function (d) { return d.station; }), "Semua Station", "sjnam_bg_dash_filter_station_v1");
+    window.populateFilterSelect($id("bg-d-year"), list.map(function (d) { return d.year; }), "Semua Tahun", "sjnam_bg_dash_filter_year_v1");
   }
 
   function buildFilterDesc() {
@@ -713,10 +703,15 @@
         }
 
         var list = getBaggageData();
-        var existingKeys = {};
-        list.forEach(function (r) { existingKeys[r.caseDate + "|" + r.station + "|" + r.flightNo + "|" + r.tagNumber] = true; });
+        // [PATCH] Sebelumnya baris duplikat di-SKIP (data lama tidak
+        // pernah diperbarui). Sekarang: data yang kuncinya cocok
+        // DIGANTIKAN, yang tidak cocok DITAMBAHKAN — sama seperti pola
+        // yang sudah dipakai di Activity Report.
+        var existingIndex = {};
+        list.forEach(function (r, idx) { existingIndex[r.caseDate + "|" + r.station + "|" + r.flightNo + "|" + r.tagNumber] = idx; });
 
-        var added = 0, skipped = 0;
+        var added = 0, updated = 0, skipped = 0;
+        console.log("[BaggageReport][Import] Mulai — " + (rows.length - headerRowIdx - 1) + " baris terbaca, " + list.length + " data sudah ada.");
         for (var r = headerRowIdx + 1; r < rows.length; r++) {
           var row = rows[r];
           if (!row || !row.length) continue;
@@ -724,13 +719,13 @@
           var station = String(row[idx.station] || "").trim().toUpperCase();
           var flightNo = String(row[idx.flightNo] || "").trim().toUpperCase();
           if (!caseDate || !station || !flightNo) { skipped++; continue; }
-          var key = caseDate + "|" + station + "|" + flightNo + "|" + String(idx.tagNumber > -1 ? row[idx.tagNumber] : "").trim().toUpperCase();
-          if (existingKeys[key]) { skipped++; continue; }
-          existingKeys[key] = true;
+          var tagNumberVal = String(idx.tagNumber > -1 ? row[idx.tagNumber] : "").trim().toUpperCase();
+          var key = caseDate + "|" + station + "|" + flightNo + "|" + tagNumberVal;
+          var isDup = Object.prototype.hasOwnProperty.call(existingIndex, key);
 
           var ym = deriveYearMonth(caseDate);
-          list.push({
-            id: genId(), caseDate: caseDate, reportDate: idx.reportDate > -1 ? toISODate(row[idx.reportDate]) : "",
+          var entry = {
+            id: isDup ? list[existingIndex[key]].id : genId(), caseDate: caseDate, reportDate: idx.reportDate > -1 ? toISODate(row[idx.reportDate]) : "",
             station: station, aoc: idx.aoc > -1 ? String(row[idx.aoc] || "").trim().toUpperCase() : "",
             flightNo: flightNo, route: idx.route > -1 ? String(row[idx.route] || "").trim().toUpperCase().replace(/\s+/g, "") : "",
             qtyPax: idx.qtyPax > -1 ? parseNum(row[idx.qtyPax]) : 0,
@@ -757,14 +752,22 @@
             stationAkhir: idx.stationAkhir > -1 ? String(row[idx.stationAkhir] || "").trim().toUpperCase() : "",
             year: ym.year, month: ym.month,
             inputBy: "Import Excel", _updatedAt: new Date().toISOString(), _updatedBy: currentUserName()
-          });
-          added++;
+          };
+          if (isDup) {
+            list[existingIndex[key]] = entry;
+            updated++;
+          } else {
+            list.push(entry);
+            existingIndex[key] = list.length - 1;
+            added++;
+          }
         }
+        console.log("[BaggageReport][Import] Selesai — ditambahkan=" + added + ", digantikan(update)=" + updated + ", dilewati=" + skipped + ".");
         saveBaggageData(list);
         renderEntryTable();
         rebuildEntryFilterOptions();
         renderDashboard();
-        showToast(added + " data Baggage berhasil diimport" + (skipped ? (", " + skipped + " baris dilewati (duplikat/data tidak lengkap)") : ""), added ? "success" : "error");
+        showToast(added + " data baru ditambahkan" + (updated ? ", " + updated + " data diperbarui (menggantikan data yang sama)" : "") + (skipped ? (", " + skipped + " baris dilewati (data tidak lengkap)") : ""), (added || updated) ? "success" : "error");
       } catch (err) {
         showToast("Gagal membaca file: " + err.message, "error");
       }
@@ -865,13 +868,24 @@
 
     $id("btnBgSaveEntry") && $id("btnBgSaveEntry").addEventListener("click", saveEntryFromForm);
     $id("btnBgResetForm") && $id("btnBgResetForm").addEventListener("click", resetEntryForm);
+    window.bindFilterPersistence($id("bg-search"), "sjnam_bg_filter_search_v1");
     $id("bg-search") && $id("bg-search").addEventListener("input", renderEntryTable);
+    ["bg-f-aoc", "bg-f-case-type", "bg-f-case-status", "bg-f-month"].forEach(function (id) {
+      window.bindFilterPersistence($id(id), "sjnam_bg_filter_" + id.replace(/-/g, "_") + "_v1");
+    });
     ["bg-f-station", "bg-f-aoc", "bg-f-case-type", "bg-f-case-status", "bg-f-year", "bg-f-month"].forEach(function (id) {
       $id(id) && $id(id).addEventListener("change", renderEntryTable);
     });
     $id("btnBgResetFilter") && $id("btnBgResetFilter").addEventListener("click", function () {
       ["bg-search", "bg-f-station", "bg-f-aoc", "bg-f-case-type", "bg-f-case-status", "bg-f-year", "bg-f-month"].forEach(function (id) { var el = $id(id); if (el) el.value = ""; });
+      // [PATCH] Reset filter juga menghapus nilai tersimpan supaya tidak
+      // muncul lagi setelah refresh.
+      ["sjnam_bg_filter_search_v1", "sjnam_bg_filter_station_v1", "sjnam_bg_filter_bg_f_aoc_v1", "sjnam_bg_filter_bg_f_case_type_v1", "sjnam_bg_filter_bg_f_case_status_v1", "sjnam_bg_filter_year_v1", "sjnam_bg_filter_bg_f_month_v1"].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      console.log("[BaggageReport][FilterPersist] Filter direset (termasuk hapus dari localStorage).");
       renderEntryTable();
+    });
+    ["bg-d-aoc", "bg-d-month"].forEach(function (id) {
+      window.bindFilterPersistence($id(id), "sjnam_bg_dash_filter_" + id.replace(/-/g, "_") + "_v1");
     });
     ["bg-d-station", "bg-d-aoc", "bg-d-year", "bg-d-month"].forEach(function (id) { $id(id) && $id(id).addEventListener("change", renderDashboard); });
 

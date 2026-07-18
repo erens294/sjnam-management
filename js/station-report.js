@@ -794,6 +794,7 @@
         var added = 0, updated = 0, skipped = 0, newStations = [], errors = [];
         var minDate = null, maxDate = null;
         var existing = getActivityData();
+        console.log("[StationReport][Activity-Import] Mulai — " + rows.length + " baris terbaca, " + existing.length + " data sudah ada (kunci dedup: tanggal + distrik).");
         rows.forEach(function (row, idx) {
           var rowNum = idx + 2;
           var vals = Object.values(row).map(function (v) { return String(v || "").trim(); }).filter(Boolean);
@@ -822,6 +823,7 @@
           if (minDate === null || dateVal < minDate) minDate = dateVal;
           if (maxDate === null || dateVal > maxDate) maxDate = dateVal;
         });
+        console.log("[StationReport][Activity-Import] Selesai parsing — ditambahkan=" + added + ", digantikan(update)=" + updated + ", dilewati=" + skipped + ".");
 
         if (!added && !updated) {
           var msg = "Import gagal: " + skipped + " baris dilewati.";
@@ -933,7 +935,7 @@
       rebuildActMonths(true);
       "function" == typeof window.showToast && window.showToast("Data dihapus", "success");
     });
-    document.getElementById("srActHistorySearch")?.addEventListener("input", renderActivityHistory);
+    window.bindFilterPersistence(document.getElementById("srActHistorySearch"), "sjnam_sract_filter_search_v1"); document.getElementById("srActHistorySearch")?.addEventListener("input", renderActivityHistory);
     document.getElementById("btnSrActExportExcel")?.addEventListener("click", function () {
       if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("XLSX tidak tersedia", "error"));
       var rows = getActivityData()
@@ -1089,7 +1091,7 @@
       saveCiData(getCiData().filter(function (r) { return r.id !== delId; }));
       renderCiTable();
     });
-    document.getElementById("srCiSearch")?.addEventListener("input", renderCiTable);
+    window.bindFilterPersistence(document.getElementById("srCiSearch"), "sjnam_srci_filter_search_v1"); document.getElementById("srCiSearch")?.addEventListener("input", renderCiTable);
     document.getElementById("btnSrCiExportExcel")?.addEventListener("click", function () {
       if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("XLSX tidak tersedia", "error"));
       var rows = getCiData().map(function (r, i) {
@@ -1167,10 +1169,15 @@
           }
 
           var list = getCiData();
-          var existingKeys = {};
-          list.forEach(function (r) { existingKeys[r.tanggal + "|" + r.station + "|" + r.flight + "|" + r.open] = true; });
+          // [PATCH] Sebelumnya baris duplikat di-SKIP (data lama tidak
+          // pernah diperbarui walau file baru punya nilai berbeda).
+          // Sekarang: sama seperti Activity Report — data yang cocok
+          // (kunci sama) DIGANTIKAN, data yang tidak cocok DITAMBAHKAN.
+          var existingIndex = {};
+          list.forEach(function (r, idx) { existingIndex[r.tanggal + "|" + r.station + "|" + r.flight + "|" + r.open] = idx; });
 
-          var added = 0, skipped = 0;
+          var added = 0, updated = 0, skipped = 0;
+          console.log("[StationReport][CheckIn-Import] Mulai — " + (rows.length - headerRowIdx - 1) + " baris terbaca, " + list.length + " data sudah ada.");
           for (var r = headerRowIdx + 1; r < rows.length; r++) {
             var row = rows[r];
             if (!row || !row.length) continue;
@@ -1190,19 +1197,28 @@
               pax = a + c + inf;
             }
             var key = tanggal + "|" + station + "|" + flight + "|" + open;
-            if (existingKeys[key]) { skipped++; continue; }
-            existingKeys[key] = true;
-            list.push({
-              id: genId("ci"), tanggal: tanggal, station: station, flight: flight,
-              open: open, close: close, pax: pax, note: "",
+            var isDup = Object.prototype.hasOwnProperty.call(existingIndex, key);
+            var entry = {
+              id: isDup ? list[existingIndex[key]].id : genId("ci"),
+              tanggal: tanggal, station: station, flight: flight,
+              open: open, close: close, pax: pax,
+              note: isDup ? (list[existingIndex[key]].note || "") : "", // pertahankan catatan manual lama saat diganti
               inputBy: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || "Import Excel"
-            });
-            added++;
+            };
+            if (isDup) {
+              list[existingIndex[key]] = entry;
+              updated++;
+            } else {
+              list.push(entry);
+              existingIndex[key] = list.length - 1;
+              added++;
+            }
           }
+          console.log("[StationReport][CheckIn-Import] Selesai — ditambahkan=" + added + ", digantikan(update)=" + updated + ", dilewati=" + skipped + ".");
           saveCiData(list);
           renderCiTable();
-          var msg = added + " data Check-In Report berhasil diimport" + (skipped ? (", " + skipped + " baris dilewati (duplikat/data tidak lengkap)") : "");
-          "function" == typeof window.showToast && window.showToast(msg, added ? "success" : "error");
+          var msg = added + " data baru ditambahkan" + (updated ? ", " + updated + " data diperbarui (menggantikan data yang sama)" : "") + (skipped ? ", " + skipped + " baris dilewati (data tidak lengkap)" : "");
+          "function" == typeof window.showToast && window.showToast(msg, (added || updated) ? "success" : "error");
         } catch (err) {
           "function" == typeof window.showToast && window.showToast("Gagal membaca file: " + err.message, "error");
         } finally {
@@ -1280,7 +1296,7 @@
       saveFlbData(getFlbData().filter(function (r) { return r.id !== delId; }));
       renderFlbTable();
     });
-    document.getElementById("srFlbSearch")?.addEventListener("input", renderFlbTable);
+    window.bindFilterPersistence(document.getElementById("srFlbSearch"), "sjnam_srflb_filter_search_v1"); document.getElementById("srFlbSearch")?.addEventListener("input", renderFlbTable);
     document.getElementById("btnSrFlbExportExcel")?.addEventListener("click", function () {
       if (!window.XLSX) return void ("function" == typeof window.showToast && window.showToast("XLSX tidak tersedia", "error"));
       var rows = getFlbData().map(function (r, i) {

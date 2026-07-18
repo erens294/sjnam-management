@@ -51,23 +51,30 @@
     }, window.showToast = function(msg, type = "success") {
         if ("error" === type) {
             const eLight = document.getElementById("errorLight");
-            return void(eLight && (window._errorLog || (window._errorLog = []), window._errorLog.unshift({
+            eLight && (window._errorLog || (window._errorLog = []), window._errorLog.unshift({
                 msg: msg,
                 time: (new Date).toLocaleTimeString("id-ID")
             }), window._errorLog.length > 20 && window._errorLog.pop(), eLight.classList.remove("active", "sticky"), eLight.offsetWidth, eLight.classList.add("active"), clearTimeout(window._errorLightTimer), window._errorLightTimer = setTimeout(() => {
                 eLight.classList.remove("active"), eLight.classList.add("sticky"), clearTimeout(window._errorStickyTimer), window._errorStickyTimer = setTimeout(() => {
                     eLight.classList.remove("sticky")
                 }, 3e4)
-            }, 3e3), eLight.title = `❌ ${msg} (klik untuk detail)`))
+            }, 3e3), eLight.title = `❌ ${msg} (klik untuk detail)`);
+            // [PATCH] SEBELUMNYA di titik ini ada "return void(...)" — artinya
+            // error TIDAK PERNAH menampilkan toast pop-up sama sekali, cuma
+            // mengedipkan ikon kecil #errorLight yang gampang tidak disadari
+            // user (ini akar penyebab kasus "klik Simpan tidak terjadi apa-apa"
+            // yang pernah dilaporkan). Sekarang eksekusi diteruskan ke bawah
+            // supaya toast pop-up merah TETAP muncul juga, selain kedipan ikon.
+            console.log("[Toast][Debug] Error toast diterima:", msg, "— akan ditampilkan sebagai POP-UP (bukan cuma kedip ikon errorLight seperti sebelumnya).");
         }
         const container = document.getElementById("toastContainer");
         if (!container) return void console.log("[Toast]", type, msg);
-        const bg = "success" === type ? "bg-emerald-600" : "warn" === type ? "bg-amber-500" : "bg-slate-700",
-            icon = "success" === type ? "✅" : "warn" === type ? "⚠️" : "ℹ️",
+        const bg = "success" === type ? "bg-emerald-600" : "warn" === type ? "bg-amber-500" : "error" === type ? "bg-red-600" : "bg-slate-700",
+            icon = "success" === type ? "✅" : "warn" === type ? "⚠️" : "error" === type ? "❌" : "ℹ️",
             el = document.createElement("div");
         el.className = `toast ${bg} pointer-events-auto text-sm`, el.textContent = `${icon} ${msg}`, container.appendChild(el), setTimeout(() => {
             el.style.opacity = "0", el.style.transform = "translateX(110%)", el.style.transition = "all .3s ease", setTimeout(() => el.remove(), 300)
-        }, 3500)
+        }, "error" === type ? 6000 : 3500)
     }, window.showConfirm = function(title, message) {
         return new Promise(resolve => {
             const modal = document.getElementById("confirmModal"),
@@ -98,6 +105,186 @@
         const eLight = document.getElementById("errorLight");
         eLight && (eLight.classList.remove("sticky"), clearTimeout(window._errorStickyTimer))
     })
+}(),
+/* ================================================================
+   [PATCH] Utilitas bersama — mergeByKey() & populateFilterSelect()
+   ================================================================
+   Ditambahkan setelah menemukan pola bug yang SAMA berulang di 5
+   modul berbeda (Customer Voice, Drygoods, Check-In Report, Baggage
+   Report, Peserta Training import) — semuanya menulis ulang logika
+   "cocok -> replace, tidak cocok -> tambah" sendiri-sendiri, dan
+   beberapa di antaranya salah (skip alih-alih replace). Modul yang
+   SUDAH diperbaiki sebelumnya SENGAJA tidak diubah untuk memakai
+   fungsi ini (menghindari risiko regresi pada kode yang baru saja
+   diuji & berfungsi) — tapi fitur BARU ke depannya sebaiknya pakai
+   window.mergeByKey() ini, bukan menulis ulang dari nol.
+   ================================================================ */
+function () {
+    "use strict";
+
+    // mergeByKey(existingList, newItems, keyFn, options?)
+    // - existingList: array data yang SUDAH ADA (akan dimodifikasi in-place)
+    // - newItems: array data baru (mis. hasil parse Excel)
+    // - keyFn: function(item) -> string, kunci unik utk deteksi "sama"
+    // - options.preserveFields: array nama field yang DIPERTAHANKAN dari
+    //   data lama saat terjadi replace (mis. ["id","createdAt","note"])
+    //   kalau field itu kosong/tidak ada di item baru.
+    // Return: { list, added, updated } — added/updated = jumlah baris.
+    window.mergeByKey = function (existingList, newItems, keyFn, options) {
+        options = options || {};
+        var preserveFields = options.preserveFields || [];
+        var existingIndex = {};
+        existingList.forEach(function (item, idx) { existingIndex[keyFn(item)] = idx; });
+        var added = 0, updated = 0;
+        newItems.forEach(function (newItem) {
+            var key = keyFn(newItem);
+            if (Object.prototype.hasOwnProperty.call(existingIndex, key)) {
+                var idx = existingIndex[key], oldItem = existingList[idx];
+                preserveFields.forEach(function (f) {
+                    if (newItem[f] === undefined || newItem[f] === "" || newItem[f] === null) newItem[f] = oldItem[f];
+                });
+                existingList[idx] = newItem;
+                updated++;
+            } else {
+                existingList.push(newItem);
+                existingIndex[key] = existingList.length - 1;
+                added++;
+            }
+        });
+        console.log("[SharedUtils][mergeByKey] Selesai — ditambahkan=" + added + ", digantikan(update)=" + updated + ", total baris sekarang=" + existingList.length + ".");
+        return { list: existingList, added: added, updated: updated };
+    };
+
+    // populateFilterSelect(selectEl, values, allLabel?)
+    // Mengisi <select> dengan opsi unik dari `values` (otomatis di-sort),
+    // sambil MEMPERTAHANKAN pilihan yang sedang aktif kalau masih valid.
+    // Dipakai utk filter Stasiun/Perusahaan/dll di Bank Station & Bank
+    // Data Peserta — supaya fitur filter baru ke depannya tidak perlu
+    // menulis ulang logika populate-dropdown dari nol.
+    window.populateFilterSelect = function (selectEl, values, allLabel, storageKey) {
+        if (!selectEl) return;
+        var esc = window.esc || function (s) { return String(s == null ? "" : s); };
+        var cur = selectEl.value;
+        if (storageKey && !selectEl._sjnFilterPersistBound) {
+          try {
+            var saved = localStorage.getItem(storageKey);
+            if (null !== saved) cur = saved;
+          } catch (e) {}
+        }
+        var uniq = Array.from(new Set(values.filter(Boolean).map(function (v) { return String(v).trim(); }))).sort(function (a, b) { return a.localeCompare(b); });
+        selectEl.innerHTML = '<option value="">' + (allLabel || "Semua") + '</option>' + uniq.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join("");
+        if (uniq.indexOf(cur) !== -1) selectEl.value = cur;
+        if (storageKey && !selectEl._sjnFilterPersistBound) {
+          selectEl._sjnFilterPersistBound = true;
+          selectEl.addEventListener("change", function () {
+            try { localStorage.setItem(storageKey, selectEl.value); window.debugLog && window.debugLog("[SharedUtils][FilterPersist] Filter disimpan — key: " + storageKey + " = " + selectEl.value); } catch (e) {}
+          });
+        }
+    };
+
+    // [PATCH #5] Mode Debug — saklar global utk semua log detail yang
+    // ditambahkan sepanjang perbaikan-perbaikan sebelumnya. Default TRUE
+    // (perilaku tidak berubah dari sekarang). Kalau nanti console dirasa
+    // terlalu ramai di production, admin tinggal jalankan di Console:
+    //   window.DEBUG_MODE = false
+    // (tersimpan di localStorage, jadi persist across reload). Log yang
+    // SUDAH ada (console.log manual di berbagai file) TIDAK otomatis
+    // ikut fungsi ini -- itu perlu diganti satu-satu ke debugLog() kalau
+    // suatu saat mau dirapikan; untuk sekarang, kode BARU sebaiknya
+    // pakai window.debugLog() supaya ikut aturan mode debug ini.
+    window.DEBUG_MODE = "0" !== localStorage.getItem("sjnam_debug_mode_v1");
+    window.setDebugMode = function (on) {
+      window.DEBUG_MODE = !!on;
+      localStorage.setItem("sjnam_debug_mode_v1", on ? "1" : "0");
+      console.info("%c[SJNAM] Mode Debug " + (on ? "DIAKTIFKAN" : "DIMATIKAN") + ".", "color:#0891b2;font-weight:bold");
+    };
+    window.debugLog = function () {
+      if (window.DEBUG_MODE) console.log.apply(console, arguments);
+    };
+
+    // [PATCH #4] Audit trail generik utk data sensitif (approval,
+    // verifikasi, status kasus, dsb). Disimpan di localStorage dengan
+    // batas 500 entri terbaru (FIFO) supaya tidak membengkak tanpa
+    // batas. Ini INFRASTRUKTUR bersama -- baru dipasang di beberapa
+    // aksi contoh (lihat catatan di masing-masing modul); belum
+    // mencakup SEMUA aksi sensitif di seluruh app.
+    var AUDIT_LOG_KEY = "sjnam_audit_log_v1", AUDIT_LOG_MAX = 500;
+    window.recordAuditLog = function (module, action, details) {
+      try {
+        var log = JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || "[]");
+        var cu = window.currentUser;
+        log.unshift({
+          time: (new Date).toISOString(),
+          user: (cu && (cu.name || cu.username)) || "(tidak diketahui)",
+          module: module,
+          action: action,
+          details: details || {}
+        });
+        log.length > AUDIT_LOG_MAX && log.splice(AUDIT_LOG_MAX);
+        localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(log));
+        window.debugLog("[SharedUtils][AuditLog] " + module + " / " + action + " oleh " + ((cu && (cu.name || cu.username)) || "?") + " — " + JSON.stringify(details || {}));
+      } catch (e) {
+        console.warn("[SharedUtils][AuditLog] Gagal mencatat audit log:", e);
+      }
+    };
+    window.getAuditLog = function (moduleFilter) {
+      try {
+        var log = JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || "[]");
+        return moduleFilter ? log.filter(function (e) { return e.module === moduleFilter; }) : log;
+      } catch (e) { return []; }
+    };
+
+    // [PATCH] Persistensi filter lintas refresh — sebelumnya SEMUA filter
+    // (search box, dropdown, checkbox kategori, dsb) di seluruh app
+    // kembali ke "Semua" begitu halaman di-refresh, karena nilainya cuma
+    // hidup di DOM (tidak pernah disimpan). Satu-satunya pengecualian
+    // yang SUDAH benar sebelumnya: filter Dashboard Service Recovery
+    // (sjnam_dash_filter_v1). Fungsi ini menyamakan pola itu ke SEMUA
+    // filter lain secara konsisten.
+    // PENTING: ini HANYA utk elemen FILTER (memilih subset data yang
+    // ditampilkan) — BUKAN utk field form tambah/edit data (spt Tanggal
+    // Kasus, Nama Peserta, dsb), karena field form yang "mengingat" isian
+    // terakhir justru jadi BUG (form tambah baru keisi data lama).
+    window.bindFilterPersistence = function (el, storageKey) {
+      if (!el || el._sjnFilterPersistBound) return;
+      el._sjnFilterPersistBound = true;
+      try {
+        var saved = localStorage.getItem(storageKey);
+        if (null !== saved) {
+          "checkbox" === el.type ? el.checked = "1" === saved : el.value = saved;
+          window.debugLog("[SharedUtils][FilterPersist] Nilai filter dipulihkan dari localStorage — key: " + storageKey + " = " + saved);
+        }
+      } catch (e) { console.warn("[SharedUtils][FilterPersist] Gagal memulihkan filter " + storageKey + ":", e); }
+      var eventName = "checkbox" === el.type || "SELECT" === el.tagName ? "change" : "input";
+      el.addEventListener(eventName, function () {
+        try {
+          var val = "checkbox" === el.type ? (el.checked ? "1" : "0") : el.value;
+          localStorage.setItem(storageKey, val);
+          window.debugLog("[SharedUtils][FilterPersist] Filter disimpan — key: " + storageKey + " = " + val);
+        } catch (e) { console.warn("[SharedUtils][FilterPersist] Gagal menyimpan filter " + storageKey + ":", e); }
+      });
+    };
+    // Varian utk grup checkbox (mis. filter kategori multi-pilih) — semua
+    // elemen dgn selector yang sama dianggap satu grup, disimpan sbg array.
+    window.bindCheckboxGroupPersistence = function (selectorAll, storageKey, onRestore) {
+      try {
+        var saved = JSON.parse(localStorage.getItem(storageKey) || "[]");
+        if (saved.length) {
+          document.querySelectorAll(selectorAll).forEach(function (cb) { cb.checked = saved.indexOf(cb.value) !== -1; });
+          window.debugLog("[SharedUtils][FilterPersist] Grup checkbox dipulihkan — key: " + storageKey + " = " + JSON.stringify(saved));
+          "function" === typeof onRestore && onRestore();
+        }
+      } catch (e) { console.warn("[SharedUtils][FilterPersist] Gagal memulihkan grup checkbox " + storageKey + ":", e); }
+    };
+    window.saveCheckboxGroupPersistence = function (selectorAll, storageKey) {
+      try {
+        var checked = Array.from(document.querySelectorAll(selectorAll)).filter(function (cb) { return cb.checked; }).map(function (cb) { return cb.value; });
+        localStorage.setItem(storageKey, JSON.stringify(checked));
+        window.debugLog("[SharedUtils][FilterPersist] Grup checkbox disimpan — key: " + storageKey + " = " + JSON.stringify(checked));
+      } catch (e) { console.warn("[SharedUtils][FilterPersist] Gagal menyimpan grup checkbox " + storageKey + ":", e); }
+    };
+
+    console.info("%c[SJNAM] Utilitas bersama (mergeByKey, populateFilterSelect, debugLog, recordAuditLog, bindFilterPersistence) aktif. Mode Debug: " + (window.DEBUG_MODE ? "ON" : "OFF") + ".", "color:#0891b2;font-weight:bold;font-size:11px");
 }(),
 function() {
     "use strict";
